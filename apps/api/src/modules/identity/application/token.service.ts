@@ -1,0 +1,158 @@
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+
+import { Injectable } from "@nestjs/common";
+import { SignJWT, jwtVerify } from "jose";
+
+import { AppConfigService } from "../../../shared/config/index.js";
+import type { Permission, Role } from "../domain/permissions.js";
+
+/**
+ * Access and refresh token issuance.
+ *
+ * Uses `jose` directly rather than a Passport strategy: one JWT library, no
+ * additional auth framework layered on top (see the "one tool per job"
+ * registry in CLAUDE.md).
+ */
+
+/** Who an authenticated caller is. Derived only from a verified token. */
+export interface Principal {
+  readonly userId: string;
+  readonly tenantId: string;
+  readonly actorType: "user" | "driver";
+  readonly roles: readonly Role[];
+  readonly permissions: ReadonlySet<Permission>;
+  /** Restricts a Dispatcher or Hub Operator to specific hubs. Empty = all. */
+  readonly hubScope: readonly string[];
+  readonly sessionId: string;
+}
+
+interface AccessTokenClaims {
+  readonly sub: string;
+  readonly tid: string;
+  readonly typ: "user" | "driver";
+  readonly rol: readonly string[];
+  readonly hub: readonly string[];
+  readonly sid: string;
+}
+
+const ALGORITHM = "HS256";
+
+/** A generated refresh token and the digest to persist for it. */
+export interface RefreshTokenPair {
+  /** Returned to the client exactly once. Never stored in this form. */
+  readonly token: string;
+  /** SHA-256 of the token. This is what goes in the database. */
+  readonly digest: string;
+}
+
+@Injectable()
+export class TokenService {
+  private readonly accessSecret: Uint8Array;
+
+  constructor(private readonly config: AppConfigService) {
+    this.accessSecret = new TextEncoder().encode(config.get("JWT_ACCESS_SECRET"));
+  }
+
+  /** Signs a short-lived access token. */
+  async issueAccessToken(principal: Principal): Promise<{ token: string; expiresIn: number }> {
+    const expiresIn =
+      principal.actorType === "driver"
+        ? this.config.get("DRIVER_ACCESS_TTL_SECONDS")
+        : this.config.get("JWT_ACCESS_TTL_SECONDS");
+
+    const token = await new SignJWT({
+      tid: principal.tenantId,
+      typ: principal.actorType,
+      rol: [...principal.roles],
+      hub: [...principal.hubScope],
+      sid: principal.sessionId,
+    })
+      .setProtectedHeader({ alg: ALGORITHM })
+      .setSubject(principal.userId)
+      .setIssuedAt()
+      .setExpirationTime(`${String(expiresIn)}s`)
+      .sign(this.accessSecret);
+
+    return { token, expiresIn };
+  }
+
+  /**
+   * Verifies an access token and returns its claims.
+   *
+   * Returns null on ANY failure — expired, tampered, wrong algorithm, malformed.
+   * Callers must treat null as unauthenticated and must not distinguish the
+   * reason to the client, which would leak information about token handling.
+   */
+  async verifyAccessToken(token: string): Promise<AccessTokenClaims | null> {
+    try {
+      const { payload } = await jwtVerify(token, this.accessSecret, {
+        // Pinning the algorithm prevents `alg: none` and HS/RS confusion attacks.
+        algorithms: [ALGORITHM],
+      });
+
+      const { sub, tid, typ, rol, hub, sid } = payload as Record<string, unknown>;
+
+      if (
+        typeof sub !== "string" ||
+        typeof tid !== "string" ||
+        (typ !== "user" && typ !== "driver") ||
+        typeof sid !== "string" ||
+        !Array.isArray(rol) ||
+        !Array.isArray(hub)
+      ) {
+        return null;
+      }
+
+      return {
+        sub,
+        tid,
+        typ,
+        sid,
+        rol: rol.filter((value): value is string => typeof value === "string"),
+        hub: hub.filter((value): value is string => typeof value === "string"),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Generates a refresh token.
+   *
+   * The raw value goes to the client once; only its SHA-256 digest is stored.
+   * A database leak therefore does not yield usable refresh tokens.
+   */
+  generateRefreshToken(): RefreshTokenPair {
+    const token = randomBytes(48).toString("base64url");
+    return { token, digest: this.digestRefreshToken(token) };
+  }
+
+  /** SHA-256 digest. Refresh tokens are high-entropy, so a fast hash is correct here. */
+  digestRefreshToken(token: string): string {
+    return createHash("sha256").update(token).digest("hex");
+  }
+
+  /** Constant-time digest comparison, to avoid leaking a match position. */
+  refreshTokenMatches(token: string, storedDigest: string): boolean {
+    const candidate = Buffer.from(this.digestRefreshToken(token), "hex");
+    let stored: Buffer;
+    try {
+      stored = Buffer.from(storedDigest, "hex");
+    } catch {
+      return false;
+    }
+    if (candidate.length !== stored.length) {
+      return false;
+    }
+    return timingSafeEqual(candidate, stored);
+  }
+
+  /** Absolute expiry for a newly issued refresh token. */
+  refreshTokenExpiry(actorType: "user" | "driver"): Date {
+    const days =
+      actorType === "driver"
+        ? this.config.get("DRIVER_REFRESH_TTL_DAYS")
+        : this.config.get("JWT_REFRESH_TTL_DAYS");
+    return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  }
+}

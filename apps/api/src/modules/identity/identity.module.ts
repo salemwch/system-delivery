@@ -1,0 +1,37 @@
+import { Module } from "@nestjs/common";
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+
+import { AccessService } from "./application/access.service.js";
+import { AuthService } from "./application/auth.service.js";
+import { PasswordService } from "./application/password.service.js";
+import { TokenService } from "./application/token.service.js";
+import { AuthController } from "./api/auth.controller.js";
+import { AuthGuard } from "./api/auth.guard.js";
+import { PermissionGuard } from "./api/permission.guard.js";
+import { TenantContextInterceptor } from "./api/tenant-context.interceptor.js";
+
+/**
+ * Identity context (docs/04-context-map.md §3.2).
+ *
+ * Registers the request pipeline GLOBALLY, in this order:
+ *   1. AuthGuard              — authenticate; deny by default
+ *   2. PermissionGuard        — authorize against @RequirePermissions
+ *   3. TenantContextInterceptor — bind tenant context for RLS
+ *
+ * Guards run before interceptors in Nest, so the tenant bound in step 3 always
+ * comes from a token already verified in step 1.
+ */
+@Module({
+  controllers: [AuthController],
+  providers: [
+    PasswordService,
+    TokenService,
+    AuthService,
+    AccessService,
+    { provide: APP_GUARD, useClass: AuthGuard },
+    { provide: APP_GUARD, useClass: PermissionGuard },
+    { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
+  ],
+  exports: [PasswordService, TokenService, AuthService, AccessService],
+})
+export class IdentityModule {}
