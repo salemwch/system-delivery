@@ -47,6 +47,14 @@ jobs:
       - name: Check formatting
         run: pnpm format:check
 
+      # Validates the workflow files themselves. A syntax error here would
+      # otherwise fail the whole run at parse time with zero jobs created and no
+      # useful annotation — which is exactly how this pipeline first broke.
+      - name: Lint GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.9
+        with:
+          args: -color
+
       # THE gate that protects the architecture. Proves the boundary and domain
       # invariant rules actually reject bad code, rather than passing because
       # they silently match nothing. See tools/verify-lint-rules.mjs.
@@ -177,8 +185,10 @@ jobs:
     if: always()
     steps:
       - name: Fail if any required job did not succeed
+        # GitHub expressions allow only single-quoted strings; the join
+        # separator must therefore be a single-quoted comma.
         run: |
-          if echo '${{ join(needs.*.result, ",") }}' | grep -qE 'failure|cancelled'; then
+          if echo '${{ join(needs.*.result, ',') }}' | grep -qE 'failure|cancelled'; then
             echo "One or more required jobs failed."
             exit 1
           fi
