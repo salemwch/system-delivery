@@ -14,7 +14,9 @@ Authorized 2026-07-22. Build within these limits:
 
 ## Current state (updated 2026-07-22)
 
-**Everything green:** `pnpm verify` → exit 0 · `pnpm test` → 68/68 · `pnpm build` → ok.
+**Everything green:** `pnpm verify` → exit 0 · `pnpm test` → 79/79 · `pnpm build` → ok · `pnpm sast` → 0 findings.
+
+**You can log in for real:** `pnpm db:seed` provisions a Tunisian courier tenant + OWNER, prints a password and a login curl. Verified: seed → `POST /v1/auth/login` → token → `/v1/auth/me`.
 
 ### Done
 
@@ -26,7 +28,8 @@ Authorized 2026-07-22. Build within these limits:
 | Migrations         | `0000` tenants+tenant_features, `0001` tenants-registry RLS fix, `0002` identity. Runner: `apps/api/src/shared/database/migrator.ts` — forward-only, checksum-locked (**applied migrations are immutable**)                                                                               |
 | RLS                | Tenant-scoped **data** tables: ENABLE **+ FORCE**. The `tenants` **registry**: ENABLE only (the control plane must be able to provision).                                                                                                                                                 |
 | `shared/`          | config (Zod-validated, fail-fast), database (`DatabaseService.withTenant`), errors (`DomainError` hierarchy), http (`ProblemDetailsFilter` RFC 9457, `ZodValidationPipe`)                                                                                                                 |
-| `modules/platform` | Schema only (`tenants`, `tenant_features`) + barrel. **No services yet.**                                                                                                                                                                                                                 |
+| `modules/platform` | Complete: schema (`tenants`, `tenant_features`, `outbox`), `OutboxService` (publishes in caller's tx), `FeatureService` (fail-closed flags), `TenantService.provision`. Migration `0003` = outbox.                                                                                        |
+| Provisioning       | `identity.ProvisioningService` (tenant + owner atomically). `pnpm db:seed` CLI. Runs on the migration connection (control-plane; `dp_app` has only SELECT on `tenants`).                                                                                                                  |
 | `modules/identity` | Complete: permissions catalogue, `PasswordService` (Argon2id + custom `needsRehash` PHC parser), `TokenService` (jose), `AuthService` (login, lockout, refresh rotation + reuse detection), `AccessService`, `AuthGuard`, `PermissionGuard`, `TenantContextInterceptor`, `AuthController` |
 | Enforcement        | `pnpm lint:rules` — 6 fixtures proving boundary + invariant rules actually fire                                                                                                                                                                                                           |
 | CI/CD              | `.github/workflows/ci.yml` — 5 jobs (static-analysis, test, secret-scan, dependency-audit, sast) + a `ci-passed` aggregate gate. Actions pinned by SHA. Dependabot (npm/actions/docker-compose). PR template with the DoD checklist.                                                      |
@@ -34,11 +37,12 @@ Authorized 2026-07-22. Build within these limits:
 
 ### Next (in order)
 
-1. **Migration `0003`: `outbox` table** + RLS. Not created yet.
-2. **`platform` services:** `FeatureService.isEnabled()` (fail-closed, cached), `OutboxService.publish()` (inside caller's tx), `TenantService.provision()`.
-3. **`identity.ProvisioningService`** — provision tenant + owner user (calls `platform.TenantService`).
-4. **Seed CLI** (`src/scripts/seed.ts`) so a real tenant + owner can be created and logged into by hand.
-5. Then domain: `directory` → `shipment`.
+1. **Outbox relay** — a worker that reads unpublished `outbox` rows in `seq` order and delivers them (Valkey Streams at MVP). `SELECT ... FOR UPDATE SKIP LOCKED`, idempotent, alerts on oldest-unpublished age. Needs Valkey wired into the app first.
+2. **`directory` module** — `merchants`, `recipients` (unique on `(tenant, phone)`, snapshot on shipment), `addresses` (+ geocode confidence). Layer 1.
+3. **`shipment` module** — the core aggregate: immutable `shipment_events`, status projection, state machine, POD. Layer 2. The SAST rule `no-direct-shipment-status-write` starts firing here.
+4. Then `network` (hubs/zones/geofences), `fleet` (drivers/vehicles/shifts), `dispatch`.
+
+**Note:** Valkey is in `docker-compose` and `VALKEY_URL` is configured, but no Valkey client is wired into the app yet. The outbox relay (step 1) is the first thing that needs it.
 
 ### Traps already hit — do not repeat
 
