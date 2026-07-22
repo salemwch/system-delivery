@@ -1,9 +1,11 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 
+import { PlatformModule } from "../platform/index.js";
 import { AccessService } from "./application/access.service.js";
 import { AuthService } from "./application/auth.service.js";
 import { PasswordService } from "./application/password.service.js";
+import { ProvisioningService } from "./application/provisioning.service.js";
 import { TokenService } from "./application/token.service.js";
 import { AuthController } from "./api/auth.controller.js";
 import { AuthGuard } from "./api/auth.guard.js";
@@ -22,16 +24,18 @@ import { TenantContextInterceptor } from "./api/tenant-context.interceptor.js";
  * comes from a token already verified in step 1.
  */
 @Module({
+  imports: [PlatformModule],
   controllers: [AuthController],
   providers: [
     PasswordService,
     TokenService,
     AuthService,
     AccessService,
+    ProvisioningService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
   ],
-  exports: [PasswordService, TokenService, AuthService, AccessService],
+  exports: [PasswordService, TokenService, AuthService, AccessService, ProvisioningService],
 })
 export class IdentityModule {}

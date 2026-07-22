@@ -1,9 +1,11 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   jsonb,
   pgTable,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -95,3 +97,43 @@ export type Tenant = typeof tenants.$inferSelect;
 export type NewTenant = typeof tenants.$inferInsert;
 export type TenantFeature = typeof tenantFeatures.$inferSelect;
 export type NewTenantFeature = typeof tenantFeatures.$inferInsert;
+
+/**
+ * docs/03-event-storming.md §2.3 — the transactional outbox.
+ *
+ * A domain module inserts an event row in the SAME transaction as its business
+ * write; a relay publishes unpublished rows in `seq` order. This is what makes
+ * event publication atomic with the state change (ADR-004).
+ */
+export const outbox = pgTable(
+  "outbox",
+  {
+    seq: bigint("seq", { mode: "bigint" }).primaryKey().generatedAlwaysAsIdentity(),
+    eventId: uuid("event_id")
+      .notNull()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    /** domain.fact, past tense, e.g. "shipment.delivered". */
+    eventType: text("event_type").notNull(),
+    eventVersion: smallint("event_version").notNull().default(1),
+    aggregateType: text("aggregate_type").notNull(),
+    /** Partition key — ordering is guaranteed per aggregate. */
+    aggregateId: uuid("aggregate_id").notNull(),
+    correlationId: uuid("correlation_id"),
+    causationId: uuid("causation_id"),
+    payload: jsonb("payload").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    attempts: smallint("attempts").notNull().default(0),
+    lastError: text("last_error"),
+  },
+  (table) => [
+    uniqueIndex("outbox_event_id_uq").on(table.eventId),
+    index("outbox_tenant_idx").on(table.tenantId),
+  ],
+);
+
+export type OutboxRow = typeof outbox.$inferSelect;
+export type NewOutboxRow = typeof outbox.$inferInsert;

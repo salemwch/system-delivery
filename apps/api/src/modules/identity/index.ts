@@ -27,3 +27,5 @@ export {
   REQUIRED_PERMISSIONS_KEY,
 } from "./api/request-context.js";
 export type { AuthenticatedRequest } from "./api/request-context.js";
+export { ProvisioningService } from "./application/provisioning.service.js";
+export type { ProvisionInput, ProvisionResult } from "./application/provisioning.service.js";

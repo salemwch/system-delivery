@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "db:migrate": "node --env-file=../../.env dist/scripts/migrate.js",
-    "lint": "eslint src test"
+    "lint": "eslint src test",
+    "db:seed": "node --env-file=../../.env dist/scripts/seed.js"
   },
   "keywords": [],
   "author": "",
