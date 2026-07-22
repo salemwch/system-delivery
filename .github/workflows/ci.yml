@@ -1,0 +1,185 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Only one run per branch. A new push supersedes an in-flight run rather than
+# queueing behind it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege by default. Jobs that need more request it explicitly.
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24"
+  # Fail the build on any dependency advisory at this level or above.
+  AUDIT_LEVEL: high
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Fast feedback. Runs first so a formatting slip does not wait on a database.
+  # ───────────────────────────────────────────────────────────────────────────
+  static-analysis:
+    name: Lint, types, formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      # THE gate that protects the architecture. Proves the boundary and domain
+      # invariant rules actually reject bad code, rather than passing because
+      # they silently match nothing. See tools/verify-lint-rules.mjs.
+      - name: Verify architecture rules are enforcing
+        run: pnpm lint:rules
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Spellcheck documentation
+        run: pnpm docs:spell
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Integration tests against a REAL PostgreSQL.
+  #
+  # Row-Level Security is the platform's primary defence against cross-tenant
+  # data exposure, and it cannot be verified against a mock or an SQLite
+  # substitute. The harness starts a disposable container via Testcontainers,
+  # bind-mounting the same init scripts used locally so the dp_app / dp_migrator
+  # role separation is identical.
+  # ───────────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests (real PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Pulled explicitly so a slow pull is attributed to this step rather than
+      # counting against the test timeout.
+      - name: Pre-pull database image
+        run: |
+          docker pull timescale/timescaledb-ha:pg18@sha256:9702ce302f55817ee9cff9d5b4f45dfe31415b7e58bdfde6b512e8dd1ee927a0
+
+      - name: Build
+        run: pnpm build
+
+      # No TEST_DATABASE_URL is set, so the harness provisions its own
+      # container. This is the blocking cross-tenant isolation gate.
+      - name: Run test suites
+        run: pnpm test
+        env:
+          NODE_ENV: test
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # DevSecOps gates. All open-source tooling, so these work on a private
+  # repository without GitHub Advanced Security.
+  # ───────────────────────────────────────────────────────────────────────────
+  secret-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: a secret committed earlier and later removed is still
+          # exposed in the objects. Scanning only the tip would miss it.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+          GITLEAKS_ENABLE_SUMMARY: true
+
+  dependency-audit:
+    name: Dependency vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit
+        run: pnpm audit --audit-level ${{ env.AUDIT_LEVEL }}
+
+  sast:
+    name: Static application security testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: semgrep/semgrep:1.170.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Runs the community rulesets PLUS .semgrep.yml, which encodes this
+      # platform's own invariants: no string-concatenated SQL, no session-scoped
+      # SET for tenant context, no float arithmetic on money, no PII in logs.
+      - name: Semgrep
+        run: semgrep --config=p/typescript --config=p/security-audit --config=.semgrep.yml --error --skip-unknown-extensions .
+
+  # Single required status check, so branch protection needs one entry rather
+  # than being updated every time a job is added or renamed.
+  ci-passed:
+    name: CI passed
+    runs-on: ubuntu-latest
+    needs: [static-analysis, test, secret-scan, dependency-audit, sast]
+    if: always()
+    steps:
+      - name: Fail if any required job did not succeed
+        run: |
+          if echo '${{ join(needs.*.result, ",") }}' | grep -qE 'failure|cancelled'; then
+            echo "One or more required jobs failed."
+            exit 1
+          fi
+          echo "All required jobs succeeded."

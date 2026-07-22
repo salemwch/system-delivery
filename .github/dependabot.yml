@@ -1,0 +1,61 @@
+version: 2
+
+# Dependency updates arrive as reviewable pull requests that must pass CI.
+# Nothing is ever auto-merged: this project pins versions deliberately
+# (docs/technology-decisions.md §7) and an upgrade is a decision, not an event.
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Tunis
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    labels: [dependencies]
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      # One PR per ecosystem cluster rather than a dozen individual bumps.
+      nestjs:
+        patterns: ["@nestjs/*"]
+      typescript-tooling:
+        patterns: ["typescript", "typescript-eslint", "@typescript-eslint/*", "eslint*", "prettier"]
+      testing:
+        patterns: ["vitest", "@vitest/*", "testcontainers", "@testcontainers/*"]
+      drizzle:
+        patterns: ["drizzle-orm", "drizzle-kit", "postgres"]
+    ignore:
+      # TypeScript 7 is the native compiler port. NestJS depends on decorator
+      # metadata and does not officially support it yet — the move is a
+      # deliberate migration, not a Dependabot bump.
+      # See CLAUDE.md "Current state".
+      - dependency-name: typescript
+        versions: [">=7.0.0"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Tunis
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: "chore(ci)"
+
+  # Keeps the pinned digests in infra/docker/docker-compose.yml current.
+  # Images are pinned by digest on purpose; Dependabot proposes the new digest
+  # rather than us silently drifting on a mutable tag.
+  - package-ecosystem: docker-compose
+    directory: "/infra/docker"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Tunis
+    labels: [dependencies, infra]
+    commit-message:
+      prefix: "chore(infra)"

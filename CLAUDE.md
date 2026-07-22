@@ -29,6 +29,8 @@ Authorized 2026-07-22. Build within these limits:
 | `modules/platform` | Schema only (`tenants`, `tenant_features`) + barrel. **No services yet.**                                                                                                                                                                                                                 |
 | `modules/identity` | Complete: permissions catalogue, `PasswordService` (Argon2id + custom `needsRehash` PHC parser), `TokenService` (jose), `AuthService` (login, lockout, refresh rotation + reuse detection), `AccessService`, `AuthGuard`, `PermissionGuard`, `TenantContextInterceptor`, `AuthController` |
 | Enforcement        | `pnpm lint:rules` — 6 fixtures proving boundary + invariant rules actually fire                                                                                                                                                                                                           |
+| CI/CD              | `.github/workflows/ci.yml` — 5 jobs (static-analysis, test, secret-scan, dependency-audit, sast) + a `ci-passed` aggregate gate. Actions pinned by SHA. Dependabot (npm/actions/docker-compose). PR template with the DoD checklist.                                                      |
+| SAST               | `.semgrep.yml` — 10 custom rules encoding this platform's invariants (tenant-context `set_config`, TND ×100, direct `shipments.status` writes, PII in logs, `Math.random` for secrets, banned `customer`). Run locally with `pnpm sast` (Docker; skips cleanly if absent).                |
 
 ### Next (in order)
 

@@ -24,7 +24,8 @@
     "format:check": "prettier --check .",
     "docs:spell": "cspell lint --no-progress \"docs/**/*.md\" \"*.md\"",
     "docs:lint": "markdownlint-cli2 \"docs/**/*.md\" \"*.md\"",
-    "verify": "pnpm format:check && pnpm lint:rules && pnpm lint && pnpm typecheck && pnpm docs:spell"
+    "verify": "pnpm format:check && pnpm lint:rules && pnpm lint && pnpm typecheck && pnpm docs:spell",
+    "sast": "bash tools/semgrep.sh"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
