@@ -1,0 +1,160 @@
+rules:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Tenant isolation — the one failure this platform cannot recover from.
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: tenant-context-must-be-transaction-local
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Tenant context must be set with set_config('app.current_tenant_id', $1, true)
+      — the third argument makes it TRANSACTION-LOCAL. A session-scoped SET
+      persists on a pooled connection and is inherited by the next tenant's
+      query: a silent cross-tenant data leak with no error message. Use
+      DatabaseService.withTenant() rather than setting this by hand.
+    paths:
+      include:
+        - "/apps/*/src/**/*.ts"
+      exclude:
+        - "/apps/*/src/shared/database/database.service.ts"
+    pattern-regex: 'SET\s+(LOCAL\s+)?app\.current_tenant_id'
+
+  - id: no-raw-transaction-bypassing-tenant-scope
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      Opening a transaction directly bypasses tenant scoping. Use
+      DatabaseService.withTenant() so app.current_tenant_id is set and
+      Row-Level Security applies. If this is genuinely tenant-independent work
+      (migrations, the tenant registry, platform admin), use
+      withoutTenantScope() so the intent is explicit in review.
+    paths:
+      include:
+        - "/apps/*/src/modules/**/*.ts"
+    pattern: $DB.db.transaction(...)
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # SQL injection
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: no-interpolated-unsafe-sql
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      String interpolation into raw SQL is an injection sink. Use parameterised
+      queries — the Drizzle sql`` tag and postgres.js template literals bind
+      parameters automatically. `.unsafe()` is for trusted, non-interpolated
+      statements only (for example migration file contents).
+    pattern-either:
+      - pattern: $X.unsafe(`...${...}...`)
+      - pattern: $X.query(`...${...}...`)
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Money. TND has THREE decimal places (millimes), not two.
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: no-hardcoded-currency-scale
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Do not hardcode a currency scale. Minor-unit scale comes from the
+      currencies table via CurrencyService.exponentOf(). TND has 3 decimal
+      places — a hardcoded x100 is a 1000x error on Tunisian money.
+    patterns:
+      - pattern-either:
+          - pattern: $AMOUNT * 100
+          - pattern: $AMOUNT / 100
+          - pattern: $AMOUNT * 1000
+          - pattern: $AMOUNT / 1000
+      - metavariable-regex:
+          metavariable: $AMOUNT
+          regex: "(?i).*(amount|price|cod|total|balance|fee|payable|minor|cash).*"
+
+  - id: no-float-money-arithmetic
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Money must never pass through parseFloat or Number on a decimal string.
+      Amounts are integer minor units; floating-point rounding in COD
+      reconciliation is unrecoverable and legally exposed.
+    patterns:
+      - pattern-either:
+          - pattern: parseFloat($AMOUNT)
+          - pattern: Number.parseFloat($AMOUNT)
+      - metavariable-regex:
+          metavariable: $AMOUNT
+          regex: "(?i).*(amount|price|cod|total|balance|fee|payable|cash).*"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Custody chain — shipment status is a PROJECTION of shipment_events.
+  # This rule is a forward guard; it starts firing when the shipment module
+  # is built.
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: no-direct-shipment-status-write
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      shipments.status is a projection of the immutable shipment_events log and
+      must never be written directly. Append the event through
+      ShipmentService.recordScan(); the projection is updated in the same
+      transaction. Writing status alone destroys the custody chain.
+    # Quoted: these patterns contain ": " which YAML would otherwise read as a
+    # nested mapping.
+    pattern-either:
+      - pattern: "$TX.update(shipments).set({..., status: $S, ...})"
+      - pattern: "$TX.update(shipments).set({ status: $S })"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Secrets and PII
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: no-pii-or-secrets-in-logs
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Personal data and credentials must never reach the logs. Structured
+      logging has a redaction layer for a defined field list — extend it rather
+      than logging the value here.
+    paths:
+      include:
+        - "/apps/*/src/**/*.ts"
+    pattern-regex: '\.(log|info|warn|error|debug|trace)\([^)]*\b(passwordHash|password|mfaSecret|nationalId|recipientPhone|contactPhone|tokenDigest|refreshToken|accessToken)\b'
+
+  - id: no-math-random-for-security-values
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Math.random() is not cryptographically secure and must not generate
+      tokens, identifiers, salts, or OTP codes. Use node:crypto
+      (randomBytes / randomUUID) or PostgreSQL uuidv7().
+    paths:
+      include:
+        - "/apps/*/src/**/*.ts"
+    pattern: Math.random()
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Naming discipline. Tenant / Merchant / Recipient are three distinct
+  # concepts (invariant I18); "customer" is ambiguous between them.
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: banned-customer-identifier
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      "customer" is banned in code and schema. Tenant (the courier company),
+      Merchant (the business shipping), and Recipient (the person receiving)
+      are three different concepts. Permitted only in user-facing UI copy.
+    paths:
+      include:
+        - "/apps/*/src/**/*.ts"
+    pattern-regex: '\b(customerId|customerName|customer_id|customer_name)\b'
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Mass assignment (OWASP API6)
+  # ───────────────────────────────────────────────────────────────────────────
+  - id: no-mass-assignment
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Object.assign onto an entity enables mass assignment — a caller could set
+      fields the API never intended to expose. Use an explicit DTO allow-list
+      with a .strict() Zod schema.
+    paths:
+      include:
+        - "/apps/*/src/**/*.ts"
+    pattern: Object.assign($TARGET, $BODY)

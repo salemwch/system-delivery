@@ -31,13 +31,19 @@ export interface MigrationResult {
 const MIGRATIONS_TABLE = "schema_migrations";
 
 async function ensureMigrationsTable(sql: Sql): Promise<void> {
-  await sql.unsafe(`
-    CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
+  // `sql(identifier)` escapes and quotes the table name properly. The previous
+  // version interpolated it into `sql.unsafe()`, which was safe only because
+  // MIGRATIONS_TABLE happens to be a module constant — the moment anyone made
+  // it configurable it would have become an injection sink. Semgrep rule
+  // `no-interpolated-unsafe-sql` flagged it; the fix is to stop interpolating,
+  // not to suppress the rule.
+  await sql`
+    CREATE TABLE IF NOT EXISTS ${sql(MIGRATIONS_TABLE)} (
       filename    TEXT PRIMARY KEY,
       checksum    TEXT        NOT NULL,
       applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
     )
-  `);
+  `;
 }
 
 function checksumOf(contents: string): string {
