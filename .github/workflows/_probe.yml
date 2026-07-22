@@ -1,0 +1,9 @@
+name: _probe
+on:
+  push:
+    branches: [ci/pipeline-and-devsecops]
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "runner started"
