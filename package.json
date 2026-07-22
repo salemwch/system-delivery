@@ -1,0 +1,44 @@
+{
+  "name": "delivery-platform",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.17.0",
+  "engines": {
+    "node": ">=24.11.0 <25",
+    "pnpm": ">=10.17.0"
+  },
+  "scripts": {
+    "dev:infra": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "dev:infra:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "dev:infra:reset": "docker compose -f infra/docker/docker-compose.yml down -v && pnpm dev:infra",
+    "dev:infra:logs": "docker compose -f infra/docker/docker-compose.yml logs -f",
+    "dev": "turbo run start:dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "db:migrate": "turbo run db:migrate",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "lint:rules": "node tools/verify-lint-rules.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "docs:spell": "cspell lint --no-progress \"docs/**/*.md\" \"*.md\"",
+    "docs:lint": "markdownlint-cli2 \"docs/**/*.md\" \"*.md\"",
+    "verify": "pnpm format:check && pnpm lint:rules && pnpm lint && pnpm typecheck && pnpm docs:spell"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "cspell": "10.0.1",
+    "eslint": "10.7.0",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-boundaries": "7.1.0",
+    "eslint-plugin-import-x": "4.17.1",
+    "globals": "16.5.0",
+    "markdownlint-cli2": "0.23.1",
+    "nothing": "^0.1.0",
+    "prettier": "3.9.5",
+    "turbo": "2.10.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0"
+  }
+}

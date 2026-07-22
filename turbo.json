@@ -1,0 +1,44 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "globalDependencies": ["tsconfig.base.json", ".env.example"],
+  "globalEnv": ["NODE_ENV", "DEPLOYMENT_MODE"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "migrations/**", "tsconfig*.json", "nest-cli.json", "package.json"],
+      "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "test/**", "tsconfig*.json"],
+      "outputs": []
+    },
+    "lint": {
+      "inputs": ["src/**", "test/**", "../../eslint.config.js"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "test/**", "migrations/**", "vitest.config.ts"],
+      "outputs": [],
+      "env": [
+        "DATABASE_URL",
+        "MIGRATION_DATABASE_URL",
+        "TEST_DATABASE_URL",
+        "TEST_MIGRATION_DATABASE_URL"
+      ],
+      "cache": false
+    },
+    "db:migrate": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "persistent": false
+    },
+    "start:dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

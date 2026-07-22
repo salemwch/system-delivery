@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+coverage/
+.next/
+pnpm-lock.yaml
+docs/**/*.md
+infra/docker/osrm-data/
+*.tfstate
+*.tfstate.*

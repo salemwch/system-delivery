@@ -1,0 +1,10 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Pin the toolchain so every machine and CI runner resolves identically.
+# See docs/technology-decisions.md §7 — no floating ranges in production.
+onlyBuiltDependencies:
+  - "@swc/core"
+  - esbuild
+  - unrs-resolver
