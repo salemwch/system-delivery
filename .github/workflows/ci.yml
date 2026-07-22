@@ -50,10 +50,12 @@ jobs:
       # Validates the workflow files themselves. A syntax error here would
       # otherwise fail the whole run at parse time with zero jobs created and no
       # useful annotation — which is exactly how this pipeline first broke.
+      # Fetched as a pinned binary rather than a docker:// action: the latter
+      # caused a startup_failure with no diagnostic on the private runner.
       - name: Lint GitHub Actions workflows
-        uses: docker://rhysd/actionlint:1.7.9
-        with:
-          args: -color
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.9/scripts/download-actionlint.bash) 1.7.9
+          ./actionlint -color
 
       # THE gate that protects the architecture. Proves the boundary and domain
       # invariant rules actually reject bad code, rather than passing because
