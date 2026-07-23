@@ -315,6 +315,31 @@ describe("notification", () => {
       expect(provider.sent).toHaveLength(0);
       expect(await notificationLogRows(tenantId)).toHaveLength(0);
     });
+
+    // shipment.delivered / delivery.failed now carry recipient contact (the
+    // shipment emit sites were enriched), so both fire end-to-end — the handler is
+    // no longer inert on its other two subscribed events.
+    it.each(["shipment.delivered", "delivery.failed"])(
+      "notifies from a %s event",
+      async (eventType) => {
+        const tenantId = await seedTenant(`notif-${eventType.replace(".", "-")}`);
+        await enableSms(tenantId);
+        const provider = new RecordingProvider();
+        const handler = new NotificationEventHandler(
+          new NotificationService(db, features, provider),
+        );
+
+        expect(handler.handles(eventType)).toBe(true);
+        const event = consumedFrom(outForDeliveryEvent(tenantId, { eventType }));
+        await asTenant(tenantId, () => handler.handle(event));
+
+        expect(provider.sent).toHaveLength(1);
+        const rows = await notificationLogRows(tenantId);
+        expect(rows[0]?.status).toBe("SENT");
+        expect(rows[0]?.template_key).toBe(eventType);
+        expect(rows[0]?.body).toContain("SD-8K3M-92XQ");
+      },
+    );
   });
 
   // ── EventStreamConsumer (the closed loop) ──────────────────────────────────

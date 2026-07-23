@@ -14,7 +14,7 @@ Authorized 2026-07-22. Build within these limits:
 
 ## Current state (updated 2026-07-23)
 
-**Everything green:** `pnpm verify` → exit 0 · `pnpm test` → 190/190 · `pnpm build` → ok · `pnpm sast` → 0 findings.
+**Everything green:** `pnpm verify` → exit 0 · `pnpm test` → 192/192 · `pnpm build` → ok · `pnpm sast` → 0 findings.
 
 **You can log in for real:** `pnpm db:seed` provisions a Tunisian courier tenant + OWNER, prints a password and a login curl. Verified: seed → `POST /v1/auth/login` → token → `/v1/auth/me`.
 
@@ -48,7 +48,7 @@ Authorized 2026-07-22. Build within these limits:
 2. **Config note:** `FIELD_ENCRYPTION_KEY` (base64 32 bytes) is now REQUIRED — present in local `.env`, placeholder in `.env.example`. Production/bootstrap must supply it from the secret store. No test exercises real config validation (http-pipeline stubs config; the crypto barrel exports only the class+token, never `CryptoModule`), so CI is unaffected.
 3. **Shipment follow-ups deferred by design:** (a) `shipment_events` monthly RANGE partitioning — deferred to keep `UNIQUE(shipment_id,sequence)` + `UNIQUE(tenant,idempotency_key)` real (native partitioning can't include a non-partition-key column in a unique constraint); the table is empty, so the retrofit is a routine online migration. (b) Recipient counters (`total_shipments` etc.) are NOT written by the shipment module (directory owns that table) — they become a directory-side consumer of shipment events. (c) `pod.captured`/`cod.collected` are published to the outbox but no consumer reads them yet.
 
-**~~Consumer side is still open~~ — CLOSED (migration `0010`, `notification` module).** The relay publishes to `outbox.events`; the generic **`EventStreamConsumer`** now reads it via `XREADGROUP` consumer groups, idempotent on `eventId` (`processed_events`), with a per-tenant `dead_letter_events` DLQ (event-storming §62). The first consumer is `notification`. **Still open:** (a) only `notification` consumes so far — projections/finance/tracking consumers come with those modules; (b) `pod.captured`/`cod.collected` still have no consumer; (c) `shipment.delivered`/`delivery.failed` payloads are NOT yet enriched with recipient contact, so the notification handler currently only fully fires on `out_for_delivery` (enriched from dispatch) — enrich those two shipment emit sites to light up P-delivered/P-failed SMS; (d) a DLQ **replay/resolve** admin path is not built (rows land PENDING). The consumer runs only in `core-worker`, not the API.
+**~~Consumer side is still open~~ — CLOSED (migration `0010`, `notification` module).** The relay publishes to `outbox.events`; the generic **`EventStreamConsumer`** now reads it via `XREADGROUP` consumer groups, idempotent on `eventId` (`processed_events`), with a per-tenant `dead_letter_events` DLQ (event-storming §62). The first consumer is `notification`. All three subscribed shipment events now fire end-to-end: `out_for_delivery` (enriched from dispatch), and `delivered`/`delivery.failed` (shipment emit sites enriched with `recipientPhone`/`recipientName`/`trackingNumber`). **Still open:** (a) only `notification` consumes so far — projections/finance/tracking consumers come with those modules; (b) `pod.captured`/`cod.collected` still have no consumer; (c) a DLQ **replay/resolve** admin path is not built (rows land PENDING). The consumer runs only in `core-worker`, not the API.
 
 ### Traps already hit — do not repeat
 

@@ -422,6 +422,10 @@ export class ShipmentService {
         ...(isCod ? { codStatus: "COLLECTED" satisfies CodStatus } : {}),
         outboxPayload: {
           shipmentId: shipment.id,
+          // Self-contained for the notification consumer (event-storming §2.2):
+          // it SMSes the customer without importing shipment.
+          trackingNumber: shipment.trackingNumber,
+          recipientPhone: shipment.recipientPhone,
           legId: legId ?? null,
           attemptId,
           podId,
@@ -523,6 +527,10 @@ export class ShipmentService {
         ...(dto.location === undefined ? {} : { location: dto.location }),
         outboxPayload: {
           shipmentId: shipment.id,
+          // Self-contained for the notification consumer (event-storming §2.2).
+          trackingNumber: shipment.trackingNumber,
+          recipientName: shipment.recipientName,
+          recipientPhone: shipment.recipientPhone,
           legId: legId ?? null,
           attemptId,
           attemptNumber,
