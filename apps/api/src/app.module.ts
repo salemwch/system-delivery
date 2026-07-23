@@ -3,6 +3,7 @@ import { LoggerModule } from "nestjs-pino";
 
 import { DirectoryModule } from "./modules/directory/index.js";
 import { IdentityModule } from "./modules/identity/index.js";
+import { NetworkModule } from "./modules/network/index.js";
 import { PlatformModule } from "./modules/platform/index.js";
 import { ShipmentModule } from "./modules/shipment/index.js";
 import { AppConfigModule } from "./shared/config/config.module.js";
@@ -23,6 +24,7 @@ import { DatabaseModule } from "./shared/database/database.module.js";
     PlatformModule,
     IdentityModule,
     DirectoryModule,
+    NetworkModule,
     ShipmentModule,
     LoggerModule.forRootAsync({
       imports: [AppConfigModule],
