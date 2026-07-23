@@ -80,11 +80,37 @@ export const configSchema = z
     // docs/07-security-architecture.md §5.
     DATABASE_URL: postgresUrlSchema,
     MIGRATION_DATABASE_URL: postgresUrlSchema,
+    // The outbox relay connects as `dp_relay`: a login role with SELECT+UPDATE on
+    // `outbox` ONLY and a permissive RLS policy scoped to that one table, so it
+    // can read every tenant's events (the relay is cross-tenant by nature) while
+    // holding none of the migrator's schema power. See migration 0004 and
+    // docs/07-security-architecture.md §5.
+    RELAY_DATABASE_URL: postgresUrlSchema,
     DATABASE_POOL_MAX: z.coerce.number().int().positive().max(100).default(10),
     DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
 
     // ── Valkey ───────────────────────────────────────────────────────────────
     VALKEY_URL: z.url(),
+    // Bounds how long a single Valkey command may run. The relay holds a Postgres
+    // transaction (and its row locks) across the publish, so an unbounded Valkey
+    // call would pin those locks indefinitely — this is the backstop.
+    VALKEY_COMMAND_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+
+    // ── Outbox relay (docs/03-event-storming.md §2.3) ─────────────────────────
+    // The Valkey Stream every relayed domain event is appended to. A single
+    // stream at MVP: consumers route by the `tenantId` field in the envelope,
+    // and per-tenant topics arrive with Redpanda in V2 (ADR-004).
+    OUTBOX_STREAM_KEY: z.string().min(1).default("outbox.events"),
+    // Approximate MAXLEN trim: the durable log is the Postgres `outbox` table and
+    // (V2) Redpanda, so the stream is a delivery buffer, not the system of record.
+    OUTBOX_STREAM_MAXLEN: z.coerce.number().int().positive().default(100_000),
+    OUTBOX_RELAY_BATCH_SIZE: z.coerce.number().int().positive().max(1_000).default(100),
+    OUTBOX_RELAY_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1_000),
+    OUTBOX_RELAY_BASE_BACKOFF_MS: z.coerce.number().int().positive().default(1_000),
+    OUTBOX_RELAY_MAX_BACKOFF_MS: z.coerce.number().int().positive().default(60_000),
+    // Oldest unpublished row older than this is logged at WARN — a stalled relay
+    // is silent and severe (docs/06-database-design.md §4.8).
+    OUTBOX_RELAY_ALERT_AGE_SECONDS: z.coerce.number().int().positive().default(60),
 
     // ── Object storage ───────────────────────────────────────────────────────
     S3_ENDPOINT: z.url(),
@@ -139,13 +165,29 @@ export const configSchema = z
       path: ["NOTIFICATION_SMS_PROVIDER"],
     },
   )
-  // The two database roles must be distinct. Pointing both at the same
+  // The three database roles must be distinct. Pointing any two at the same
   // superuser silently disables Row-Level Security, which is the single
-  // highest-severity failure this platform can have.
+  // highest-severity failure this platform can have. The app role must not have
+  // migration privileges; the relay role must have neither, holding only
+  // cross-tenant access to the one `outbox` table.
   .refine((config) => config.DATABASE_URL !== config.MIGRATION_DATABASE_URL, {
     message:
       "DATABASE_URL and MIGRATION_DATABASE_URL must differ — the app role must not have migration privileges (RLS depends on it)",
     path: ["DATABASE_URL"],
+  })
+  .refine(
+    (config) =>
+      config.RELAY_DATABASE_URL !== config.DATABASE_URL &&
+      config.RELAY_DATABASE_URL !== config.MIGRATION_DATABASE_URL,
+    {
+      message:
+        "RELAY_DATABASE_URL must differ from both DATABASE_URL and MIGRATION_DATABASE_URL — the relay role is a distinct least-privilege identity (dp_relay)",
+      path: ["RELAY_DATABASE_URL"],
+    },
+  )
+  .refine((config) => config.OUTBOX_RELAY_BASE_BACKOFF_MS <= config.OUTBOX_RELAY_MAX_BACKOFF_MS, {
+    message: "OUTBOX_RELAY_BASE_BACKOFF_MS must not exceed OUTBOX_RELAY_MAX_BACKOFF_MS",
+    path: ["OUTBOX_RELAY_BASE_BACKOFF_MS"],
   })
   .refine((config) => config.NODE_ENV !== "production" || config.CORS_ALLOWED_ORIGINS.length > 0, {
     message: "CORS_ALLOWED_ORIGINS must be set explicitly in production",

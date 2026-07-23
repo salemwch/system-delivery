@@ -126,6 +126,8 @@ export const outbox = pgTable(
     payload: jsonb("payload").notNull(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
     publishedAt: timestamp("published_at", { withTimezone: true }),
+    /** The relay claims a row only when this is `<= now()`. Advanced on failure. */
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
     attempts: smallint("attempts").notNull().default(0),
     lastError: text("last_error"),
   },

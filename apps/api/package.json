@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "db:migrate": "node --env-file=../../.env dist/scripts/migrate.js",
     "lint": "eslint src test",
-    "db:seed": "node --env-file=../../.env dist/scripts/seed.js"
+    "db:seed": "node --env-file=../../.env dist/scripts/seed.js",
+    "start:worker": "node dist/worker.js",
+    "worker:dev": "nest start --entryFile worker --watch"
   },
   "keywords": [],
   "author": "",
@@ -29,6 +31,7 @@
     "@node-rs/argon2": "2.0.2",
     "drizzle-orm": "0.44.7",
     "fastify": "5.4.0",
+    "ioredis": "5.11.1",
     "jose": "6.2.4",
     "nestjs-pino": "4.6.1",
     "pino": "9.14.0",
