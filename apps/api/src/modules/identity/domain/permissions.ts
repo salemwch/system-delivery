@@ -28,11 +28,21 @@ export const PERMISSIONS = [
   "pickup:assign",
   "pickup:collect",
 
+  // Merchants (the businesses that ship through the tenant — never "customer")
+  "merchant:read",
+  "merchant:create",
+  "merchant:update",
+  "merchant:block",
+
   // Recipients (the address book — never called "customer", invariant I18)
   "recipient:read",
   "recipient:create",
   "recipient:update",
   "recipient:block",
+
+  // Addresses (the address-quality pipeline; directory owns it)
+  "address:read",
+  "address:correct",
 
   // Routes and dispatch
   "route:read",
@@ -131,9 +141,13 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "pickup:create",
     "pickup:accept",
     "pickup:assign",
+    "merchant:read",
+    "merchant:create",
+    "merchant:update",
     "recipient:read",
     "recipient:create",
     "recipient:update",
+    "address:read",
     "route:read",
     "route:create",
     "route:publish",
@@ -153,7 +167,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "shipment:read",
     "pickup:read",
     "pickup:collect",
+    "merchant:read",
     "recipient:read",
+    "address:read",
     "route:read",
     "driver:read",
     "driver:location:read_live",
@@ -169,7 +185,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
 
   FINANCE: [
     "shipment:read",
+    "merchant:read",
     "recipient:read",
+    "address:read",
     "route:read",
     "driver:read",
     "hub:read",
@@ -194,6 +212,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "pickup:read",
     "pickup:collect",
     "recipient:read",
+    "address:read",
+    "address:correct",
     "route:read",
     "shift:start",
     "shift:end",
