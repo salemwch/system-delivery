@@ -93,8 +93,16 @@ rules:
     message: >-
       shipments.status is a projection of the immutable shipment_events log and
       must never be written directly. Append the event through
-      ShipmentService.recordScan(); the projection is updated in the same
+      ShipmentEventService.applyTo(); the projection is updated in the same
       transaction. Writing status alone destroys the custody chain.
+    # ShipmentEventService is THE sanctioned projection writer — the one place a
+    # status write is correct, because it always accompanies an appended event in
+    # the same transaction. It is excluded exactly as database.service.ts is
+    # excluded from the tenant-context rule: the rule exists to catch a status
+    # write ANYWHERE ELSE.
+    paths:
+      exclude:
+        - "/apps/*/src/modules/shipment/application/shipment-event.service.ts"
     # Quoted: these patterns contain ": " which YAML would otherwise read as a
     # nested mapping.
     pattern-either:
