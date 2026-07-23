@@ -1,7 +1,8 @@
 import { Global, Module } from "@nestjs/common";
 import postgres from "postgres";
 
-import { AppConfigModule, AppConfigService } from "../config/index.js";
+import { AppConfigModule } from "../config/config.module.js";
+import { AppConfigService } from "../config/index.js";
 import { DatabaseService } from "./database.service.js";
 import { POSTGRES_CLIENT } from "./database.tokens.js";
 
