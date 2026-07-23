@@ -1,14 +1,14 @@
 import { Inject, Module } from "@nestjs/common";
 import type { OnApplicationShutdown } from "@nestjs/common";
 import { drizzle } from "drizzle-orm/postgres-js";
+import { Redis } from "ioredis";
 import { LoggerModule, PinoLogger } from "nestjs-pino";
 import postgres from "postgres";
 import type { Sql } from "postgres";
 
+import { FinanceModule, LedgerEventHandler } from "./modules/finance/index.js";
+import { NotificationEventHandler, NotificationModule } from "./modules/notification/index.js";
 import {
-  CONSUMER_DATABASE,
-  CONSUMER_LOGGER,
-  EVENT_HANDLER,
   EVENT_PUBLISHER,
   EventStreamConsumer,
   OutboxRelayService,
@@ -18,7 +18,6 @@ import {
   ValkeyStreamEventPublisher,
 } from "./modules/platform/index.js";
 import type { ConsumerLogger, RelayLogger } from "./modules/platform/index.js";
-import { NotificationEventHandler, NotificationModule } from "./modules/notification/index.js";
 import { AppConfigModule } from "./shared/config/config.module.js";
 import { AppConfigService } from "./shared/config/index.js";
 import { DatabaseModule } from "./shared/database/database.module.js";
@@ -35,23 +34,70 @@ import { ValkeyModule } from "./shared/valkey/valkey.module.js";
 const RELAY_POSTGRES_CLIENT = Symbol("RELAY_POSTGRES_CLIENT");
 
 /**
+ * Each stream consumer gets its OWN Valkey connection.
+ *
+ * An `XREADGROUP ... BLOCK` holds its connection for the whole wait, so sharing
+ * one connection across the relay and every consumer would serialise them all
+ * behind a single 5-second block. These connections also deliberately carry NO
+ * tight `commandTimeout` — unlike the shared `VALKEY_CLIENT`, whose timeout exists
+ * to stop the relay pinning Postgres row locks — because a blocking read is
+ * SUPPOSED to wait up to `EVENT_CONSUMER_BLOCK_MS`; a 5s command timeout on a 5s
+ * block would abort every idle poll. `maxRetriesPerRequest: null` is ioredis's
+ * blocking-safe setting.
+ */
+const NOTIFICATION_STREAM_CLIENT = Symbol("NOTIFICATION_STREAM_CLIENT");
+const LEDGER_STREAM_CLIENT = Symbol("LEDGER_STREAM_CLIENT");
+const NOTIFICATION_CONSUMER = Symbol("NOTIFICATION_CONSUMER");
+const LEDGER_CONSUMER = Symbol("LEDGER_CONSUMER");
+
+/** A Valkey connection tuned for blocking stream reads (see the symbols above). */
+function makeStreamClient(config: AppConfigService, logger: PinoLogger, component: string): Redis {
+  const client = new Redis(config.get("VALKEY_URL"), { maxRetriesPerRequest: null });
+  // An ioredis client is an EventEmitter; an unhandled 'error' would crash the
+  // process. Surface transport/reconnect errors as structured logs.
+  client.on("error", (error: Error) => {
+    logger.error({ err: error, component }, "Valkey stream client error");
+  });
+  return client;
+}
+
+/** Adapts the app's Pino logger to a consumer/relay's narrow logger port. */
+function taggedLogger(logger: PinoLogger, component: string): ConsumerLogger {
+  return {
+    info: (obj, msg) => {
+      logger.info({ ...obj, component }, msg);
+    },
+    warn: (obj, msg) => {
+      logger.warn({ ...obj, component }, msg);
+    },
+    error: (obj, msg) => {
+      logger.error({ ...obj, component }, msg);
+    },
+  };
+}
+
+/**
  * The core-worker composition root (docs/01-mvp-scope.md §2 — same image,
  * queue-consumer entrypoint).
  *
- * Deliberately NOT the API's `DatabaseModule`: the worker connects only as
- * `dp_relay`, never as the request-path `dp_app` role. As more background work
- * lands (notifications, retention, reconciliation) it is registered here.
+ * Runs the background plane: the outbox relay (dp_relay) drains Postgres → Valkey,
+ * and one {@link EventStreamConsumer} per consumer group drains Valkey → handlers.
+ * Consumers write tenant-scoped tables as dp_app (via the global DatabaseModule),
+ * setting tenant context per event, so RLS holds on the async path too.
+ *
+ * At MVP two consumer groups run here: `notification` (customer SMS) and `ledger`
+ * (the double-entry COD postings). Each is an independent group with its own
+ * Valkey position and its own connection, so a slow or failing consumer never
+ * blocks the other — or the relay.
  */
 @Module({
   imports: [
     AppConfigModule,
-    // The consumer + notification write tenant-scoped tables as dp_app under RLS;
-    // DatabaseModule (global) supplies that connection. The relay keeps its own
-    // separate dp_relay pool below — least privilege on both paths.
     DatabaseModule,
     ValkeyModule,
     PlatformModule,
     NotificationModule,
+    FinanceModule,
     LoggerModule.forRootAsync({
       imports: [AppConfigModule],
       inject: [AppConfigService],
@@ -96,51 +142,90 @@ const RELAY_POSTGRES_CLIENT = Symbol("RELAY_POSTGRES_CLIENT");
       useClass: ValkeyStreamEventPublisher,
     },
     {
-      // Adapts the app's Pino logger to the relay's narrow logger port, tagging
-      // every line with the component so relay logs are trivially filterable.
       provide: RELAY_LOGGER,
       inject: [PinoLogger],
-      useFactory: (logger: PinoLogger): RelayLogger => ({
-        info: (obj, msg) => {
-          logger.info({ ...obj, component: "outbox-relay" }, msg);
-        },
-        warn: (obj, msg) => {
-          logger.warn({ ...obj, component: "outbox-relay" }, msg);
-        },
-        error: (obj, msg) => {
-          logger.error({ ...obj, component: "outbox-relay" }, msg);
-        },
-      }),
+      useFactory: (logger: PinoLogger): RelayLogger => taggedLogger(logger, "outbox-relay"),
     },
     OutboxRelayService,
-    // The event-stream consumer, driving the notification handler: it reads the
-    // outbox stream, dedupes on eventId, retries, and DLQs poison messages — the
-    // first thing that CONSUMES what the relay publishes. It writes as dp_app
-    // (CONSUMER_DATABASE), setting tenant context per event, so RLS holds here too.
-    { provide: CONSUMER_DATABASE, useExisting: DatabaseService },
-    { provide: EVENT_HANDLER, useExisting: NotificationEventHandler },
+
+    // ── Event-stream consumers ────────────────────────────────────────────────
+    // One dedicated blocking connection + one EventStreamConsumer per group.
     {
-      provide: CONSUMER_LOGGER,
-      inject: [PinoLogger],
-      useFactory: (logger: PinoLogger): ConsumerLogger => ({
-        info: (obj, msg) => {
-          logger.info({ ...obj, component: "event-consumer" }, msg);
-        },
-        warn: (obj, msg) => {
-          logger.warn({ ...obj, component: "event-consumer" }, msg);
-        },
-        error: (obj, msg) => {
-          logger.error({ ...obj, component: "event-consumer" }, msg);
-        },
-      }),
+      provide: NOTIFICATION_STREAM_CLIENT,
+      inject: [AppConfigService, PinoLogger],
+      useFactory: (config: AppConfigService, logger: PinoLogger): Redis =>
+        makeStreamClient(config, logger, "notification-consumer"),
     },
-    EventStreamConsumer,
+    {
+      provide: LEDGER_STREAM_CLIENT,
+      inject: [AppConfigService, PinoLogger],
+      useFactory: (config: AppConfigService, logger: PinoLogger): Redis =>
+        makeStreamClient(config, logger, "ledger-consumer"),
+    },
+    {
+      // The notification consumer: shipment events → customer SMS.
+      provide: NOTIFICATION_CONSUMER,
+      inject: [
+        NOTIFICATION_STREAM_CLIENT,
+        DatabaseService,
+        NotificationEventHandler,
+        AppConfigService,
+        PinoLogger,
+      ],
+      useFactory: (
+        valkey: Redis,
+        database: DatabaseService,
+        handler: NotificationEventHandler,
+        config: AppConfigService,
+        logger: PinoLogger,
+      ): EventStreamConsumer =>
+        new EventStreamConsumer(
+          valkey,
+          database,
+          handler,
+          taggedLogger(logger, "event-consumer:notification"),
+          config,
+        ),
+    },
+    {
+      // The ledger consumer: cod.collected → double-entry postings (finance).
+      provide: LEDGER_CONSUMER,
+      inject: [
+        LEDGER_STREAM_CLIENT,
+        DatabaseService,
+        LedgerEventHandler,
+        AppConfigService,
+        PinoLogger,
+      ],
+      useFactory: (
+        valkey: Redis,
+        database: DatabaseService,
+        handler: LedgerEventHandler,
+        config: AppConfigService,
+        logger: PinoLogger,
+      ): EventStreamConsumer =>
+        new EventStreamConsumer(
+          valkey,
+          database,
+          handler,
+          taggedLogger(logger, "event-consumer:ledger"),
+          config,
+        ),
+    },
   ],
 })
 export class WorkerModule implements OnApplicationShutdown {
-  constructor(@Inject(RELAY_POSTGRES_CLIENT) private readonly relayClient: Sql) {}
+  constructor(
+    @Inject(RELAY_POSTGRES_CLIENT) private readonly relayClient: Sql,
+    @Inject(NOTIFICATION_STREAM_CLIENT) private readonly notificationStream: Redis,
+    @Inject(LEDGER_STREAM_CLIENT) private readonly ledgerStream: Redis,
+  ) {}
 
   async onApplicationShutdown(): Promise<void> {
+    // Consumers have already stopped their loops (onModuleDestroy) by now, so the
+    // connections are idle. Close the relay pool and both consumer connections.
     await this.relayClient.end({ timeout: 5 });
+    await this.notificationStream.quit();
+    await this.ledgerStream.quit();
   }
 }

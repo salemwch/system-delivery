@@ -456,6 +456,11 @@ export class ShipmentService {
           payload: {
             shipmentId: shipment.id,
             driverId: dto.driverId,
+            // The party the collected cash is owed to; the Ledger consumer credits
+            // MERCHANT_PAYABLE from this. Null when the shipment has no merchant —
+            // finance then accrues it to a tenant-level payable. Self-contained
+            // (event-storming §2.2): the ledger never reads back into shipment.
+            merchantId: shipment.merchantId,
             amountMinor: shipment.codAmountMinor.toString(),
             currency: shipment.currency,
             occurredAt: occurredAt.toISOString(),
