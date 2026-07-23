@@ -149,6 +149,8 @@ describe("notification", () => {
         recipientName: "Sonia Gharbi",
         recipientPhone: "+21620987654",
       },
+      traceparent: null,
+      tracestate: null,
       ...overrides,
     };
   }
@@ -168,6 +170,8 @@ describe("notification", () => {
       causationId: event.causationId,
       payload: (event.payload ?? {}) as Record<string, unknown>,
       deliveryCount: 1,
+      traceparent: event.traceparent,
+      tracestate: event.tracestate,
     };
   }
 

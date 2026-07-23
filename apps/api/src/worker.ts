@@ -1,3 +1,5 @@
+// MUST be first: starts OpenTelemetry before any instrumented module loads.
+import "./worker-instrumentation.js";
 import "reflect-metadata";
 
 import { NestFactory } from "@nestjs/core";

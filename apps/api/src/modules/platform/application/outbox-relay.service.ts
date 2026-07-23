@@ -179,6 +179,8 @@ export class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestr
         causationId: row.causationId,
         occurredAt: row.occurredAt,
         payload: row.payload,
+        traceparent: row.traceparent,
+        tracestate: row.tracestate,
       }));
 
       try {

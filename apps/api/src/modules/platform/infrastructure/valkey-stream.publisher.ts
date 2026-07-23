@@ -98,6 +98,14 @@ export class ValkeyStreamEventPublisher implements EventPublisher {
     if (event.causationId !== null) {
       fields.push("causationId", event.causationId);
     }
+    // W3C trace-context, carried verbatim so the consumer joins the producer's
+    // trace. Omitted (not "null") when tracing was off at produce time.
+    if (event.traceparent !== null) {
+      fields.push("traceparent", event.traceparent);
+    }
+    if (event.tracestate !== null) {
+      fields.push("tracestate", event.tracestate);
+    }
     return fields;
   }
 }

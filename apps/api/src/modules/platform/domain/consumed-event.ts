@@ -22,6 +22,9 @@ export interface ConsumedEvent {
   readonly payload: Record<string, unknown>;
   /** Redis' PEL delivery counter — 1 on first delivery, higher on redelivery. */
   readonly deliveryCount: number;
+  /** W3C trace-context from the producer (docs §2.2); null when tracing was off. */
+  readonly traceparent: string | null;
+  readonly tracestate: string | null;
 }
 
 /**

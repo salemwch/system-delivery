@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 import { TenantContext } from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
+import { captureTraceContext } from "../../../shared/observability/index.js";
 import { assertValidEventType } from "../domain/domain-event.js";
 import type { DomainEventInput } from "../domain/domain-event.js";
 import { outbox } from "../domain/schema.js";
@@ -38,6 +39,11 @@ export class OutboxService {
     // the envelope requires tenant_id without exception (event-storming §2.2).
     const tenantId = TenantContext.requireTenantId();
 
+    // Capture the active trace-context so the eventual consumer — running in
+    // another process, off a Valkey stream — can join this same trace. Empty
+    // (both null) when tracing is disabled or no span is active; never fabricated.
+    const trace = captureTraceContext();
+
     const inserted = await tx
       .insert(outbox)
       .values({
@@ -50,6 +56,8 @@ export class OutboxService {
         ...(event.occurredAt === undefined ? {} : { occurredAt: event.occurredAt }),
         ...(event.correlationId === undefined ? {} : { correlationId: event.correlationId }),
         ...(event.causationId === undefined ? {} : { causationId: event.causationId }),
+        ...(trace.traceparent === undefined ? {} : { traceparent: trace.traceparent }),
+        ...(trace.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
       })
       .returning({ eventId: outbox.eventId });
 

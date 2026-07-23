@@ -67,6 +67,7 @@ interface SeedEvent {
   readonly aggregateId: string;
   readonly payload: Record<string, unknown>;
   readonly correlationId?: string;
+  readonly traceparent?: string;
 }
 
 describe("outbox relay", () => {
@@ -94,10 +95,11 @@ describe("outbox relay", () => {
       const seqs: string[] = [];
       for (const event of events) {
         const rows = await tx<{ seq: string }[]>`
-          insert into outbox (tenant_id, event_type, aggregate_type, aggregate_id, payload, correlation_id)
+          insert into outbox (tenant_id, event_type, aggregate_type, aggregate_id, payload, correlation_id, traceparent)
           values (
             ${tenantId}, ${event.eventType}, ${event.aggregateType}, ${event.aggregateId},
-            ${JSON.stringify(event.payload)}::jsonb, ${event.correlationId ?? null}
+            ${JSON.stringify(event.payload)}::jsonb, ${event.correlationId ?? null},
+            ${event.traceparent ?? null}
           )
           returning seq
         `;
@@ -247,6 +249,29 @@ describe("outbox relay", () => {
     expect(entry).toBeDefined();
     expect(entry).not.toHaveProperty("correlationId");
     expect(entry).not.toHaveProperty("causationId");
+    // No active span at produce time → no trace-context carried, not "null".
+    expect(entry).not.toHaveProperty("traceparent");
+    expect(entry).not.toHaveProperty("tracestate");
+  });
+
+  it("carries the producer's trace-context to the stream so the consumer joins the trace", async () => {
+    const tenantId = await seedTenant("relay-trace");
+    // A valid W3C traceparent, as OutboxService.publish would have captured.
+    const traceparent = `00-${"a".repeat(32)}-${"b".repeat(16)}-01`;
+    await seedOutbox(tenantId, [
+      {
+        eventType: "shipment.created",
+        aggregateType: "shipment",
+        aggregateId: uuid(),
+        payload: {},
+        traceparent,
+      },
+    ]);
+
+    await makeRelay(realPublisher).drainOnce();
+
+    const entry = (await readStream())[0];
+    expect(entry?.["traceparent"]).toBe(traceparent);
   });
 
   it("drains events from multiple tenants in one pass (cross-tenant read as dp_relay)", async () => {

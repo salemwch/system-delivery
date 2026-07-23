@@ -131,6 +131,9 @@ export const outbox = pgTable(
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
     attempts: smallint("attempts").notNull().default(0),
     lastError: text("last_error"),
+    /** W3C trace-context captured at produce time; carried to the consumer's span. */
+    traceparent: text("traceparent"),
+    tracestate: text("tracestate"),
   },
   (table) => [
     uniqueIndex("outbox_event_id_uq").on(table.eventId),

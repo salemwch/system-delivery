@@ -1,10 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { OnModuleDestroy } from "@nestjs/common";
+import { SpanKind } from "@opentelemetry/api";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { Sql } from "postgres";
 
+import { withSpan } from "../observability/index.js";
 import { TenantContext } from "./tenant-context.js";
 import type { TenantId } from "./tenant-context.js";
 import { POSTGRES_CLIENT } from "./database.tokens.js";
@@ -64,10 +66,21 @@ export class DatabaseService implements OnModuleDestroy {
   async withTenant<T>(fn: (tx: TenantTransaction) => Promise<T>, tenantId?: TenantId): Promise<T> {
     const scopedTenantId = tenantId ?? TenantContext.requireTenantId();
 
-    return this.db.transaction(async (tx) => {
-      await tx.execute(sql`select set_config('app.current_tenant_id', ${scopedTenantId}, true)`);
-      return fn(tx);
-    });
+    // A manual CLIENT span: postgres.js is not covered by any OpenTelemetry
+    // instrumentation, so this is the only place the database appears in a trace.
+    // No-op when telemetry is disabled. The tenant id is deliberately NOT an
+    // attribute — it is a tenant identifier, not something to fan traces out by.
+    return withSpan(
+      "db.transaction",
+      { kind: SpanKind.CLIENT, attributes: { "db.system": "postgresql", scoped: true } },
+      () =>
+        this.db.transaction(async (tx) => {
+          await tx.execute(
+            sql`select set_config('app.current_tenant_id', ${scopedTenantId}, true)`,
+          );
+          return fn(tx);
+        }),
+    );
   }
 
   /**
@@ -79,7 +92,11 @@ export class DatabaseService implements OnModuleDestroy {
    * fail-closed behaviour, not a bug.
    */
   async withoutTenantScope<T>(fn: (tx: TenantTransaction) => Promise<T>): Promise<T> {
-    return this.db.transaction(fn);
+    return withSpan(
+      "db.transaction",
+      { kind: SpanKind.CLIENT, attributes: { "db.system": "postgresql", scoped: false } },
+      () => this.db.transaction(fn),
+    );
   }
 
   /** Liveness probe. Returns false rather than throwing so callers can degrade. */

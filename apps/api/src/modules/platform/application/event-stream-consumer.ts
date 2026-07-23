@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { Inject, Injectable } from "@nestjs/common";
 import type { OnApplicationBootstrap, OnModuleDestroy } from "@nestjs/common";
+import { SpanKind } from "@opentelemetry/api";
 import { and, eq } from "drizzle-orm";
 import type { Redis } from "ioredis";
 
 import { AppConfigService } from "../../../shared/config/index.js";
 import { DatabaseService, asTenantId, isUniqueViolation } from "../../../shared/database/index.js";
+import { contextFromCarrier, withSpan } from "../../../shared/observability/index.js";
 import { VALKEY_CLIENT } from "../../../shared/valkey/valkey.tokens.js";
 import { deadLetterEvents, processedEvents } from "../domain/schema.js";
 import { EVENT_HANDLER } from "../domain/consumed-event.js";
@@ -275,10 +277,35 @@ export class EventStreamConsumer implements OnApplicationBootstrap, OnModuleDest
       return "skipped";
     }
 
+    // Parent the consumer span to the producer's trace, re-hydrated from the
+    // envelope — so one trace spans produce → relay → consume across processes.
+    // With no traceparent (tracing off at produce time) this starts a fresh trace.
+    const parent = contextFromCarrier({
+      ...(event.traceparent === null ? {} : { traceparent: event.traceparent }),
+      ...(event.tracestate === null ? {} : { tracestate: event.tracestate }),
+    });
+
     try {
-      await this.handler.handle(event);
-      await this.markProcessed(event);
-      await this.ack(entry.id);
+      await withSpan(
+        `consume ${event.eventType}`,
+        {
+          kind: SpanKind.CONSUMER,
+          attributes: {
+            "messaging.system": "valkey",
+            "messaging.destination.name": this.streamKey,
+            "messaging.consumer.group.name": this.group,
+            "messaging.message.id": event.eventId,
+            "messaging.message.delivery_count": deliveryCount,
+            "event.type": event.eventType,
+          },
+        },
+        async () => {
+          await this.handler.handle(event);
+          await this.markProcessed(event);
+          await this.ack(entry.id);
+        },
+        parent,
+      );
       return "handled";
     } catch (error) {
       // Leave the message pending (do NOT ack): reclaimPending retries it, and
@@ -418,6 +445,8 @@ export class EventStreamConsumer implements OnApplicationBootstrap, OnModuleDest
       causationId: f.get("causationId") ?? null,
       payload: parsePayload(f.get("payload")),
       deliveryCount,
+      traceparent: f.get("traceparent") ?? null,
+      tracestate: f.get("tracestate") ?? null,
     };
   }
 

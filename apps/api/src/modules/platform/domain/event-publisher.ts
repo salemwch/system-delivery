@@ -25,6 +25,9 @@ export interface PublishableEvent {
   readonly causationId: string | null;
   readonly occurredAt: Date;
   readonly payload: unknown;
+  /** W3C trace-context (docs §2.2), carried so the consumer joins the same trace. */
+  readonly traceparent: string | null;
+  readonly tracestate: string | null;
 }
 
 export interface EventPublisher {

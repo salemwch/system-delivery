@@ -245,9 +245,17 @@ export default tseslint.config(
     },
   },
 
-  // Config and migration files legitimately read env and use console.
+  // Config, migration, script, and the telemetry bootstrap files legitimately
+  // read env directly. The telemetry bootstrap runs BEFORE the Nest DI container
+  // exists (it must patch http/fastify/ioredis first), so it cannot go through
+  // AppConfigService — exactly like the config schema itself.
   {
-    files: ["**/*.config.ts", "**/migrations/**/*.ts", "**/scripts/**/*.ts"],
+    files: [
+      "**/*.config.ts",
+      "**/migrations/**/*.ts",
+      "**/scripts/**/*.ts",
+      "**/shared/observability/telemetry.ts",
+    ],
     rules: {
       "no-restricted-properties": "off",
       "no-console": "off",
