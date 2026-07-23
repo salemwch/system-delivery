@@ -40,6 +40,7 @@ export interface PostTransactionInput {
   /** The domain event that produced this transaction; makes re-posting idempotent. */
   readonly sourceEventId?: string;
   readonly shipmentId?: string;
+  readonly remittanceId?: string;
   readonly createdByUserId?: string;
 }
 
@@ -89,6 +90,7 @@ export class LedgerService {
         occurredAt,
         description: input.description ?? "",
         ...(input.shipmentId === undefined ? {} : { shipmentId: input.shipmentId }),
+        ...(input.remittanceId === undefined ? {} : { remittanceId: input.remittanceId }),
         ...(input.sourceEventId === undefined ? {} : { sourceEventId: input.sourceEventId }),
         ...(input.createdByUserId === undefined ? {} : { createdBy: input.createdByUserId }),
       });

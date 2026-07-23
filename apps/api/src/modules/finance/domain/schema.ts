@@ -99,8 +99,50 @@ export const ledgerEntries = pgTable(
   ],
 );
 
+/**
+ * A driver → hub cash handoff (domain §3.13). Records expected/declared/counted
+ * separately so shrinkage is attributable; confirmation posts the ledger by the
+ * counted amount. Never deleted (migration REVOKEs DELETE). RLS+FORCE.
+ */
+export const codRemittances = pgTable(
+  "cod_remittances",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    code: text("code").notNull(),
+    driverId: uuid("driver_id").notNull(),
+    hubId: uuid("hub_id").notNull(),
+    receivedByUserId: uuid("received_by_user_id"),
+    status: text("status").notNull().default("SUBMITTED"),
+    expectedAmountMinor: bigint("expected_amount_minor", { mode: "bigint" }).notNull(),
+    declaredAmountMinor: bigint("declared_amount_minor", { mode: "bigint" }).notNull(),
+    countedAmountMinor: bigint("counted_amount_minor", { mode: "bigint" }),
+    varianceMinor: bigint("variance_minor", { mode: "bigint" }).notNull().default(0n),
+    currency: text("currency").notNull(),
+    shipmentIds: uuid("shipment_ids")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::uuid[]`),
+    varianceReason: text("variance_reason"),
+    notes: text("notes"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("cod_remittances_code_uq").on(table.tenantId, table.code),
+    index("cod_remittances_driver_idx").on(table.tenantId, table.driverId, table.status),
+    index("cod_remittances_hub_idx").on(table.tenantId, table.hubId, table.status),
+  ],
+);
+
 export type Currency = typeof currencies.$inferSelect;
 export type LedgerAccount = typeof ledgerAccounts.$inferSelect;
 export type NewLedgerAccount = typeof ledgerAccounts.$inferInsert;
 export type LedgerEntry = typeof ledgerEntries.$inferSelect;
 export type NewLedgerEntry = typeof ledgerEntries.$inferInsert;
+export type CodRemittance = typeof codRemittances.$inferSelect;
+export type NewCodRemittance = typeof codRemittances.$inferInsert;

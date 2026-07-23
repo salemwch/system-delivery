@@ -16,6 +16,18 @@ export type {
   PostTransactionInput,
 } from "./application/ledger.service.js";
 export { LedgerEventHandler } from "./application/ledger-event.handler.js";
+export { RemittanceService } from "./application/remittance.service.js";
+export type { RemittanceContext } from "./application/remittance.service.js";
+export {
+  submitRemittanceSchema,
+  confirmRemittanceSchema,
+  disputeRemittanceSchema,
+} from "./domain/dtos.js";
+export type {
+  SubmitRemittanceDto,
+  ConfirmRemittanceDto,
+  DisputeRemittanceDto,
+} from "./domain/dtos.js";
 
 export {
   ACCOUNT_TYPES,
@@ -36,11 +48,13 @@ export type {
 
 export { formatMinorUnits, parseMinorUnits } from "./domain/money.js";
 
-export { currencies, ledgerAccounts, ledgerEntries } from "./domain/schema.js";
+export { currencies, ledgerAccounts, ledgerEntries, codRemittances } from "./domain/schema.js";
 export type {
   Currency,
   LedgerAccount,
   NewLedgerAccount,
   LedgerEntry,
   NewLedgerEntry,
+  CodRemittance,
+  NewCodRemittance,
 } from "./domain/schema.js";

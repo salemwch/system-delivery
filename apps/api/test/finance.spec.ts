@@ -7,12 +7,19 @@ import { CurrencyService } from "../src/modules/finance/application/currency.ser
 import { LedgerService } from "../src/modules/finance/application/ledger.service.js";
 import type { AccountRef } from "../src/modules/finance/application/ledger.service.js";
 import { LedgerEventHandler } from "../src/modules/finance/application/ledger-event.handler.js";
+import { RemittanceService } from "../src/modules/finance/application/remittance.service.js";
 import { ledgerAccounts, ledgerEntries } from "../src/modules/finance/domain/schema.js";
 import { formatMinorUnits, parseMinorUnits } from "../src/modules/finance/domain/money.js";
+import { OutboxService } from "../src/modules/platform/index.js";
 import type { ConsumedEvent } from "../src/modules/platform/index.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
-import { asTenantId } from "../src/shared/database/tenant-context.js";
-import { createTenant, createTestDatabase, deleteTenants } from "./database.harness.js";
+import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
+import {
+  createTenant,
+  createTestDatabase,
+  deleteTenants,
+  withTenantContext,
+} from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
 
 /**
@@ -350,6 +357,177 @@ describe("finance", () => {
       await expect(
         handler.handle(codCollectedEvent(tenantId, { amountMinor: "1000" })),
       ).rejects.toThrow();
+    });
+  });
+
+  // ── Remittance (increment 2): the driver → hub cash handoff ──────────────────
+  describe("RemittanceService", () => {
+    const ctx = { actorUserId: randomUUID() };
+
+    function service(): RemittanceService {
+      return new RemittanceService(db, ledger, currency, new OutboxService());
+    }
+
+    async function asTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
+      return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "system" }, fn);
+    }
+
+    /** Give a driver a DRIVER_CASH balance by posting a COD collection. */
+    async function collect(tenantId: string, driverId: string, amount: bigint): Promise<void> {
+      await db.withTenant(
+        (tx) =>
+          ledger.postTransaction(tx, {
+            tenantId,
+            entryType: "COD_COLLECTED",
+            currency: "TND",
+            lines: [
+              { account: driverAccount(driverId), direction: "DEBIT", amountMinor: amount },
+              { account: merchantAccount(randomUUID()), direction: "CREDIT", amountMinor: amount },
+            ],
+          }),
+        asTenantId(tenantId),
+      );
+    }
+
+    async function varianceEventCount(tenantId: string): Promise<number> {
+      const rows = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) =>
+          tx<{ n: string }[]>`select count(*)::text as n from outbox
+           where tenant_id = ${tenantId} and event_type = 'cod.variance_detected'`,
+      );
+      return Number(rows[0]?.n ?? "0");
+    }
+
+    it("submits with the system-computed expected amount from the ledger", async () => {
+      const tenantId = await seedTenant("rem-submit");
+      const driverId = randomUUID();
+      await collect(tenantId, driverId, 30000n);
+
+      const remittance = await asTenant(tenantId, () =>
+        service().submit(
+          { driverId, hubId: randomUUID(), declaredAmountMinor: "30000", currency: "TND" },
+          ctx,
+        ),
+      );
+
+      expect(remittance.status).toBe("SUBMITTED");
+      expect(remittance.expectedAmountMinor).toBe(30000n); // read from the ledger, not the input
+      expect(remittance.declaredAmountMinor).toBe(30000n);
+      expect(remittance.code).toMatch(/^RM-\d{8}-[0-9A-F]{6}$/);
+    });
+
+    it("confirms an exact remittance: DEBIT hub_cash / CREDIT driver_cash, zero variance", async () => {
+      const tenantId = await seedTenant("rem-exact");
+      const driverId = randomUUID();
+      const hubId = randomUUID();
+      await collect(tenantId, driverId, 30000n);
+      const svc = service();
+
+      const submitted = await asTenant(tenantId, () =>
+        svc.submit({ driverId, hubId, declaredAmountMinor: "30000", currency: "TND" }, ctx),
+      );
+      const confirmed = await asTenant(tenantId, () =>
+        svc.confirm(submitted.id, { countedAmountMinor: "30000" }, ctx),
+      );
+
+      expect(confirmed.status).toBe("CONFIRMED");
+      expect(confirmed.varianceMinor).toBe(0n);
+
+      await db.withTenant(async (tx) => {
+        // Driver handed over everything → their cash is now zero, the hub holds it.
+        expect(await ledger.balanceOf(tx, tenantId, "TND", driverAccount(driverId))).toBe(0n);
+        expect(
+          await ledger.balanceOf(tx, tenantId, "TND", {
+            ownerType: "HUB",
+            ownerId: hubId,
+            accountType: "HUB_CASH",
+          }),
+        ).toBe(30000n);
+      }, asTenantId(tenantId));
+      expect(await varianceEventCount(tenantId)).toBe(0);
+    });
+
+    it("rejects a variance with no reason, and records one with a reason", async () => {
+      const tenantId = await seedTenant("rem-variance");
+      const driverId = randomUUID();
+      const hubId = randomUUID();
+      await collect(tenantId, driverId, 30000n);
+      const svc = service();
+
+      const submitted = await asTenant(tenantId, () =>
+        svc.submit({ driverId, hubId, declaredAmountMinor: "30000", currency: "TND" }, ctx),
+      );
+
+      // Short by 0.500 TND (500 millimes) with no explanation → refused.
+      await expect(
+        asTenant(tenantId, () => svc.confirm(submitted.id, { countedAmountMinor: "29500" }, ctx)),
+      ).rejects.toThrow(/reason/i);
+
+      const confirmed = await asTenant(tenantId, () =>
+        svc.confirm(
+          submitted.id,
+          { countedAmountMinor: "29500", varianceReason: "short by 500 millimes" },
+          ctx,
+        ),
+      );
+      expect(confirmed.status).toBe("CONFIRMED");
+      expect(confirmed.varianceMinor).toBe(-500n); // counted − expected, SHORTAGE
+
+      await db.withTenant(async (tx) => {
+        // The 500-millime shortfall stays as the driver's open cash balance.
+        expect(await ledger.balanceOf(tx, tenantId, "TND", driverAccount(driverId))).toBe(500n);
+        expect(
+          await ledger.balanceOf(tx, tenantId, "TND", {
+            ownerType: "HUB",
+            ownerId: hubId,
+            accountType: "HUB_CASH",
+          }),
+        ).toBe(29500n);
+      }, asTenantId(tenantId));
+      expect(await varianceEventCount(tenantId)).toBe(1);
+    });
+
+    it("cannot confirm the same remittance twice", async () => {
+      const tenantId = await seedTenant("rem-double");
+      const driverId = randomUUID();
+      await collect(tenantId, driverId, 10000n);
+      const svc = service();
+      const submitted = await asTenant(tenantId, () =>
+        svc.submit(
+          { driverId, hubId: randomUUID(), declaredAmountMinor: "10000", currency: "TND" },
+          ctx,
+        ),
+      );
+      await asTenant(tenantId, () =>
+        svc.confirm(submitted.id, { countedAmountMinor: "10000" }, ctx),
+      );
+
+      await expect(
+        asTenant(tenantId, () => svc.confirm(submitted.id, { countedAmountMinor: "10000" }, ctx)),
+      ).rejects.toThrow(/SUBMITTED|confirm/i);
+    });
+
+    it("disputes then resolves", async () => {
+      const tenantId = await seedTenant("rem-dispute");
+      const driverId = randomUUID();
+      await collect(tenantId, driverId, 8000n);
+      const svc = service();
+      const submitted = await asTenant(tenantId, () =>
+        svc.submit(
+          { driverId, hubId: randomUUID(), declaredAmountMinor: "8000", currency: "TND" },
+          ctx,
+        ),
+      );
+
+      const disputed = await asTenant(tenantId, () =>
+        svc.dispute(submitted.id, { reason: "counts do not match" }, ctx),
+      );
+      expect(disputed.status).toBe("DISPUTED");
+
+      const resolved = await asTenant(tenantId, () => svc.resolve(submitted.id, ctx));
+      expect(resolved.status).toBe("RESOLVED");
     });
   });
 });
