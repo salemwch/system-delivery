@@ -2,12 +2,14 @@ import { Module } from "@nestjs/common";
 import { LoggerModule } from "nestjs-pino";
 
 import { DirectoryModule } from "./modules/directory/index.js";
+import { FleetModule } from "./modules/fleet/index.js";
 import { IdentityModule } from "./modules/identity/index.js";
 import { NetworkModule } from "./modules/network/index.js";
 import { PlatformModule } from "./modules/platform/index.js";
 import { ShipmentModule } from "./modules/shipment/index.js";
 import { AppConfigModule } from "./shared/config/config.module.js";
 import { AppConfigService } from "./shared/config/index.js";
+import { CryptoModule } from "./shared/crypto/crypto.module.js";
 import { DatabaseModule } from "./shared/database/database.module.js";
 
 /**
@@ -20,11 +22,13 @@ import { DatabaseModule } from "./shared/database/database.module.js";
 @Module({
   imports: [
     AppConfigModule,
+    CryptoModule,
     DatabaseModule,
     PlatformModule,
     IdentityModule,
     DirectoryModule,
     NetworkModule,
+    FleetModule,
     ShipmentModule,
     LoggerModule.forRootAsync({
       imports: [AppConfigModule],

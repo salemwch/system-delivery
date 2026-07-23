@@ -26,6 +26,15 @@ export type DeploymentMode = (typeof DeploymentMode)[keyof typeof DeploymentMode
 const nodeEnvSchema = z.enum(["development", "test", "production"]);
 export type NodeEnv = z.infer<typeof nodeEnvSchema>;
 
+/** True when `value` is base64 that decodes to exactly `n` bytes. */
+function decodesToBytes(value: string, n: number): boolean {
+  try {
+    return Buffer.from(value, "base64").length === n;
+  } catch {
+    return false;
+  }
+}
+
 /** Secrets must be long enough to be meaningful and must not be the shipped defaults. */
 const secretSchema = z
   .string()
@@ -135,6 +144,17 @@ export const configSchema = z
     DRIVER_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(90),
     TRACKING_TOKEN_SECRET: secretSchema,
     TRACKING_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+
+    // ── Encryption (field-level PII at rest) ─────────────────────────────────
+    // AES-256-GCM key as base64-encoded 32 bytes. Encrypts driver PII
+    // (nationalId, licenceNumber) and MFA secrets before they reach the column.
+    // Never the shipped placeholder; supplied by the secret store, never committed.
+    FIELD_ENCRYPTION_KEY: z
+      .string()
+      .refine((value) => decodesToBytes(value, 32), "must be a base64-encoded 32-byte key")
+      .refine((value) => !value.startsWith("dev_only_change_me"), {
+        message: "must not use the placeholder value from .env.example",
+      }),
 
     // ── Notifications ────────────────────────────────────────────────────────
     // Provider selection is late-bound on purpose: the Tunisian sender-ID
