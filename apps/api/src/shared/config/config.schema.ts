@@ -121,6 +121,17 @@ export const configSchema = z
     // is silent and severe (docs/06-database-design.md §4.8).
     OUTBOX_RELAY_ALERT_AGE_SECONDS: z.coerce.number().int().positive().default(60),
 
+    // ── Event stream consumers (docs/03-event-storming.md §2.3) ────────────────
+    // Consumers read the outbox stream with XREADGROUP. COUNT/BLOCK bound each
+    // poll; a message redelivered more than MAX_DELIVERIES times is a poison
+    // message and is routed to the per-tenant DLQ rather than blocking the group.
+    EVENT_CONSUMER_BATCH_SIZE: z.coerce.number().int().positive().max(1_000).default(50),
+    EVENT_CONSUMER_BLOCK_MS: z.coerce.number().int().positive().default(5_000),
+    EVENT_CONSUMER_MAX_DELIVERIES: z.coerce.number().int().positive().default(5),
+    // Pending entries idle longer than this are reclaimed (XPENDING/XCLAIM) from a
+    // consumer that crashed mid-processing, so no message is stranded.
+    EVENT_CONSUMER_CLAIM_MIN_IDLE_MS: z.coerce.number().int().positive().default(60_000),
+
     // ── Object storage ───────────────────────────────────────────────────────
     S3_ENDPOINT: z.url(),
     S3_REGION: z.string().min(1),

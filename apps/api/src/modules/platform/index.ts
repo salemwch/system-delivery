@@ -16,11 +16,27 @@ export {
 } from "./application/outbox-relay.service.js";
 export type { RelayLogger, DrainSummary } from "./application/outbox-relay.service.js";
 
+export {
+  EventStreamConsumer,
+  CONSUMER_DATABASE,
+  CONSUMER_LOGGER,
+} from "./application/event-stream-consumer.js";
+export type { ConsumerLogger, ConsumeSummary } from "./application/event-stream-consumer.js";
+
 export { EVENT_PUBLISHER } from "./domain/event-publisher.js";
 export type { EventPublisher, PublishableEvent } from "./domain/event-publisher.js";
 export { ValkeyStreamEventPublisher } from "./infrastructure/valkey-stream.publisher.js";
 
-export { tenants, tenantFeatures, outbox } from "./domain/schema.js";
+export { EVENT_HANDLER } from "./domain/consumed-event.js";
+export type { ConsumedEvent, EventHandler } from "./domain/consumed-event.js";
+
+export {
+  tenants,
+  tenantFeatures,
+  outbox,
+  processedEvents,
+  deadLetterEvents,
+} from "./domain/schema.js";
 export type {
   Tenant,
   NewTenant,
@@ -28,6 +44,10 @@ export type {
   NewTenantFeature,
   OutboxRow,
   NewOutboxRow,
+  ProcessedEvent,
+  NewProcessedEvent,
+  DeadLetterEvent,
+  NewDeadLetterEvent,
 } from "./domain/schema.js";
 
 export {

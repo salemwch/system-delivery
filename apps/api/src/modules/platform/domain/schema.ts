@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   smallint,
@@ -139,3 +140,68 @@ export const outbox = pgTable(
 
 export type OutboxRow = typeof outbox.$inferSelect;
 export type NewOutboxRow = typeof outbox.$inferInsert;
+
+/**
+ * docs/03-event-storming.md §2.3 (Idempotency) — the consumer idempotency ledger.
+ *
+ * One row per (consumer_group, event_id) a consumer has durably handled. The
+ * generic stream consumer checks this before handling and records it after, so a
+ * redelivered event (at-least-once delivery) is a clean no-op. Tenant-scoped +
+ * FORCE RLS; the authoritative DDL is migration `0010_notifications.sql`.
+ */
+export const processedEvents = pgTable(
+  "processed_events",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    consumerGroup: text("consumer_group").notNull(),
+    eventId: uuid("event_id").notNull(),
+    eventType: text("event_type").notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("processed_events_group_event_uq").on(table.consumerGroup, table.eventId),
+    index("processed_events_tenant_idx").on(table.tenantId),
+  ],
+);
+
+/**
+ * docs/03-event-storming.md §62 — the per-consumer, per-tenant dead-letter queue.
+ *
+ * A poison message that exhausts its retries lands here for inspection + replay,
+ * and an alert fires. It never blocks the consumer group and is never dropped.
+ */
+export const deadLetterEvents = pgTable(
+  "dead_letter_events",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    consumerGroup: text("consumer_group").notNull(),
+    eventId: uuid("event_id").notNull(),
+    eventType: text("event_type").notNull(),
+    streamId: text("stream_id").notNull(),
+    payload: jsonb("payload")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    error: text("error").notNull(),
+    deliveryCount: integer("delivery_count").notNull().default(1),
+    /** PENDING | RESOLVED | DISCARDED. */
+    status: text("status").notNull().default("PENDING"),
+    firstFailedAt: timestamp("first_failed_at", { withTimezone: true }).notNull().defaultNow(),
+    lastFailedAt: timestamp("last_failed_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("dead_letter_group_event_uq").on(table.consumerGroup, table.eventId),
+    index("dead_letter_tenant_status_idx").on(table.tenantId, table.status),
+  ],
+);
+
+export type ProcessedEvent = typeof processedEvents.$inferSelect;
+export type NewProcessedEvent = typeof processedEvents.$inferInsert;
+export type DeadLetterEvent = typeof deadLetterEvents.$inferSelect;
+export type NewDeadLetterEvent = typeof deadLetterEvents.$inferInsert;

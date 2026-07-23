@@ -6,15 +6,23 @@ import postgres from "postgres";
 import type { Sql } from "postgres";
 
 import {
+  CONSUMER_DATABASE,
+  CONSUMER_LOGGER,
+  EVENT_HANDLER,
   EVENT_PUBLISHER,
+  EventStreamConsumer,
   OutboxRelayService,
+  PlatformModule,
   RELAY_DATABASE,
   RELAY_LOGGER,
   ValkeyStreamEventPublisher,
 } from "./modules/platform/index.js";
-import type { RelayLogger } from "./modules/platform/index.js";
+import type { ConsumerLogger, RelayLogger } from "./modules/platform/index.js";
+import { NotificationEventHandler, NotificationModule } from "./modules/notification/index.js";
 import { AppConfigModule } from "./shared/config/config.module.js";
 import { AppConfigService } from "./shared/config/index.js";
+import { DatabaseModule } from "./shared/database/database.module.js";
+import { DatabaseService } from "./shared/database/database.service.js";
 import type { Database } from "./shared/database/index.js";
 import { ValkeyModule } from "./shared/valkey/valkey.module.js";
 
@@ -37,7 +45,13 @@ const RELAY_POSTGRES_CLIENT = Symbol("RELAY_POSTGRES_CLIENT");
 @Module({
   imports: [
     AppConfigModule,
+    // The consumer + notification write tenant-scoped tables as dp_app under RLS;
+    // DatabaseModule (global) supplies that connection. The relay keeps its own
+    // separate dp_relay pool below — least privilege on both paths.
+    DatabaseModule,
     ValkeyModule,
+    PlatformModule,
+    NotificationModule,
     LoggerModule.forRootAsync({
       imports: [AppConfigModule],
       inject: [AppConfigService],
@@ -99,6 +113,28 @@ const RELAY_POSTGRES_CLIENT = Symbol("RELAY_POSTGRES_CLIENT");
       }),
     },
     OutboxRelayService,
+    // The event-stream consumer, driving the notification handler: it reads the
+    // outbox stream, dedupes on eventId, retries, and DLQs poison messages — the
+    // first thing that CONSUMES what the relay publishes. It writes as dp_app
+    // (CONSUMER_DATABASE), setting tenant context per event, so RLS holds here too.
+    { provide: CONSUMER_DATABASE, useExisting: DatabaseService },
+    { provide: EVENT_HANDLER, useExisting: NotificationEventHandler },
+    {
+      provide: CONSUMER_LOGGER,
+      inject: [PinoLogger],
+      useFactory: (logger: PinoLogger): ConsumerLogger => ({
+        info: (obj, msg) => {
+          logger.info({ ...obj, component: "event-consumer" }, msg);
+        },
+        warn: (obj, msg) => {
+          logger.warn({ ...obj, component: "event-consumer" }, msg);
+        },
+        error: (obj, msg) => {
+          logger.error({ ...obj, component: "event-consumer" }, msg);
+        },
+      }),
+    },
+    EventStreamConsumer,
   ],
 })
 export class WorkerModule implements OnApplicationShutdown {
