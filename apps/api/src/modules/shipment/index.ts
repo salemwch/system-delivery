@@ -21,6 +21,7 @@ export type {
   CommandContext,
   ShipmentPage,
   ShipmentEventView,
+  PlanningLeg,
 } from "./application/shipment.service.js";
 export type {
   ShipmentSnapshot,

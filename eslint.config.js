@@ -32,7 +32,7 @@ const MODULE_DEPENDENCIES = {
   shipment: ["platform", "identity", "directory", "network"],
   // dispatch → shipment is the ONE sanctioned same-layer dependency.
   // Documented in docs/04-context-map.md §2.1. Do not add a second without an ADR.
-  dispatch: ["platform", "identity", "fleet", "network", "shipment"],
+  dispatch: ["platform", "identity", "directory", "network", "fleet", "shipment"],
   custody: ["platform", "identity", "network", "shipment"],
   tracking: ["platform", "fleet", "network"],
   finance: ["platform", "identity", "fleet", "directory"],

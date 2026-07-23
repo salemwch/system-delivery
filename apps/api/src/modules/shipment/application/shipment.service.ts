@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { AddressService, MerchantService, RecipientService } from "../../directory/index.js";
 import { OutboxService } from "../../platform/index.js";
@@ -29,7 +29,7 @@ import { pod, shipmentEvents, shipmentLegs, shipments } from "../domain/schema.j
 import type { Shipment } from "../domain/schema.js";
 import { generateTrackingNumber } from "../domain/tracking-number.js";
 import { isInCustody, toShipmentStatus } from "../domain/shipment-status.js";
-import type { CodStatus, EventActor } from "../domain/shipment-status.js";
+import type { CodStatus, EventActor, ShipmentStatus } from "../domain/shipment-status.js";
 import { ShipmentEventService } from "./shipment-event.service.js";
 import type { ShipmentSnapshot } from "./shipment-event.service.js";
 
@@ -62,6 +62,36 @@ export interface ShipmentEventView {
   readonly legId: string | null;
   readonly reasonCode: string | null;
   readonly idempotencyKey: string;
+}
+
+/**
+ * A shipment leg flattened with the parent-shipment attributes the dispatch
+ * context needs to plan it onto a route — the purpose-built read that replaces a
+ * cross-module join (context-map §5 "no cross-context joins"). Dispatch resolves
+ * coordinates itself (it composes directory/network); this stays free of PostGIS.
+ */
+export interface PlanningLeg {
+  readonly legId: string;
+  readonly shipmentId: string;
+  readonly legType: string;
+  readonly legStatus: string;
+  readonly shipmentStatus: ShipmentStatus;
+  readonly fromType: string;
+  readonly toType: string;
+  readonly fromAddressId: string | null;
+  readonly toAddressId: string | null;
+  readonly fromHubId: string | null;
+  readonly toHubId: string | null;
+  readonly routeStopId: string | null;
+  readonly requiredSkills: string[];
+  readonly parcelCount: number;
+  readonly weightGrams: number;
+  readonly volumeCm3: number | null;
+  readonly codAmountMinor: bigint;
+  readonly currency: string;
+  readonly trackingNumber: string;
+  readonly recipientName: string;
+  readonly recipientPhone: string;
 }
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -683,6 +713,72 @@ export class ShipmentService {
         .from(shipmentEvents)
         .where(eq(shipmentEvents.shipmentId, id))
         .orderBy(asc(shipmentEvents.sequence));
+    });
+  }
+
+  /**
+   * The dispatch-planning read: given shipment leg ids, returns each leg with the
+   * parent-shipment attributes dispatch needs to place it on a route (target,
+   * required skills, load, COD, recipient snapshot) and the current shipment
+   * status — which dispatch checks against the state machine before recording an
+   * assignment. Legs from other tenants are invisible (RLS); unknown ids are
+   * simply absent from the result.
+   */
+  async getLegsForPlanning(legIds: readonly string[]): Promise<PlanningLeg[]> {
+    if (legIds.length === 0) {
+      return [];
+    }
+    return this.database.withTenant(async (tx) => {
+      const rows = await tx
+        .select({
+          legId: shipmentLegs.id,
+          shipmentId: shipmentLegs.shipmentId,
+          legType: shipmentLegs.legType,
+          legStatus: shipmentLegs.status,
+          fromType: shipmentLegs.fromType,
+          toType: shipmentLegs.toType,
+          fromAddressId: shipmentLegs.fromAddressId,
+          toAddressId: shipmentLegs.toAddressId,
+          fromHubId: shipmentLegs.fromHubId,
+          toHubId: shipmentLegs.toHubId,
+          routeStopId: shipmentLegs.routeStopId,
+          shipmentStatus: shipments.status,
+          requiredSkills: shipments.requiredSkills,
+          parcelCount: shipments.parcelCount,
+          weightGrams: shipments.weightGrams,
+          volumeCm3: shipments.volumeCm3,
+          codAmountMinor: shipments.codAmountMinor,
+          currency: shipments.currency,
+          trackingNumber: shipments.trackingNumber,
+          recipientName: shipments.recipientName,
+          recipientPhone: shipments.recipientPhone,
+        })
+        .from(shipmentLegs)
+        .innerJoin(shipments, eq(shipmentLegs.shipmentId, shipments.id))
+        .where(inArray(shipmentLegs.id, [...legIds]));
+      return rows.map((r) => ({
+        legId: r.legId,
+        shipmentId: r.shipmentId,
+        legType: r.legType,
+        legStatus: r.legStatus,
+        shipmentStatus: toShipmentStatus(r.shipmentStatus),
+        fromType: r.fromType,
+        toType: r.toType,
+        fromAddressId: r.fromAddressId,
+        toAddressId: r.toAddressId,
+        fromHubId: r.fromHubId,
+        toHubId: r.toHubId,
+        routeStopId: r.routeStopId,
+        requiredSkills: r.requiredSkills,
+        parcelCount: r.parcelCount,
+        weightGrams: r.weightGrams,
+        volumeCm3: r.volumeCm3,
+        codAmountMinor: r.codAmountMinor,
+        currency: r.currency,
+        trackingNumber: r.trackingNumber,
+        recipientName: r.recipientName,
+        recipientPhone: r.recipientPhone,
+      }));
     });
   }
 
