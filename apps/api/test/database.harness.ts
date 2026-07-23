@@ -26,6 +26,8 @@ export interface TestDatabase {
   readonly app: Sql;
   /** Connected as dp_migrator — owns the schema. Used only for fixtures. */
   readonly migrator: Sql;
+  /** Connected as dp_relay — cross-tenant on `outbox` only. What the relay uses. */
+  readonly relay: Sql;
   readonly appUrl: string;
   close(): Promise<void>;
 }
@@ -35,6 +37,7 @@ const MIGRATIONS_DIR = path.resolve(import.meta.dirname, "../migrations");
 async function startEphemeralContainer(): Promise<{
   appUrl: string;
   migratorUrl: string;
+  relayUrl: string;
   stop: () => Promise<void>;
 }> {
   const { GenericContainer, Wait } = await import("testcontainers");
@@ -65,6 +68,7 @@ async function startEphemeralContainer(): Promise<{
   return {
     appUrl: `postgresql://dp_app:app_dev_password@${host}:${port}/delivery_test`,
     migratorUrl: `postgresql://dp_migrator:migrator_dev_password@${host}:${port}/delivery_test`,
+    relayUrl: `postgresql://dp_relay:relay_dev_password@${host}:${port}/delivery_test`,
     stop: async () => {
       await container.stop();
     },
@@ -75,32 +79,39 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   const providedApp = process.env["TEST_DATABASE_URL"] ?? process.env["DATABASE_URL"];
   const providedMigrator =
     process.env["TEST_MIGRATION_DATABASE_URL"] ?? process.env["MIGRATION_DATABASE_URL"];
+  const providedRelay = process.env["TEST_RELAY_DATABASE_URL"] ?? process.env["RELAY_DATABASE_URL"];
 
   let appUrl: string;
   let migratorUrl: string;
+  let relayUrl: string;
   let stopContainer: (() => Promise<void>) | undefined;
 
-  if (providedApp !== undefined && providedMigrator !== undefined) {
+  if (providedApp !== undefined && providedMigrator !== undefined && providedRelay !== undefined) {
     appUrl = providedApp;
     migratorUrl = providedMigrator;
+    relayUrl = providedRelay;
   } else {
     const container = await startEphemeralContainer();
     appUrl = container.appUrl;
     migratorUrl = container.migratorUrl;
+    relayUrl = container.relayUrl;
     stopContainer = container.stop;
   }
 
   const migrator = postgres(migratorUrl, { max: 1, onnotice: () => undefined });
   const app = postgres(appUrl, { max: 2, prepare: false, onnotice: () => undefined });
+  const relay = postgres(relayUrl, { max: 4, prepare: false, onnotice: () => undefined });
 
   await runMigrations(migrator, MIGRATIONS_DIR);
 
   return {
     app,
     migrator,
+    relay,
     appUrl,
     async close() {
       await app.end({ timeout: 5 });
+      await relay.end({ timeout: 5 });
       await migrator.end({ timeout: 5 });
       if (stopContainer !== undefined) {
         await stopContainer();
