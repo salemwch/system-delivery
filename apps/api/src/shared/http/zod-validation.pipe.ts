@@ -2,8 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type { PipeTransform } from "@nestjs/common";
 import type { ZodType } from "zod";
 
-import { ValidationError } from "../errors/domain-error.js";
-import type { FieldError } from "./problem-details.filter.js";
+import { parseWithZod } from "./zod-parse.js";
 
 /**
  * Validates and parses request input with a Zod schema.
@@ -22,18 +21,7 @@ export class ZodValidationPipe<TOutput> implements PipeTransform<unknown, TOutpu
   constructor(private readonly schema: ZodType<TOutput>) {}
 
   transform(value: unknown): TOutput {
-    const result = this.schema.safeParse(value);
-
-    if (!result.success) {
-      const fieldErrors: FieldError[] = result.error.issues.map((issue) => ({
-        field: issue.path.length > 0 ? issue.path.join(".") : "(root)",
-        code: issue.code.toUpperCase(),
-        detail: issue.message,
-      }));
-      throw new ValidationError(fieldErrors);
-    }
-
-    return result.data;
+    return parseWithZod(this.schema, value);
   }
 }
 
