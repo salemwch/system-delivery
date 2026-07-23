@@ -87,7 +87,7 @@ export type BlockRecipientInput = z.infer<typeof blockRecipientSchema>;
 
 // ── Addresses ────────────────────────────────────────────────────────────────
 
-export const coordinatesSchema = z.strictObject({
+const coordinatesSchema = z.strictObject({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
 });

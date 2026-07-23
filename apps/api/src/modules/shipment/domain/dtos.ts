@@ -109,7 +109,7 @@ export const recordPickupSchema = z.strictObject({
 });
 export type RecordPickupInput = z.infer<typeof recordPickupSchema>;
 
-export const podSchema = z.strictObject({
+const podSchema = z.strictObject({
   podType: z.enum(["signature", "photo", "otp", "id_check", "contactless"]),
   signatureObjectKey: z.string().trim().min(1).optional(),
   photoObjectKeys: z.array(z.string().trim().min(1)).optional(),

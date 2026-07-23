@@ -64,7 +64,7 @@ function fieldsToMap(raw: unknown): Map<string, string> {
 }
 
 /** Parses `[[id, [f, v, …]], …]` (XRANGE / XCLAIM / the entries of XREADGROUP). */
-export function parseEntries(raw: unknown): StreamEntry[] {
+function parseEntries(raw: unknown): StreamEntry[] {
   if (!isStringArray(raw)) {
     return [];
   }

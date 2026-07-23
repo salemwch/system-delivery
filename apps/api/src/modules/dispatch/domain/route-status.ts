@@ -75,14 +75,3 @@ export const TERMINAL_STOP_STATUSES: ReadonlySet<RouteStopStatus> = new Set<Rout
   "FAILED",
   "SKIPPED",
 ]);
-
-/**
- * The shipment event a stop's outcome drives, when the stop is bound to shipment
- * legs. `arrived_at_stop` is an annotation; the delivered/failed facts are
- * recorded by the shipment delivery commands, not here — a stop completing does
- * not, by itself, mean the shipment was delivered (domain §3.9 rule 7). This map
- * is only for the ARRIVED annotation dispatch may emit from a geofence.
- */
-export function stopArrivalEventType(): "arrived_at_stop" {
-  return "arrived_at_stop";
-}

@@ -7,7 +7,7 @@
  */
 
 /** `2026-07-23` → `20260723`. Accepts the ISO date the DTO already validated. */
-export function compactDate(plannedDate: string): string {
+function compactDate(plannedDate: string): string {
   const digits = plannedDate.replace(/-/g, "");
   if (!/^\d{8}$/.test(digits)) {
     throw new Error(`plannedDate must be an ISO date (YYYY-MM-DD), got "${plannedDate}"`);

@@ -24,6 +24,7 @@
     "format:check": "prettier --check .",
     "docs:spell": "cspell lint --no-progress \"docs/**/*.md\" \"*.md\"",
     "docs:lint": "markdownlint-cli2 \"docs/**/*.md\" \"*.md\"",
+    "knip": "knip",
     "verify": "pnpm format:check && pnpm lint:rules && pnpm lint && pnpm typecheck && pnpm docs:spell",
     "sast": "bash tools/semgrep.sh"
   },
@@ -35,8 +36,8 @@
     "eslint-plugin-boundaries": "7.1.0",
     "eslint-plugin-import-x": "4.17.1",
     "globals": "16.5.0",
+    "knip": "6.29.0",
     "markdownlint-cli2": "0.23.1",
-    "nothing": "^0.1.0",
     "prettier": "3.9.5",
     "turbo": "2.10.6",
     "typescript": "5.9.3",

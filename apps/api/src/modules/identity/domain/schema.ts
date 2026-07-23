@@ -107,8 +107,3 @@ export const refreshTokens = pgTable(
     index("refresh_tokens_family_idx").on(table.familyId),
   ],
 );
-
-export type User = typeof users.$inferSelect;
-export type NewUser = typeof users.$inferInsert;
-export type UserRole = typeof userRoles.$inferSelect;
-export type RefreshTokenRow = typeof refreshTokens.$inferSelect;
