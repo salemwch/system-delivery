@@ -39,7 +39,7 @@
     "@opentelemetry/sdk-node": "0.221.0",
     "@opentelemetry/semantic-conventions": "1.43.0",
     "drizzle-orm": "0.45.2",
-    "fastify": "5.4.0",
+    "fastify": "5.10.0",
     "ioredis": "5.11.1",
     "jose": "6.2.4",
     "nestjs-pino": "4.6.1",
