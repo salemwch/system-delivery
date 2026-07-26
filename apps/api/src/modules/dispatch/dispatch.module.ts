@@ -5,6 +5,7 @@ import { FleetModule } from "../fleet/index.js";
 import { NetworkModule } from "../network/index.js";
 import { PlatformModule } from "../platform/index.js";
 import { ShipmentModule } from "../shipment/index.js";
+import { RouteController } from "./api/route.controller.js";
 import { AssignmentService } from "./application/assignment.service.js";
 import {
   HeuristicOptimizationProvider,
@@ -25,10 +26,11 @@ import { RouteService } from "./application/route.service.js";
  * The optimiser is bound through the {@link OPTIMIZATION_PROVIDER} port. At MVP
  * the only binding is the deterministic haversine fallback; the OSRM provider
  * (ADR-003) slots in here when the Maghreb extract is loaded — no call site
- * changes. Exposes services rather than controllers at MVP, per contract 05.
+ * changes.
  */
 @Module({
   imports: [PlatformModule, DirectoryModule, NetworkModule, FleetModule, ShipmentModule],
+  controllers: [RouteController],
   providers: [
     RouteService,
     AssignmentService,

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { PlatformModule } from "../platform/index.js";
+import { FinanceController } from "./api/finance.controller.js";
 import { CurrencyService } from "./application/currency.service.js";
 import { LedgerService } from "./application/ledger.service.js";
 import { LedgerEventHandler } from "./application/ledger-event.handler.js";
@@ -21,6 +22,7 @@ import { SettlementService } from "./application/settlement.service.js";
  */
 @Module({
   imports: [PlatformModule],
+  controllers: [FinanceController],
   providers: [
     CurrencyService,
     LedgerService,

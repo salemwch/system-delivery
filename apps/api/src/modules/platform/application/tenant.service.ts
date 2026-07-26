@@ -1,8 +1,9 @@
 import { Injectable } from "@nestjs/common";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
-import { TenantContext, asTenantId } from "../../../shared/database/index.js";
+import { DatabaseService, TenantContext, asTenantId } from "../../../shared/database/index.js";
 import type { TenantId, TenantTransaction } from "../../../shared/database/index.js";
+import { NotFoundError } from "../../../shared/errors/index.js";
 import { DEFAULT_FEATURES } from "../domain/feature-keys.js";
 import type { FeatureKey } from "../domain/feature-keys.js";
 import { tenantFeatures, tenants } from "../domain/schema.js";
@@ -24,7 +25,10 @@ export interface ProvisionTenantInput {
 
 @Injectable()
 export class TenantService {
-  constructor(private readonly outbox: OutboxService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly outbox: OutboxService,
+  ) {}
 
   /**
    * Provisions a tenant, its default feature flags, and a `tenant.provisioned`
@@ -94,5 +98,20 @@ export class TenantService {
     });
 
     return tenantId;
+  }
+
+  async resolveBySlug(slug: string): Promise<TenantId> {
+    return this.database.withoutTenantScope(async (tx) => {
+      const rows = await tx
+        .select({ id: tenants.id })
+        .from(tenants)
+        .where(eq(tenants.slug, slug))
+        .limit(1);
+      const row = rows[0];
+      if (row === undefined) {
+        throw new NotFoundError("Tenant");
+      }
+      return asTenantId(row.id);
+    });
   }
 }

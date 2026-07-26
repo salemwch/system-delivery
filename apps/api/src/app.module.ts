@@ -3,6 +3,7 @@ import { LoggerModule } from "nestjs-pino";
 
 import { DirectoryModule } from "./modules/directory/index.js";
 import { DispatchModule } from "./modules/dispatch/index.js";
+import { FinanceModule } from "./modules/finance/index.js";
 import { FleetModule } from "./modules/fleet/index.js";
 import { IdentityModule } from "./modules/identity/index.js";
 import { NetworkModule } from "./modules/network/index.js";
@@ -32,6 +33,7 @@ import { DatabaseModule } from "./shared/database/database.module.js";
     FleetModule,
     ShipmentModule,
     DispatchModule,
+    FinanceModule,
     LoggerModule.forRootAsync({
       imports: [AppConfigModule],
       inject: [AppConfigService],

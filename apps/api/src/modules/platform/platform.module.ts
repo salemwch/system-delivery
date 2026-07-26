@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
 
+import { ConfigController } from "./api/config.controller.js";
+import { ConfigBootstrapService } from "./application/config-bootstrap.service.js";
 import { FeatureService } from "./application/feature.service.js";
 import { OutboxService } from "./application/outbox.service.js";
 import { TenantService } from "./application/tenant.service.js";
@@ -11,7 +13,8 @@ import { TenantService } from "./application/tenant.service.js";
  * but shared infrastructure.
  */
 @Module({
-  providers: [OutboxService, FeatureService, TenantService],
+  controllers: [ConfigController],
+  providers: [OutboxService, FeatureService, TenantService, ConfigBootstrapService],
   exports: [OutboxService, FeatureService, TenantService],
 })
 export class PlatformModule {}

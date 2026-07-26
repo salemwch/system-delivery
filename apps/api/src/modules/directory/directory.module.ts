@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 
 import { PlatformModule } from "../platform/index.js";
+import { MerchantController } from "./api/merchant.controller.js";
+import { RecipientController } from "./api/recipient.controller.js";
 import { AddressService } from "./application/address.service.js";
 import { MerchantService } from "./application/merchant.service.js";
 import { RecipientService } from "./application/recipient.service.js";
@@ -12,11 +14,11 @@ import { ManualGeocodingProvider } from "./infrastructure/manual-geocoding.provi
  *
  * Commercial counterparties and the address-quality pipeline. Depends on
  * `platform` (outbox for merchant.created / address.geocode_corrected) and the
- * shared database; consumed by `shipment` and beyond as a service layer, which
- * is why it exposes services rather than controllers at MVP.
+ * shared database.
  */
 @Module({
   imports: [PlatformModule],
+  controllers: [MerchantController, RecipientController],
   providers: [
     MerchantService,
     RecipientService,

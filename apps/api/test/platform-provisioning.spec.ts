@@ -57,7 +57,7 @@ describe("platform provisioning", () => {
     database = await createTestDatabase();
     const dbService = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    const tenantService = new TenantService(outbox);
+    const tenantService = new TenantService(dbService, outbox);
     features = new FeatureService(dbService);
     provisioning = new ProvisioningService(tenantService, new PasswordService());
   });
