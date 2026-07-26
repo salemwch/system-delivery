@@ -8,6 +8,8 @@ import { LedgerService } from "../src/modules/finance/application/ledger.service
 import type { AccountRef } from "../src/modules/finance/application/ledger.service.js";
 import { LedgerEventHandler } from "../src/modules/finance/application/ledger-event.handler.js";
 import { RemittanceService } from "../src/modules/finance/application/remittance.service.js";
+import { SettlementService } from "../src/modules/finance/application/settlement.service.js";
+import { ReconciliationService } from "../src/modules/finance/application/reconciliation.service.js";
 import { ledgerAccounts, ledgerEntries } from "../src/modules/finance/domain/schema.js";
 import { formatMinorUnits, parseMinorUnits } from "../src/modules/finance/domain/money.js";
 import { OutboxService } from "../src/modules/platform/index.js";
@@ -528,6 +530,232 @@ describe("finance", () => {
 
       const resolved = await asTenant(tenantId, () => svc.resolve(submitted.id, ctx));
       expect(resolved.status).toBe("RESOLVED");
+    });
+  });
+
+  // ── Settlement (increment 3): merchant payout ────────────────────────────────
+  describe("SettlementService", () => {
+    const drafter = { actorUserId: randomUUID(), role: "FINANCE" };
+    const approver = { actorUserId: randomUUID(), role: "OWNER" };
+
+    function service(): SettlementService {
+      return new SettlementService(db, ledger, currency, new OutboxService());
+    }
+    async function asTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
+      return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "system" }, fn);
+    }
+    const today = (): string => new Date().toISOString().slice(0, 10);
+
+    /** Post a COD collection for a merchant so it accrues to MERCHANT_PAYABLE. */
+    async function collectForMerchant(
+      tenantId: string,
+      merchantId: string,
+      amount: bigint,
+    ): Promise<void> {
+      const handler = new LedgerEventHandler(db, ledger);
+      await handler.handle(
+        codCollectedEvent(tenantId, {
+          driverId: randomUUID(),
+          merchantId,
+          amountMinor: amount.toString(),
+          currency: "TND",
+        }),
+      );
+    }
+
+    it("drafts from the merchant's collected COD in the period", async () => {
+      const tenantId = await seedTenant("settle-draft");
+      const merchantId = randomUUID();
+      await collectForMerchant(tenantId, merchantId, 10000n);
+      await collectForMerchant(tenantId, merchantId, 5000n);
+
+      const draft = await asTenant(tenantId, () =>
+        service().createDraft(
+          {
+            merchantId,
+            periodFrom: today(),
+            periodTo: today(),
+            currency: "TND",
+            deliveryFeesMinor: "1500",
+          },
+          drafter,
+        ),
+      );
+
+      expect(draft.status).toBe("DRAFT");
+      expect(draft.grossCodAmountMinor).toBe(15000n);
+      expect(draft.deliveryFeesMinor).toBe(1500n);
+      expect(draft.netPayableMinor).toBe(13500n);
+      expect(draft.shipmentCount).toBe(2);
+    });
+
+    it("enforces separation of duties: the drafter cannot approve, and only FINANCE/OWNER can", async () => {
+      const tenantId = await seedTenant("settle-sod");
+      const merchantId = randomUUID();
+      await collectForMerchant(tenantId, merchantId, 9000n);
+      const svc = service();
+      const draft = await asTenant(tenantId, () =>
+        svc.createDraft(
+          { merchantId, periodFrom: today(), periodTo: today(), currency: "TND" },
+          drafter,
+        ),
+      );
+
+      // Same user who drafted it → refused.
+      await expect(asTenant(tenantId, () => svc.approve(draft.id, drafter))).rejects.toThrow(
+        /separation of duties|drafted/i,
+      );
+      // A dispatcher (wrong role) → refused.
+      await expect(
+        asTenant(tenantId, () =>
+          svc.approve(draft.id, { actorUserId: randomUUID(), role: "DISPATCHER" }),
+        ),
+      ).rejects.toThrow(/FINANCE|OWNER/i);
+
+      const approved = await asTenant(tenantId, () => svc.approve(draft.id, approver));
+      expect(approved.status).toBe("APPROVED");
+      expect(approved.approvedByUserId).toBe(approver.actorUserId);
+    });
+
+    it("posts the ledger on payment: merchant_payable cleared, bank out, fees to revenue", async () => {
+      const tenantId = await seedTenant("settle-paid");
+      const merchantId = randomUUID();
+      await collectForMerchant(tenantId, merchantId, 15000n);
+      const svc = service();
+      const draft = await asTenant(tenantId, () =>
+        svc.createDraft(
+          {
+            merchantId,
+            periodFrom: today(),
+            periodTo: today(),
+            currency: "TND",
+            deliveryFeesMinor: "1500",
+          },
+          drafter,
+        ),
+      );
+      await asTenant(tenantId, () => svc.approve(draft.id, approver));
+      const paid = await asTenant(tenantId, () =>
+        svc.markPaid(
+          draft.id,
+          { paymentMethod: "BANK_TRANSFER", paymentReference: "TX-1" },
+          approver,
+        ),
+      );
+      expect(paid.status).toBe("PAID");
+
+      await db.withTenant(async (tx) => {
+        // The full payable is cleared.
+        expect(
+          await ledger.balanceOf(tx, tenantId, "TND", {
+            ownerType: "MERCHANT",
+            ownerId: merchantId,
+            accountType: "MERCHANT_PAYABLE",
+          }),
+        ).toBe(0n);
+        // Bank paid out the net (a credit to a debit-normal asset → negative from 0).
+        expect(
+          await ledger.balanceOf(tx, tenantId, "TND", {
+            ownerType: "TENANT",
+            ownerId: tenantId,
+            accountType: "BANK",
+          }),
+        ).toBe(-13500n);
+        // The delivery fee is recognised as platform revenue.
+        expect(
+          await ledger.balanceOf(tx, tenantId, "TND", {
+            ownerType: "TENANT",
+            ownerId: tenantId,
+            accountType: "PLATFORM_REVENUE",
+          }),
+        ).toBe(1500n);
+      }, asTenantId(tenantId));
+    });
+
+    it("never settles a shipment twice, and cancel frees them again", async () => {
+      const tenantId = await seedTenant("settle-once");
+      const merchantId = randomUUID();
+      await collectForMerchant(tenantId, merchantId, 4000n);
+      const svc = service();
+      const period = { periodFrom: today(), periodTo: today(), currency: "TND" as const };
+
+      const first = await asTenant(tenantId, () =>
+        svc.createDraft({ merchantId, ...period }, drafter),
+      );
+      expect(first.shipmentCount).toBe(1);
+
+      // The shipment is now spoken for → a second draft finds nothing.
+      await expect(
+        asTenant(tenantId, () => svc.createDraft({ merchantId, ...period }, drafter)),
+      ).rejects.toThrow(/unsettled|nothing to settle/i);
+
+      // Cancelling frees it for a fresh draft.
+      await asTenant(tenantId, () => svc.cancel(first.id, drafter));
+      const redraft = await asTenant(tenantId, () =>
+        svc.createDraft({ merchantId, ...period }, drafter),
+      );
+      expect(redraft.grossCodAmountMinor).toBe(4000n);
+    });
+  });
+
+  // ── Reconciliation reads (increment 3) ───────────────────────────────────────
+  describe("ReconciliationService", () => {
+    async function asTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
+      return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "system" }, fn);
+    }
+    const today = (): string => new Date().toISOString().slice(0, 10);
+
+    it("cash-in-field sums the drivers' current cash", async () => {
+      const tenantId = await seedTenant("recon-cif");
+      const handler = new LedgerEventHandler(db, ledger);
+      const driverA = randomUUID();
+      const driverB = randomUUID();
+      await handler.handle(
+        codCollectedEvent(tenantId, {
+          driverId: driverA,
+          merchantId: randomUUID(),
+          amountMinor: "10000",
+        }),
+      );
+      await handler.handle(
+        codCollectedEvent(tenantId, {
+          driverId: driverB,
+          merchantId: randomUUID(),
+          amountMinor: "5000",
+        }),
+      );
+
+      const recon = new ReconciliationService(db);
+      const cif = await asTenant(tenantId, () => recon.cashInField("TND"));
+      expect(cif.totalMinor).toBe(15000n);
+      expect(cif.drivers).toHaveLength(2);
+    });
+
+    it("reports the day's collected / remitted / variance", async () => {
+      const tenantId = await seedTenant("recon-daily");
+      const handler = new LedgerEventHandler(db, ledger);
+      const driverId = randomUUID();
+      await handler.handle(
+        codCollectedEvent(tenantId, { driverId, merchantId: randomUUID(), amountMinor: "20000" }),
+      );
+
+      const remit = new RemittanceService(db, ledger, currency, new OutboxService());
+      const submitted = await asTenant(tenantId, () =>
+        remit.submit(
+          { driverId, hubId: randomUUID(), declaredAmountMinor: "20000", currency: "TND" },
+          { actorUserId: randomUUID() },
+        ),
+      );
+      await asTenant(tenantId, () =>
+        remit.confirm(submitted.id, { countedAmountMinor: "20000" }, { actorUserId: randomUUID() }),
+      );
+
+      const recon = new ReconciliationService(db);
+      const day = await asTenant(tenantId, () => recon.dailyReconciliation(today(), "TND"));
+      expect(day.collectedMinor).toBe(20000n);
+      expect(day.remittedMinor).toBe(20000n);
+      expect(day.varianceMinor).toBe(0n);
+      expect(day.outstandingMinor).toBe(0n);
     });
   });
 });

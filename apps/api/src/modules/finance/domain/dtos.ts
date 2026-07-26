@@ -42,3 +42,28 @@ export const disputeRemittanceSchema = z.strictObject({
   reason: z.string().trim().min(1).max(2000),
 });
 export type DisputeRemittanceDto = z.infer<typeof disputeRemittanceSchema>;
+
+/** An ISO date (YYYY-MM-DD), used for a settlement window. */
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, "must be an ISO date (YYYY-MM-DD)");
+
+/** Finance drafts a merchant settlement for a period. Gross is computed, not given. */
+export const createSettlementSchema = z
+  .strictObject({
+    merchantId: z.uuid(),
+    periodFrom: isoDate,
+    periodTo: isoDate,
+    currency: currencyCode,
+    deliveryFeesMinor: amountMinor.optional(),
+  })
+  .refine((dto) => dto.periodTo >= dto.periodFrom, {
+    message: "periodTo must not be before periodFrom",
+    path: ["periodTo"],
+  });
+export type CreateSettlementDto = z.infer<typeof createSettlementSchema>;
+
+/** Finance records a settlement as paid (the ledger posts here, not on approval). */
+export const markSettlementPaidSchema = z.strictObject({
+  paymentMethod: z.enum(["BANK_TRANSFER", "CHEQUE", "CASH"]),
+  paymentReference: z.string().trim().min(1).max(200).optional(),
+});
+export type MarkSettlementPaidDto = z.infer<typeof markSettlementPaidSchema>;

@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  date,
   index,
+  integer,
   pgTable,
   smallint,
   text,
@@ -146,3 +148,68 @@ export type LedgerEntry = typeof ledgerEntries.$inferSelect;
 export type NewLedgerEntry = typeof ledgerEntries.$inferInsert;
 export type CodRemittance = typeof codRemittances.$inferSelect;
 export type NewCodRemittance = typeof codRemittances.$inferInsert;
+
+/**
+ * A merchant COD payout for a period (domain §3.16). Ledger posts on PAID. Never
+ * deleted (migration REVOKEs DELETE). RLS+FORCE. The approver-≠-drafter separation
+ * of duties is a CHECK plus a service guard.
+ */
+export const settlements = pgTable(
+  "settlements",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    merchantId: uuid("merchant_id").notNull(),
+    code: text("code").notNull(),
+    status: text("status").notNull().default("DRAFT"),
+    periodFrom: date("period_from").notNull(),
+    periodTo: date("period_to").notNull(),
+    grossCodAmountMinor: bigint("gross_cod_amount_minor", { mode: "bigint" }).notNull(),
+    deliveryFeesMinor: bigint("delivery_fees_minor", { mode: "bigint" }).notNull().default(0n),
+    adjustmentsMinor: bigint("adjustments_minor", { mode: "bigint" }).notNull().default(0n),
+    netPayableMinor: bigint("net_payable_minor", { mode: "bigint" }).notNull(),
+    currency: text("currency").notNull(),
+    shipmentCount: integer("shipment_count").notNull().default(0),
+    paymentMethod: text("payment_method"),
+    paymentReference: text("payment_reference"),
+    createdByUserId: uuid("created_by_user_id").notNull(),
+    approvedByUserId: uuid("approved_by_user_id"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("settlements_code_uq").on(table.tenantId, table.code),
+    index("settlements_merchant_idx").on(table.tenantId, table.merchantId, table.status),
+  ],
+);
+
+/**
+ * The shipments a settlement covers. The unique index on (tenant_id, shipment_id)
+ * enforces at-most-one-settlement-per-shipment (domain §3.16 rule 2).
+ */
+export const settlementShipments = pgTable(
+  "settlement_shipments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    settlementId: uuid("settlement_id").notNull(),
+    shipmentId: uuid("shipment_id").notNull(),
+    amountMinor: bigint("amount_minor", { mode: "bigint" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("settlement_shipments_shipment_uq").on(table.tenantId, table.shipmentId),
+    index("settlement_shipments_settlement_idx").on(table.settlementId),
+  ],
+);
+
+export type Settlement = typeof settlements.$inferSelect;
+export type NewSettlement = typeof settlements.$inferInsert;
+export type SettlementShipment = typeof settlementShipments.$inferSelect;
+export type NewSettlementShipment = typeof settlementShipments.$inferInsert;

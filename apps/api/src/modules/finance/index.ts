@@ -18,15 +18,27 @@ export type {
 export { LedgerEventHandler } from "./application/ledger-event.handler.js";
 export { RemittanceService } from "./application/remittance.service.js";
 export type { RemittanceContext } from "./application/remittance.service.js";
+export { SettlementService } from "./application/settlement.service.js";
+export type { SettlementContext } from "./application/settlement.service.js";
+export { ReconciliationService } from "./application/reconciliation.service.js";
+export type {
+  CashInField,
+  DriverCashHolding,
+  DailyReconciliation,
+} from "./application/reconciliation.service.js";
 export {
   submitRemittanceSchema,
   confirmRemittanceSchema,
   disputeRemittanceSchema,
+  createSettlementSchema,
+  markSettlementPaidSchema,
 } from "./domain/dtos.js";
 export type {
   SubmitRemittanceDto,
   ConfirmRemittanceDto,
   DisputeRemittanceDto,
+  CreateSettlementDto,
+  MarkSettlementPaidDto,
 } from "./domain/dtos.js";
 
 export {
@@ -48,7 +60,14 @@ export type {
 
 export { formatMinorUnits, parseMinorUnits } from "./domain/money.js";
 
-export { currencies, ledgerAccounts, ledgerEntries, codRemittances } from "./domain/schema.js";
+export {
+  currencies,
+  ledgerAccounts,
+  ledgerEntries,
+  codRemittances,
+  settlements,
+  settlementShipments,
+} from "./domain/schema.js";
 export type {
   Currency,
   LedgerAccount,
@@ -57,4 +76,8 @@ export type {
   NewLedgerEntry,
   CodRemittance,
   NewCodRemittance,
+  Settlement,
+  NewSettlement,
+  SettlementShipment,
+  NewSettlementShipment,
 } from "./domain/schema.js";

@@ -41,6 +41,7 @@ export interface PostTransactionInput {
   readonly sourceEventId?: string;
   readonly shipmentId?: string;
   readonly remittanceId?: string;
+  readonly settlementId?: string;
   readonly createdByUserId?: string;
 }
 
@@ -91,6 +92,7 @@ export class LedgerService {
         description: input.description ?? "",
         ...(input.shipmentId === undefined ? {} : { shipmentId: input.shipmentId }),
         ...(input.remittanceId === undefined ? {} : { remittanceId: input.remittanceId }),
+        ...(input.settlementId === undefined ? {} : { settlementId: input.settlementId }),
         ...(input.sourceEventId === undefined ? {} : { sourceEventId: input.sourceEventId }),
         ...(input.createdByUserId === undefined ? {} : { createdBy: input.createdByUserId }),
       });

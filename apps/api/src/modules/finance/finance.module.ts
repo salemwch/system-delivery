@@ -4,7 +4,9 @@ import { PlatformModule } from "../platform/index.js";
 import { CurrencyService } from "./application/currency.service.js";
 import { LedgerService } from "./application/ledger.service.js";
 import { LedgerEventHandler } from "./application/ledger-event.handler.js";
+import { ReconciliationService } from "./application/reconciliation.service.js";
 import { RemittanceService } from "./application/remittance.service.js";
+import { SettlementService } from "./application/settlement.service.js";
 
 /**
  * Finance context (docs/04-context-map.md §3.10) — Layer 3.
@@ -19,7 +21,21 @@ import { RemittanceService } from "./application/remittance.service.js";
  */
 @Module({
   imports: [PlatformModule],
-  providers: [CurrencyService, LedgerService, LedgerEventHandler, RemittanceService],
-  exports: [CurrencyService, LedgerService, LedgerEventHandler, RemittanceService],
+  providers: [
+    CurrencyService,
+    LedgerService,
+    LedgerEventHandler,
+    RemittanceService,
+    SettlementService,
+    ReconciliationService,
+  ],
+  exports: [
+    CurrencyService,
+    LedgerService,
+    LedgerEventHandler,
+    RemittanceService,
+    SettlementService,
+    ReconciliationService,
+  ],
 })
 export class FinanceModule {}
