@@ -18,9 +18,9 @@ Authorized 2026-07-22. Build within these limits:
 
 ---
 
-## Current state (updated 2026-07-26)
+## Current state (updated 2026-07-28)
 
-**Everything green:** `pnpm build` → ok · `pnpm test` → 227/227 · `pnpm knip` → 0.
+**Everything green:** `pnpm build` → ok · `pnpm test` → 439/439 · `pnpm lint` → 0 · `pnpm knip` → 0 · `pnpm sast` → 0.
 
 **You can log in for real:** `pnpm db:seed` → `POST /v1/auth/login` → token → `/v1/auth/me`.
 
@@ -31,7 +31,7 @@ Authorized 2026-07-22. Build within these limits:
 | Monorepo       | pnpm + Turborepo, Node 24 LTS, TS 5.9.3 (do not move to TS 7 until NestJS supports it)                                                                                                                                                                    |
 | Local infra    | `pnpm dev:infra` — PG18+TimescaleDB+PostGIS, Valkey 8.1, MinIO. Images pinned by digest. OSRM behind `--profile routing`                                                                                                                                  |
 | DB roles       | `dp_app` (RLS, no DDL), `dp_migrator` (owns schema), `dp_relay` (outbox-only cross-tenant). Three least-privilege identities                                                                                                                              |
-| Migrations     | 0000–0014 applied. Forward-only, checksum-locked, immutable. See individual migration files for DDL details                                                                                                                                               |
+| Migrations     | 0000–0017 applied. Forward-only, checksum-locked, immutable. See individual migration files for DDL details                                                                                                                                               |
 | RLS            | Data tables: ENABLE+FORCE. `tenants` registry: ENABLE only                                                                                                                                                                                                |
 | `shared/`      | config (Zod, fail-fast), database (`withTenant`), errors (`DomainError`), http (RFC 9457, `ZodValidationPipe`), crypto (`FieldCipher` AES-256-GCM), observability (OTel traces, `withSpan`, trace-context threading), valkey (ioredis 5.11.1)             |
 | `platform`     | OutboxService, FeatureService, TenantService, OutboxRelayService, ValkeyStreamEventPublisher, EventPublisher port                                                                                                                                         |
@@ -41,6 +41,8 @@ Authorized 2026-07-22. Build within these limits:
 | `network`      | HubService (resolveForAddress via ST_Covers/KNN), ZoneService, GeofenceService (pure evaluate). 17 tests                                                                                                                                                  |
 | `fleet`        | VehicleService, DriverService (PII encrypted), ShiftService (privacy gate). 19 tests                                                                                                                                                                      |
 | `shipment`     | ShipmentEventService.applyTo = single status writer. ShipmentService commands (create, pickup, deliver, fail, return, cancel). 16 tests                                                                                                                   |
+| `pickup`       | Scan-based parcel-level custody. EXPLICIT/MERCHANT_READY selection, zero-parcel outcome reasons, offline batch sync. `pickup.parcel_scanned` → `pickup-scan` consumer → shipment custody. 136 tests                                                       |
+| `custody`      | ManifestService (open→seal→dispatch→receive→reconcile, 4 types), HubScanService (hub inbound). Makes AT_HUB/IN_TRANSIT reachable. I14 immutability enforced by DB trigger. 76 tests                                                                       |
 | `dispatch`     | RouteService (create→publish→start→complete), AssignmentService. Haversine NN+2-opt fallback. 22 tests                                                                                                                                                    |
 | `notification` | EventStreamConsumer + NotificationEventHandler + NotificationService. ConsoleNotificationProvider. 9 tests                                                                                                                                                |
 | `finance`      | **Inc1:** currencies + double-entry ledger (zero-sum DEFERRABLE trigger). **Inc2:** remittance (submit/confirm/dispute). **Inc3:** settlement (draft→approve→pay with separation-of-duties) + reconciliation (cashInField, dailyReconciliation). 24 tests |
@@ -54,7 +56,9 @@ Authorized 2026-07-22. Build within these limits:
 - Recipient counters are NOT written by shipment — they become a directory-side consumer
 - `cod.collected` consumed by `ledger` group; `pod.captured` still published with no consumer
 - DLQ replay/resolve admin path not built (rows land PENDING)
-- Hub-ops commands (`arrived_at_hub`/`loaded`/`departed`) deferred until manifest module
+- Hub-ops commands (`arrived_at_hub`/`loaded`/`departed`) now live in `custody`. Custody transfers at manifest RECEIPT, never at seal (§3.11 rule 5). A RETURN manifest emits no `loaded` — its parcels are not at a hub
+- Manifest hotspot H2 (who is liable for a missing parcel) is deliberately undecided — `manifest_discrepancies` records the facts and a resolution reason; no blame, no charge-back until the S2 policy call
+- `custody` and `dispatch` are the only two sanctioned same-layer dependencies on `shipment`; both call it directly. `pickup` may NOT — it hands off via `pickup.parcel_scanned`
 - OSRM binding deferred until Maghreb extract loaded (`dev:infra --profile routing`)
 
 ### Traps — read before modifying any module

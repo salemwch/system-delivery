@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { LoggerModule } from "nestjs-pino";
 
+import { CustodyModule } from "./modules/custody/index.js";
 import { DirectoryModule } from "./modules/directory/index.js";
 import { DispatchModule } from "./modules/dispatch/index.js";
 import { FinanceModule } from "./modules/finance/index.js";
@@ -34,6 +35,7 @@ import { DatabaseModule } from "./shared/database/database.module.js";
     FleetModule,
     ShipmentModule,
     PickupModule,
+    CustodyModule,
     DispatchModule,
     FinanceModule,
     LoggerModule.forRootAsync({

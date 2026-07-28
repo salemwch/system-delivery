@@ -675,6 +675,45 @@ export class ShipmentService {
     });
   }
 
+  /**
+   * Resolves a scanned barcode to its shipment, or null when nothing matches.
+   *
+   * The tracking number is the shipment's public identity (domain rule 10), so
+   * this is the seam every scanning context needs: a hub operator holding a
+   * parcel knows only what is printed on the label. Returns null rather than
+   * throwing — an unrecognised barcode is a routine operational fact to be
+   * recorded as a discrepancy, not an exception.
+   */
+  async findByTrackingNumber(trackingNumber: string): Promise<Shipment | null> {
+    return this.database.withTenant(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(shipments)
+        .where(eq(shipments.trackingNumber, trackingNumber))
+        .limit(1);
+      return rows[0] ?? null;
+    });
+  }
+
+  /**
+   * Bulk read by id, for callers holding a set of shipments to act on.
+   *
+   * Exists so a context processing a manifest or a route does not fan out into
+   * one `getById` per parcel — a 200-item manifest would otherwise be 200
+   * round trips just to read status before deciding what to record.
+   */
+  async findManyByIds(ids: readonly string[]): Promise<Shipment[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    return this.database.withTenant(async (tx) =>
+      tx
+        .select()
+        .from(shipments)
+        .where(inArray(shipments.id, [...ids])),
+    );
+  }
+
   async list(input: unknown = {}): Promise<ShipmentPage> {
     const dto = parseWithZod(listShipmentsSchema, input);
     const limit = dto.limit ?? DEFAULT_PAGE_SIZE;
