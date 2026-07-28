@@ -157,7 +157,8 @@ export class ShipmentTraceabilityService {
         chain.push({
           custodianType,
           custodianId,
-          custodianLabel: custodianType === "HUB" ? "Hub" : custodianType === "DRIVER" ? "Driver" : "System",
+          custodianLabel:
+            custodianType === "HUB" ? "Hub" : custodianType === "DRIVER" ? "Driver" : "System",
           receivedAt: event.occurredAt.toISOString(),
           releasedAt: null,
           dwellSeconds: null,
@@ -281,9 +282,7 @@ export class ShipmentTraceabilityService {
 
       const inCustodySince = custodyEvent?.occurredAt ?? null;
       const dwellSeconds =
-        inCustodySince !== null
-          ? Math.round((Date.now() - inCustodySince.getTime()) / 1000)
-          : null;
+        inCustodySince !== null ? Math.round((Date.now() - inCustodySince.getTime()) / 1000) : null;
 
       const lastLocation =
         lastEvent !== undefined && lastEvent.latitude !== null && lastEvent.longitude !== null
@@ -379,7 +378,11 @@ export class ShipmentTraceabilityService {
   }
 }
 
-function resolveCustodianType(event: { eventType: string; hubId: string | null; driverId: string | null }): string {
+function resolveCustodianType(event: {
+  eventType: string;
+  hubId: string | null;
+  driverId: string | null;
+}): string {
   if (event.hubId !== null) return "HUB";
   if (event.driverId !== null) return "DRIVER";
   if (event.eventType === "created") return "SYSTEM";

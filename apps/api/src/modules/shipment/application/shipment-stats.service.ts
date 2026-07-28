@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { eq, sql, and, gte, lt } from "drizzle-orm";
 
 import { DatabaseService } from "../../../shared/database/index.js";
+import { roundTo } from "../../../shared/math/index.js";
 import { shipments, shipmentEvents } from "../domain/schema.js";
 
 interface StatusCount {
@@ -142,7 +143,7 @@ export class ShipmentStatsService {
         todayCreated,
         todayDelivered,
         todayFailed,
-        deliveryRate: Math.round(deliveryRate * 10000) / 10000,
+        deliveryRate: roundTo(deliveryRate, 4),
         avgAttemptsPerDelivery,
         codCollectedMinor: codCollected,
         codPendingMinor: codPending,
@@ -188,18 +189,13 @@ export class ShipmentStatsService {
           delivered: sql<string>`coalesce(sum(case when status = 'DELIVERED' then cod_amount_minor else 0 end), 0)::text`,
         })
         .from(shipments)
-        .where(
-          and(
-            eq(shipments.merchantId, merchantId),
-            eq(shipments.currency, currency),
-          ),
-        );
+        .where(and(eq(shipments.merchantId, merchantId), eq(shipments.currency, currency)));
 
       return {
         merchantId,
         totalShipments: total,
         byStatus,
-        deliveryRate: Math.round(deliveryRate * 10000) / 10000,
+        deliveryRate: roundTo(deliveryRate, 4),
         avgAttemptsPerDelivery,
         totalCodMinor: codRows[0]?.total ?? "0",
         deliveredCodMinor: codRows[0]?.delivered ?? "0",
@@ -213,14 +209,19 @@ export class ShipmentStatsService {
       const deliveredRows = await tx
         .select({ count: sql<number>`count(distinct shipment_id)::int` })
         .from(shipmentEvents)
-        .where(and(eq(shipmentEvents.driverId, driverId), eq(shipmentEvents.eventType, "delivered")));
+        .where(
+          and(eq(shipmentEvents.driverId, driverId), eq(shipmentEvents.eventType, "delivered")),
+        );
       const totalDeliveries = deliveredRows[0]?.count ?? 0;
 
       const failedRows = await tx
         .select({ count: sql<number>`count(distinct shipment_id)::int` })
         .from(shipmentEvents)
         .where(
-          and(eq(shipmentEvents.driverId, driverId), eq(shipmentEvents.eventType, "delivery_failed")),
+          and(
+            eq(shipmentEvents.driverId, driverId),
+            eq(shipmentEvents.eventType, "delivery_failed"),
+          ),
         );
       const totalFailures = failedRows[0]?.count ?? 0;
 
@@ -265,10 +266,10 @@ export class ShipmentStatsService {
         driverId,
         totalDeliveries,
         totalFailures,
-        deliveryRate: Math.round(deliveryRate * 10000) / 10000,
+        deliveryRate: roundTo(deliveryRate, 4),
         totalAttempts,
-        avgAttemptsPerDelivery: Math.round(avgAttemptsPerDelivery * 100) / 100,
-        onTimeRate: Math.round(onTimeRate * 10000) / 10000,
+        avgAttemptsPerDelivery: roundTo(avgAttemptsPerDelivery, 2),
+        onTimeRate: roundTo(onTimeRate, 4),
         codCollectedMinor: codRows[0]?.total ?? "0",
         currency,
       };

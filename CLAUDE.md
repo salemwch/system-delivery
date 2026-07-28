@@ -26,26 +26,26 @@ Authorized 2026-07-22. Build within these limits:
 
 ### Done
 
-| Area | State |
-|---|---|
-| Monorepo | pnpm + Turborepo, Node 24 LTS, TS 5.9.3 (do not move to TS 7 until NestJS supports it) |
-| Local infra | `pnpm dev:infra` — PG18+TimescaleDB+PostGIS, Valkey 8.1, MinIO. Images pinned by digest. OSRM behind `--profile routing` |
-| DB roles | `dp_app` (RLS, no DDL), `dp_migrator` (owns schema), `dp_relay` (outbox-only cross-tenant). Three least-privilege identities |
-| Migrations | 0000–0014 applied. Forward-only, checksum-locked, immutable. See individual migration files for DDL details |
-| RLS | Data tables: ENABLE+FORCE. `tenants` registry: ENABLE only |
-| `shared/` | config (Zod, fail-fast), database (`withTenant`), errors (`DomainError`), http (RFC 9457, `ZodValidationPipe`), crypto (`FieldCipher` AES-256-GCM), observability (OTel traces, `withSpan`, trace-context threading), valkey (ioredis 5.11.1) |
-| `platform` | OutboxService, FeatureService, TenantService, OutboxRelayService, ValkeyStreamEventPublisher, EventPublisher port |
-| `core-worker` | Relay (FOR UPDATE SKIP LOCKED, backoff, alerts) + EventStreamConsumer (XREADGROUP, dedup, DLQ). 12 tests |
-| `identity` | Auth (Argon2id, jose, lockout, refresh rotation+reuse detection), RBAC (AuthGuard, PermissionGuard), AuthController. Provisioning+seed CLI |
-| `directory` | MerchantService, RecipientService, AddressService (GeocodingProvider port). 16 tests |
-| `network` | HubService (resolveForAddress via ST_Covers/KNN), ZoneService, GeofenceService (pure evaluate). 17 tests |
-| `fleet` | VehicleService, DriverService (PII encrypted), ShiftService (privacy gate). 19 tests |
-| `shipment` | ShipmentEventService.applyTo = single status writer. ShipmentService commands (create, pickup, deliver, fail, return, cancel). 16 tests |
-| `dispatch` | RouteService (create→publish→start→complete), AssignmentService. Haversine NN+2-opt fallback. 22 tests |
-| `notification` | EventStreamConsumer + NotificationEventHandler + NotificationService. ConsoleNotificationProvider. 9 tests |
-| `finance` | **Inc1:** currencies + double-entry ledger (zero-sum DEFERRABLE trigger). **Inc2:** remittance (submit/confirm/dispute). **Inc3:** settlement (draft→approve→pay with separation-of-duties) + reconciliation (cashInField, dailyReconciliation). 24 tests |
-| Enforcement | `pnpm lint:rules` — 6 fixtures. `.semgrep.yml` — 10 custom rules. `pnpm sast` |
-| CI/CD | 5 jobs + ci-passed gate. Actions pinned by SHA. Dependabot |
+| Area           | State                                                                                                                                                                                                                                                     |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Monorepo       | pnpm + Turborepo, Node 24 LTS, TS 5.9.3 (do not move to TS 7 until NestJS supports it)                                                                                                                                                                    |
+| Local infra    | `pnpm dev:infra` — PG18+TimescaleDB+PostGIS, Valkey 8.1, MinIO. Images pinned by digest. OSRM behind `--profile routing`                                                                                                                                  |
+| DB roles       | `dp_app` (RLS, no DDL), `dp_migrator` (owns schema), `dp_relay` (outbox-only cross-tenant). Three least-privilege identities                                                                                                                              |
+| Migrations     | 0000–0014 applied. Forward-only, checksum-locked, immutable. See individual migration files for DDL details                                                                                                                                               |
+| RLS            | Data tables: ENABLE+FORCE. `tenants` registry: ENABLE only                                                                                                                                                                                                |
+| `shared/`      | config (Zod, fail-fast), database (`withTenant`), errors (`DomainError`), http (RFC 9457, `ZodValidationPipe`), crypto (`FieldCipher` AES-256-GCM), observability (OTel traces, `withSpan`, trace-context threading), valkey (ioredis 5.11.1)             |
+| `platform`     | OutboxService, FeatureService, TenantService, OutboxRelayService, ValkeyStreamEventPublisher, EventPublisher port                                                                                                                                         |
+| `core-worker`  | Relay (FOR UPDATE SKIP LOCKED, backoff, alerts) + EventStreamConsumer (XREADGROUP, dedup, DLQ). 12 tests                                                                                                                                                  |
+| `identity`     | Auth (Argon2id, jose, lockout, refresh rotation+reuse detection), RBAC (AuthGuard, PermissionGuard), AuthController. Provisioning+seed CLI                                                                                                                |
+| `directory`    | MerchantService, RecipientService, AddressService (GeocodingProvider port). 16 tests                                                                                                                                                                      |
+| `network`      | HubService (resolveForAddress via ST_Covers/KNN), ZoneService, GeofenceService (pure evaluate). 17 tests                                                                                                                                                  |
+| `fleet`        | VehicleService, DriverService (PII encrypted), ShiftService (privacy gate). 19 tests                                                                                                                                                                      |
+| `shipment`     | ShipmentEventService.applyTo = single status writer. ShipmentService commands (create, pickup, deliver, fail, return, cancel). 16 tests                                                                                                                   |
+| `dispatch`     | RouteService (create→publish→start→complete), AssignmentService. Haversine NN+2-opt fallback. 22 tests                                                                                                                                                    |
+| `notification` | EventStreamConsumer + NotificationEventHandler + NotificationService. ConsoleNotificationProvider. 9 tests                                                                                                                                                |
+| `finance`      | **Inc1:** currencies + double-entry ledger (zero-sum DEFERRABLE trigger). **Inc2:** remittance (submit/confirm/dispute). **Inc3:** settlement (draft→approve→pay with separation-of-duties) + reconciliation (cashInField, dailyReconciliation). 24 tests |
+| Enforcement    | `pnpm lint:rules` — 6 fixtures. `.semgrep.yml` — 10 custom rules. `pnpm sast`                                                                                                                                                                             |
+| CI/CD          | 5 jobs + ci-passed gate. Actions pinned by SHA. Dependabot                                                                                                                                                                                                |
 
 ### Key design decisions (not derivable from code)
 
@@ -84,23 +84,23 @@ Authorized 2026-07-22. Build within these limits:
 
 ### One tool per job
 
-| Job | Use | Never alongside |
-|---|---|---|
-| Validation | **Zod** | class-validator, Joi, Yup |
-| Data access | **Drizzle ORM** | Prisma, TypeORM, Knex |
-| HTTP | **NestJS + Fastify** | Express adapter |
-| Jobs | **BullMQ** (Valkey) | node-cron, setInterval |
-| Events | **Outbox → Valkey Streams** | Kafka (until V2), EventEmitter2 |
-| Cache | **Valkey** | Redis duplication, Memcached |
-| Testing | **Vitest** + **Testcontainers** | Jest, mocked repos |
-| HTTP client | **native `fetch`** | axios, got |
-| Logging | **Pino** | Winston, console.* |
-| Config | **Zod-validated ConfigService** | direct process.env |
-| IDs | **UUIDv7** | uuid package, nanoid |
-| Passwords | **argon2 (Argon2id)** | bcrypt |
-| Money | **bigint minor units** | decimal.js, floats, ×100 |
-| Observability | **OpenTelemetry** | custom trace headers |
-| Routing | **OSRM** behind adapter | direct Google/Mapbox calls |
+| Job           | Use                             | Never alongside                 |
+| ------------- | ------------------------------- | ------------------------------- |
+| Validation    | **Zod**                         | class-validator, Joi, Yup       |
+| Data access   | **Drizzle ORM**                 | Prisma, TypeORM, Knex           |
+| HTTP          | **NestJS + Fastify**            | Express adapter                 |
+| Jobs          | **BullMQ** (Valkey)             | node-cron, setInterval          |
+| Events        | **Outbox → Valkey Streams**     | Kafka (until V2), EventEmitter2 |
+| Cache         | **Valkey**                      | Redis duplication, Memcached    |
+| Testing       | **Vitest** + **Testcontainers** | Jest, mocked repos              |
+| HTTP client   | **native `fetch`**              | axios, got                      |
+| Logging       | **Pino**                        | Winston, console.*              |
+| Config        | **Zod-validated ConfigService** | direct process.env              |
+| IDs           | **UUIDv7**                      | uuid package, nanoid            |
+| Passwords     | **argon2 (Argon2id)**           | bcrypt                          |
+| Money         | **bigint minor units**          | decimal.js, floats, ×100        |
+| Observability | **OpenTelemetry**               | custom trace headers            |
+| Routing       | **OSRM** behind adapter         | direct Google/Mapbox calls      |
 
 Adding alternatives requires an ADR in `/docs`.
 
@@ -118,18 +118,18 @@ Adding alternatives requires an ADR in `/docs`.
 
 ## Documents
 
-| # | Document | Contents |
-|---|---|---|
-| 01 | **[01-mvp-scope.md](./docs/01-mvp-scope.md)** | Authoritative MVP boundary, ADR-005, roles, entities, MENA requirements |
-| 02 | **[02-domain-model.md](./docs/02-domain-model.md)** | Frozen entities, lifecycles, state machines, 17 invariants |
-| 03 | **[03-event-storming.md](./docs/03-event-storming.md)** | 30+ events, 17 commands, 21 policies, read models |
-| 04 | [04-context-map.md](./docs/04-context-map.md) | 12 bounded contexts → NestJS modules, layering |
-| 05 | [05-api-contracts.md](./docs/05-api-contracts.md) | Request/response JSON, error registry, WebSocket |
-| 06 | [06-database-design.md](./docs/06-database-design.md) | Tables, indexes, RLS policies, retention |
-| 07 | [07-security-architecture.md](./docs/07-security-architecture.md) | Threat model, tenant isolation, OWASP |
-| 08 | [08-frontend-architecture.md](./docs/08-frontend-architecture.md) | Four apps, i18n/RTL, offline-first driver app |
-| 09 | [09-infrastructure.md](./docs/09-infrastructure.md) | Cloud, CI/CD, observability, DR |
-| 10 | [10-development-roadmap.md](./docs/10-development-roadmap.md) | V2+ sequencing (superseded by 01 for MVP) |
+| #   | Document                                                          | Contents                                                                |
+| --- | ----------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 01  | **[01-mvp-scope.md](./docs/01-mvp-scope.md)**                     | Authoritative MVP boundary, ADR-005, roles, entities, MENA requirements |
+| 02  | **[02-domain-model.md](./docs/02-domain-model.md)**               | Frozen entities, lifecycles, state machines, 17 invariants              |
+| 03  | **[03-event-storming.md](./docs/03-event-storming.md)**           | 30+ events, 17 commands, 21 policies, read models                       |
+| 04  | [04-context-map.md](./docs/04-context-map.md)                     | 12 bounded contexts → NestJS modules, layering                          |
+| 05  | [05-api-contracts.md](./docs/05-api-contracts.md)                 | Request/response JSON, error registry, WebSocket                        |
+| 06  | [06-database-design.md](./docs/06-database-design.md)             | Tables, indexes, RLS policies, retention                                |
+| 07  | [07-security-architecture.md](./docs/07-security-architecture.md) | Threat model, tenant isolation, OWASP                                   |
+| 08  | [08-frontend-architecture.md](./docs/08-frontend-architecture.md) | Four apps, i18n/RTL, offline-first driver app                           |
+| 09  | [09-infrastructure.md](./docs/09-infrastructure.md)               | Cloud, CI/CD, observability, DR                                         |
+| 10  | [10-development-roadmap.md](./docs/10-development-roadmap.md)     | V2+ sequencing (superseded by 01 for MVP)                               |
 
 Reference: [architecture-blueprint.md](./docs/architecture-blueprint.md) (ADRs 001–004), [technology-decisions.md](./docs/technology-decisions.md) (pinning, docs sources), [api-strategy.md](./docs/api-strategy.md), [traps.md](./docs/traps.md).
 

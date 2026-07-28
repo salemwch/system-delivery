@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Query,
-} from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from "@nestjs/common";
 import { z } from "zod";
 
 import { asTenantId } from "../../../shared/database/index.js";
@@ -19,11 +10,20 @@ import { FeatureService } from "../../platform/index.js";
 import { BulkShipmentService } from "../application/bulk-shipment.service.js";
 import type { BulkCreateResult } from "../application/bulk-shipment.service.js";
 import { ShipmentStatsService } from "../application/shipment-stats.service.js";
-import type { DashboardStats, DriverStats, MerchantStats } from "../application/shipment-stats.service.js";
+import type {
+  DashboardStats,
+  DriverStats,
+  MerchantStats,
+} from "../application/shipment-stats.service.js";
 import { ShipmentService } from "../application/shipment.service.js";
 import type { CommandContext, ShipmentEventView } from "../application/shipment.service.js";
 import { ShipmentTraceabilityService } from "../application/traceability.service.js";
-import type { AuditLogView, CustodyChainView, CurrentCustodyView, JourneyView } from "../application/traceability.service.js";
+import type {
+  AuditLogView,
+  CustodyChainView,
+  CurrentCustodyView,
+  JourneyView,
+} from "../application/traceability.service.js";
 import { TrackingService } from "../application/tracking.service.js";
 import type { Shipment } from "../domain/schema.js";
 import {
@@ -129,7 +129,10 @@ interface PageResponse<T> {
 
 function ctxOf(principal: Principal): CommandContext {
   return {
-    actor: { actorType: principal.actorType === "driver" ? "DRIVER" : "DISPATCHER", actorId: principal.userId },
+    actor: {
+      actorType: principal.actorType === "driver" ? "DRIVER" : "DISPATCHER",
+      actorId: principal.userId,
+    },
     canOverride: principal.permissions.has("shipment:override_status"),
   };
 }
@@ -147,7 +150,12 @@ const bulkCreateSchema = z.strictObject({
 });
 
 const statsQuerySchema = z.object({
-  currency: z.string().trim().length(3).transform((v) => v.toUpperCase()).optional(),
+  currency: z
+    .string()
+    .trim()
+    .length(3)
+    .transform((v) => v.toUpperCase())
+    .optional(),
 });
 
 @Controller("v1/shipments")

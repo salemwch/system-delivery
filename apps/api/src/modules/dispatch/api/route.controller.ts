@@ -1,20 +1,16 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Query,
-} from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from "@nestjs/common";
 import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
 import { CurrentPrincipal, RequirePermissions } from "../../identity/index.js";
 import type { Principal } from "../../identity/index.js";
 import { RouteService } from "../application/route.service.js";
-import type { DispatchContext, ManifestView, OptimizeResult, RoutePlan } from "../application/route.service.js";
+import type {
+  DispatchContext,
+  ManifestView,
+  OptimizeResult,
+  RoutePlan,
+} from "../application/route.service.js";
 import { AssignmentService } from "../application/assignment.service.js";
 import type { ScoredDriver } from "../application/assignment.service.js";
 import type { Route } from "../domain/schema.js";
@@ -29,9 +25,14 @@ import {
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   cursor: z.string().min(1).optional(),
-  status: z.enum(["DRAFT", "OPTIMIZING", "PUBLISHED", "IN_PROGRESS", "COMPLETED", "CANCELLED"]).optional(),
+  status: z
+    .enum(["DRAFT", "OPTIMIZING", "PUBLISHED", "IN_PROGRESS", "COMPLETED", "CANCELLED"])
+    .optional(),
   driverId: z.string().min(1).optional(),
-  plannedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).optional(),
+  plannedDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/u)
+    .optional(),
 });
 
 interface RouteResponse {

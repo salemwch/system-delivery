@@ -59,7 +59,10 @@ export class TrackingService {
   private readonly secret: string;
   private readonly ttlDays: number;
 
-  constructor(private readonly database: DatabaseService, config: AppConfigService) {
+  constructor(
+    private readonly database: DatabaseService,
+    config: AppConfigService,
+  ) {
     this.secret = config.get("TRACKING_TOKEN_SECRET");
     this.ttlDays = config.get("TRACKING_TOKEN_TTL_DAYS");
   }
@@ -93,16 +96,14 @@ export class TrackingService {
     const tenantId = parts[0];
     const trackingNumber = parts[1];
     const expiresAt = Number(parts[2]);
-    if (tenantId === undefined || trackingNumber === undefined || Number.isNaN(expiresAt)) return null;
+    if (tenantId === undefined || trackingNumber === undefined || Number.isNaN(expiresAt))
+      return null;
     if (Date.now() > expiresAt) return null;
 
     return { tenantId, trackingNumber };
   }
 
-  async getPublicTracking(
-    tenantId: TenantId,
-    trackingNumber: string,
-  ): Promise<PublicTrackingView> {
+  async getPublicTracking(tenantId: TenantId, trackingNumber: string): Promise<PublicTrackingView> {
     return TenantContext.run({ tenantId, actorType: "system" }, () =>
       this.database.withTenant(async (tx) => {
         const rows = await tx

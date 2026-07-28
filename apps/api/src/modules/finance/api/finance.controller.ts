@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Query,
-} from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from "@nestjs/common";
 import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
@@ -29,12 +20,20 @@ import {
 } from "../domain/dtos.js";
 
 const cashInFieldQuerySchema = z.object({
-  currency: z.string().trim().length(3).transform((v) => v.toUpperCase()),
+  currency: z
+    .string()
+    .trim()
+    .length(3)
+    .transform((v) => v.toUpperCase()),
 });
 
 const reconciliationQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
-  currency: z.string().trim().length(3).transform((v) => v.toUpperCase()),
+  currency: z
+    .string()
+    .trim()
+    .length(3)
+    .transform((v) => v.toUpperCase()),
 });
 
 interface RemittanceResponse {
