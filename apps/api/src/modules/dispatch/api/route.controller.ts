@@ -12,7 +12,7 @@ import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
 import { CurrentPrincipal, RequirePermissions } from "../../identity/index.js";
-import type { Principal } from "../../identity/application/token.service.js";
+import type { Principal } from "../../identity/index.js";
 import { RouteService } from "../application/route.service.js";
 import type { DispatchContext, ManifestView, OptimizeResult, RoutePlan } from "../application/route.service.js";
 import { AssignmentService } from "../application/assignment.service.js";

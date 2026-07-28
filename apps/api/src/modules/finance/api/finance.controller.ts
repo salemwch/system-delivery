@@ -12,7 +12,7 @@ import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
 import { CurrentPrincipal, RequirePermissions } from "../../identity/index.js";
-import type { Principal } from "../../identity/application/token.service.js";
+import type { Principal } from "../../identity/index.js";
 import { RemittanceService } from "../application/remittance.service.js";
 import type { RemittanceContext } from "../application/remittance.service.js";
 import { SettlementService } from "../application/settlement.service.js";

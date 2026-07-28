@@ -18,6 +18,7 @@ import {
   ValkeyStreamEventPublisher,
 } from "./modules/platform/index.js";
 import type { ConsumerLogger, RelayLogger } from "./modules/platform/index.js";
+import { PickupScanEventHandler, ShipmentModule } from "./modules/shipment/index.js";
 import { AppConfigModule } from "./shared/config/config.module.js";
 import { AppConfigService } from "./shared/config/index.js";
 import { DatabaseModule } from "./shared/database/database.module.js";
@@ -47,8 +48,10 @@ const RELAY_POSTGRES_CLIENT = Symbol("RELAY_POSTGRES_CLIENT");
  */
 const NOTIFICATION_STREAM_CLIENT = Symbol("NOTIFICATION_STREAM_CLIENT");
 const LEDGER_STREAM_CLIENT = Symbol("LEDGER_STREAM_CLIENT");
+const PICKUP_SCAN_STREAM_CLIENT = Symbol("PICKUP_SCAN_STREAM_CLIENT");
 const NOTIFICATION_CONSUMER = Symbol("NOTIFICATION_CONSUMER");
 const LEDGER_CONSUMER = Symbol("LEDGER_CONSUMER");
+const PICKUP_SCAN_CONSUMER = Symbol("PICKUP_SCAN_CONSUMER");
 
 /** A Valkey connection tuned for blocking stream reads (see the symbols above). */
 function makeStreamClient(config: AppConfigService, logger: PinoLogger, component: string): Redis {
@@ -85,10 +88,11 @@ function taggedLogger(logger: PinoLogger, component: string): ConsumerLogger {
  * Consumers write tenant-scoped tables as dp_app (via the global DatabaseModule),
  * setting tenant context per event, so RLS holds on the async path too.
  *
- * At MVP two consumer groups run here: `notification` (customer SMS) and `ledger`
- * (the double-entry COD postings). Each is an independent group with its own
+ * At MVP three consumer groups run here: `notification` (customer SMS), `ledger`
+ * (the double-entry COD postings), and `pickup-scan` (a scanned parcel becomes
+ * driver custody on the shipment). Each is an independent group with its own
  * Valkey position and its own connection, so a slow or failing consumer never
- * blocks the other — or the relay.
+ * blocks the others — or the relay.
  */
 @Module({
   imports: [
@@ -98,6 +102,7 @@ function taggedLogger(logger: PinoLogger, component: string): ConsumerLogger {
     PlatformModule,
     NotificationModule,
     FinanceModule,
+    ShipmentModule,
     LoggerModule.forRootAsync({
       imports: [AppConfigModule],
       inject: [AppConfigService],
@@ -163,6 +168,12 @@ function taggedLogger(logger: PinoLogger, component: string): ConsumerLogger {
         makeStreamClient(config, logger, "ledger-consumer"),
     },
     {
+      provide: PICKUP_SCAN_STREAM_CLIENT,
+      inject: [AppConfigService, PinoLogger],
+      useFactory: (config: AppConfigService, logger: PinoLogger): Redis =>
+        makeStreamClient(config, logger, "pickup-scan-consumer"),
+    },
+    {
       // The notification consumer: shipment events → customer SMS.
       provide: NOTIFICATION_CONSUMER,
       inject: [
@@ -212,6 +223,31 @@ function taggedLogger(logger: PinoLogger, component: string): ConsumerLogger {
           config,
         ),
     },
+    {
+      // The pickup-scan consumer: a scanned parcel → driver custody on the shipment.
+      provide: PICKUP_SCAN_CONSUMER,
+      inject: [
+        PICKUP_SCAN_STREAM_CLIENT,
+        DatabaseService,
+        PickupScanEventHandler,
+        AppConfigService,
+        PinoLogger,
+      ],
+      useFactory: (
+        valkey: Redis,
+        database: DatabaseService,
+        handler: PickupScanEventHandler,
+        config: AppConfigService,
+        logger: PinoLogger,
+      ): EventStreamConsumer =>
+        new EventStreamConsumer(
+          valkey,
+          database,
+          handler,
+          taggedLogger(logger, "event-consumer:pickup-scan"),
+          config,
+        ),
+    },
   ],
 })
 export class WorkerModule implements OnApplicationShutdown {
@@ -219,13 +255,15 @@ export class WorkerModule implements OnApplicationShutdown {
     @Inject(RELAY_POSTGRES_CLIENT) private readonly relayClient: Sql,
     @Inject(NOTIFICATION_STREAM_CLIENT) private readonly notificationStream: Redis,
     @Inject(LEDGER_STREAM_CLIENT) private readonly ledgerStream: Redis,
+    @Inject(PICKUP_SCAN_STREAM_CLIENT) private readonly pickupScanStream: Redis,
   ) {}
 
   async onApplicationShutdown(): Promise<void> {
     // Consumers have already stopped their loops (onModuleDestroy) by now, so the
-    // connections are idle. Close the relay pool and both consumer connections.
+    // connections are idle. Close the relay pool and every consumer connection.
     await this.relayClient.end({ timeout: 5 });
     await this.notificationStream.quit();
     await this.ledgerStream.quit();
+    await this.pickupScanStream.quit();
   }
 }

@@ -2,7 +2,7 @@ import path from "node:path";
 import process from "node:process";
 
 import postgres from "postgres";
-import type { Sql } from "postgres";
+import type { Sql, TransactionSql } from "postgres";
 
 import { runMigrations } from "../src/shared/database/migrator.js";
 
@@ -131,7 +131,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
 export async function withTenantContext<T>(
   migrator: Sql,
   tenantId: string,
-  fn: (tx: Sql) => Promise<T>,
+  fn: (tx: TransactionSql) => Promise<T>,
 ): Promise<T> {
   return migrator.begin(async (tx) => {
     await tx`select set_config('app.current_tenant_id', ${tenantId}, true)`;

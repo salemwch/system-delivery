@@ -18,7 +18,7 @@ import globals from "globals";
 const LAYERS = {
   0: ["platform", "identity"],
   1: ["directory", "network", "fleet"],
-  2: ["shipment", "dispatch", "custody"],
+  2: ["shipment", "pickup", "dispatch", "custody"],
   3: ["tracking", "finance", "notification", "fraud"],
 };
 
@@ -30,6 +30,7 @@ const MODULE_DEPENDENCIES = {
   network: ["platform", "identity", "directory"],
   fleet: ["platform", "identity", "network"],
   shipment: ["platform", "identity", "directory", "network"],
+  pickup: ["platform", "identity", "directory"],
   // dispatch → shipment is the ONE sanctioned same-layer dependency.
   // Documented in docs/04-context-map.md §2.1. Do not add a second without an ADR.
   dispatch: ["platform", "identity", "directory", "network", "fleet", "shipment"],

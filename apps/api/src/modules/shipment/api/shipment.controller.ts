@@ -14,7 +14,7 @@ import { asTenantId } from "../../../shared/database/index.js";
 import { NotFoundError } from "../../../shared/errors/index.js";
 import { zodBody } from "../../../shared/http/index.js";
 import { CurrentPrincipal, RequirePermissions } from "../../identity/index.js";
-import type { Principal } from "../../identity/application/token.service.js";
+import type { Principal } from "../../identity/index.js";
 import { FeatureService } from "../../platform/index.js";
 import { BulkShipmentService } from "../application/bulk-shipment.service.js";
 import type { BulkCreateResult } from "../application/bulk-shipment.service.js";

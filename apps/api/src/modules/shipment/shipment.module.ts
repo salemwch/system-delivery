@@ -5,6 +5,7 @@ import { PlatformModule } from "../platform/index.js";
 import { ShipmentController } from "./api/shipment.controller.js";
 import { TrackingController } from "./api/tracking.controller.js";
 import { BulkShipmentService } from "./application/bulk-shipment.service.js";
+import { PickupScanEventHandler } from "./application/pickup-scan-event.handler.js";
 import { ShipmentEventService } from "./application/shipment-event.service.js";
 import { ShipmentStatsService } from "./application/shipment-stats.service.js";
 import { ShipmentService } from "./application/shipment.service.js";
@@ -18,11 +19,23 @@ import { TrackingService } from "./application/tracking.service.js";
  * merchants) and `platform` (the transactional outbox). The custody ledger and
  * the status projection are written only through ShipmentEventService — the
  * single sanctioned writer of `shipments.status`.
+ *
+ * {@link PickupScanEventHandler} lives here rather than in `pickup` because only
+ * this module may write the custody ledger; the worker composition root wires it
+ * to the `pickup-scan` consumer group.
  */
 @Module({
   imports: [PlatformModule, DirectoryModule],
   controllers: [ShipmentController, TrackingController],
-  providers: [ShipmentService, ShipmentEventService, ShipmentStatsService, BulkShipmentService, TrackingService, ShipmentTraceabilityService],
-  exports: [ShipmentService, ShipmentEventService, TrackingService],
+  providers: [
+    ShipmentService,
+    ShipmentEventService,
+    ShipmentStatsService,
+    BulkShipmentService,
+    TrackingService,
+    ShipmentTraceabilityService,
+    PickupScanEventHandler,
+  ],
+  exports: [ShipmentService, ShipmentEventService, TrackingService, PickupScanEventHandler],
 })
 export class ShipmentModule {}
