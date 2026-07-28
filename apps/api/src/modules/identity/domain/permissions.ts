@@ -56,6 +56,9 @@ export const PERMISSIONS = [
   "driver:update",
   "driver:location:read_live",
   "driver:location:read_history",
+  // Reporting one's own GPS position. Held by drivers only — a dispatcher has no
+  // location to report, and the server additionally requires an open shift.
+  "telemetry:write",
   "vehicle:read",
   "vehicle:manage",
   "shift:start",
@@ -217,6 +220,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "route:read",
     "shift:start",
     "shift:end",
+    "telemetry:write",
     "manifest:read",
     "cod:collect",
     "complaint:create",

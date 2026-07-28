@@ -35,7 +35,10 @@ const MODULE_DEPENDENCIES = {
   // Documented in docs/04-context-map.md §2.1. Do not add a second without an ADR.
   dispatch: ["platform", "identity", "directory", "network", "fleet", "shipment"],
   custody: ["platform", "identity", "network", "shipment"],
-  tracking: ["platform", "fleet", "network"],
+  // `identity` is the auth decorators every controller-owning module needs; it
+  // is layer 0, so this is an ordinary downward dependency, not a boundary
+  // exception. context-map §3.9 lists the DOMAIN dependencies only.
+  tracking: ["platform", "identity", "fleet", "network"],
   finance: ["platform", "identity", "fleet", "directory"],
   notification: ["platform", "identity"],
   fraud: ["platform", "identity", "tracking"],

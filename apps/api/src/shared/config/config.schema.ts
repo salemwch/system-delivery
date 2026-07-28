@@ -98,6 +98,36 @@ export const configSchema = z
     DATABASE_POOL_MAX: z.coerce.number().int().positive().max(100).default(10),
     DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
 
+    // ── Telemetry pool (ADR-005 requirement 4) ───────────────────────────────
+    // GPS ingest gets its OWN connection pool, physically separate from the
+    // transactional one. This is the plane separation from Blueprint §5.2 — the
+    // load-bearing decision that survives even inside a single process: a burst
+    // of telemetry must never exhaust the connections the business API needs,
+    // and a slow business transaction must never stall position writes.
+    //
+    // Same `dp_app` role, so RLS applies identically — this is pool isolation,
+    // not a new identity. Defaults to DATABASE_URL when unset, which keeps
+    // local development a one-variable setup while production separates them.
+    TELEMETRY_DATABASE_URL: postgresUrlSchema.optional(),
+    TELEMETRY_POOL_MAX: z.coerce.number().int().positive().max(100).default(4),
+    // How long a buffered batch may wait before it is flushed, and how many rows
+    // force an early flush. docs/06-database-design.md §5.1: "flushed every 1 s
+    // or 1,000 rows — never row-at-a-time INSERT. This single decision is the
+    // difference between 10k/sec working and not."
+    TELEMETRY_FLUSH_INTERVAL_MS: z.coerce.number().int().positive().default(1_000),
+    TELEMETRY_FLUSH_ROWS: z.coerce.number().int().positive().max(10_000).default(1_000),
+    // Hard ceiling on buffered rows. A queue that grows without limit while the
+    // database is slow is an out-of-memory crash, not a buffer. Past this the
+    // writer sheds oldest-first: positions sample a continuous signal, so losing
+    // the oldest beats losing the process.
+    TELEMETRY_BUFFER_MAX_ROWS: z.coerce.number().int().positive().default(50_000),
+    // Positions worse than this are rejected. A 500 m fix is noise that would
+    // drag a map marker across town.
+    TELEMETRY_MAX_ACCURACY_M: z.coerce.number().positive().default(200),
+    // How long a driver's last-known position stays live in Valkey. Expiry IS
+    // the offline signal (docs/06 §5.3), so there is no separate reaper.
+    TELEMETRY_PRESENCE_TTL_S: z.coerce.number().int().positive().default(90),
+
     // ── Valkey ───────────────────────────────────────────────────────────────
     VALKEY_URL: z.url(),
     // Bounds how long a single Valkey command may run. The relay holds a Postgres
@@ -214,6 +244,16 @@ export const configSchema = z
       message:
         "RELAY_DATABASE_URL must differ from both DATABASE_URL and MIGRATION_DATABASE_URL — the relay role is a distinct least-privilege identity (dp_relay)",
       path: ["RELAY_DATABASE_URL"],
+    },
+  )
+  .refine(
+    (config) =>
+      config.TELEMETRY_DATABASE_URL === undefined ||
+      config.TELEMETRY_DATABASE_URL !== config.MIGRATION_DATABASE_URL,
+    {
+      message:
+        "TELEMETRY_DATABASE_URL must not be the migration role — telemetry writes as dp_app so RLS applies",
+      path: ["TELEMETRY_DATABASE_URL"],
     },
   )
   .refine((config) => config.OUTBOX_RELAY_BASE_BACKOFF_MS <= config.OUTBOX_RELAY_MAX_BACKOFF_MS, {

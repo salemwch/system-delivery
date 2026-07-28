@@ -11,6 +11,7 @@ import { NetworkModule } from "./modules/network/index.js";
 import { PickupModule } from "./modules/pickup/index.js";
 import { PlatformModule } from "./modules/platform/index.js";
 import { ShipmentModule } from "./modules/shipment/index.js";
+import { TrackingModule } from "./modules/tracking/index.js";
 import { AppConfigModule } from "./shared/config/config.module.js";
 import { AppConfigService } from "./shared/config/index.js";
 import { CryptoModule } from "./shared/crypto/crypto.module.js";
@@ -38,6 +39,7 @@ import { DatabaseModule } from "./shared/database/database.module.js";
     CustodyModule,
     DispatchModule,
     FinanceModule,
+    TrackingModule,
     LoggerModule.forRootAsync({
       imports: [AppConfigModule],
       inject: [AppConfigService],

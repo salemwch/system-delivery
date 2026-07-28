@@ -20,7 +20,7 @@ Authorized 2026-07-22. Build within these limits:
 
 ## Current state (updated 2026-07-28)
 
-**Everything green:** `pnpm build` → ok · `pnpm test` → 439/439 · `pnpm lint` → 0 · `pnpm knip` → 0 · `pnpm sast` → 0.
+**Everything green:** `pnpm build` → ok · `pnpm test` → 470/470 · `pnpm lint` → 0 · `pnpm knip` → 0 · `pnpm sast` → 0.
 
 **You can log in for real:** `pnpm db:seed` → `POST /v1/auth/login` → token → `/v1/auth/me`.
 
@@ -31,7 +31,7 @@ Authorized 2026-07-22. Build within these limits:
 | Monorepo       | pnpm + Turborepo, Node 24 LTS, TS 5.9.3 (do not move to TS 7 until NestJS supports it)                                                                                                                                                                    |
 | Local infra    | `pnpm dev:infra` — PG18+TimescaleDB+PostGIS, Valkey 8.1, MinIO. Images pinned by digest. OSRM behind `--profile routing`                                                                                                                                  |
 | DB roles       | `dp_app` (RLS, no DDL), `dp_migrator` (owns schema), `dp_relay` (outbox-only cross-tenant). Three least-privilege identities                                                                                                                              |
-| Migrations     | 0000–0017 applied. Forward-only, checksum-locked, immutable. See individual migration files for DDL details                                                                                                                                               |
+| Migrations     | 0000–0018 applied. Forward-only, checksum-locked, immutable. See individual migration files for DDL details                                                                                                                                               |
 | RLS            | Data tables: ENABLE+FORCE. `tenants` registry: ENABLE only                                                                                                                                                                                                |
 | `shared/`      | config (Zod, fail-fast), database (`withTenant`), errors (`DomainError`), http (RFC 9457, `ZodValidationPipe`), crypto (`FieldCipher` AES-256-GCM), observability (OTel traces, `withSpan`, trace-context threading), valkey (ioredis 5.11.1)             |
 | `platform`     | OutboxService, FeatureService, TenantService, OutboxRelayService, ValkeyStreamEventPublisher, EventPublisher port                                                                                                                                         |
@@ -45,6 +45,7 @@ Authorized 2026-07-22. Build within these limits:
 | `custody`      | ManifestService (open→seal→dispatch→receive→reconcile, 4 types), HubScanService (hub inbound). Makes AT_HUB/IN_TRANSIT reachable. I14 immutability enforced by DB trigger. 76 tests                                                                       |
 | `dispatch`     | RouteService (create→publish→start→complete), AssignmentService. Haversine NN+2-opt fallback. 22 tests                                                                                                                                                    |
 | `notification` | EventStreamConsumer + NotificationEventHandler + NotificationService. ConsoleNotificationProvider. 9 tests                                                                                                                                                |
+| `tracking`     | GPS ingest on a dedicated pool, batched writer (1000 rows/1s, bounded, sheds oldest), TimescaleDB hypertable, Valkey presence (90s TTL = the offline signal), geofence → `shipment.arrived_at_stop`. 31 tests                                             |
 | `finance`      | **Inc1:** currencies + double-entry ledger (zero-sum DEFERRABLE trigger). **Inc2:** remittance (submit/confirm/dispute). **Inc3:** settlement (draft→approve→pay with separation-of-duties) + reconciliation (cashInField, dailyReconciliation). 24 tests |
 | Enforcement    | `pnpm lint:rules` — 6 fixtures. `.semgrep.yml` — 10 custom rules. `pnpm sast`                                                                                                                                                                             |
 | CI/CD          | 5 jobs + ci-passed gate. Actions pinned by SHA. Dependabot                                                                                                                                                                                                |
@@ -59,6 +60,10 @@ Authorized 2026-07-22. Build within these limits:
 - Hub-ops commands (`arrived_at_hub`/`loaded`/`departed`) now live in `custody`. Custody transfers at manifest RECEIPT, never at seal (§3.11 rule 5). A RETURN manifest emits no `loaded` — its parcels are not at a hub
 - Manifest hotspot H2 (who is liable for a missing parcel) is deliberately undecided — `manifest_discrepancies` records the facts and a resolution reason; no blame, no charge-back until the S2 policy call
 - `custody` and `dispatch` are the only two sanctioned same-layer dependencies on `shipment`; both call it directly. `pickup` may NOT — it hands off via `pickup.parcel_scanned`
+- **A GPS ping is NOT a business event** (event-storming §2.4, the single most important rule there). Raw telemetry never touches the outbox; only a geofence ENTER crosses into the business plane. A test asserts ingesting 20 batches produces zero `shipment.*` events
+- `driver_positions` has **RLS + 90-day retention, NOT compression** — a deliberate deviation from 06-database-design §5.1. TimescaleDB 2.28 makes columnstore and row security mutually exclusive ("columnstore cannot be used on table with row security"); forced RLS wins on the most privacy-sensitive table in the system. Revisit at ADR-005's extraction trigger
+- Migration ordering for a hypertable is load-bearing: table → hypertable → dimensions → **indexes → RLS → grants → compression/retention LAST**. Both `CREATE INDEX` and `ENABLE ROW LEVEL SECURITY` are rejected once columnstore is on
+- `driver_positions.location` is a **GENERATED** column from `lon`/`lat`, so the point cannot be built wrong per call site and the writer stays a plain multi-row INSERT
 - OSRM binding deferred until Maghreb extract loaded (`dev:infra --profile routing`)
 
 ### Traps — read before modifying any module
