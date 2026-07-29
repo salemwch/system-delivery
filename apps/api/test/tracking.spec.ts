@@ -573,6 +573,49 @@ describe("tracking", () => {
       expect(await storedPositions(tenantId)).toHaveLength(1);
     });
 
+    it("flush() does not return while rows enqueued mid-flush are still buffered", async () => {
+      const tenantId = await seedTenant("trk-midflush");
+      const driverId = await onShiftDriver(tenantId);
+
+      const lazy = new TelemetryWriter(
+        telemetrySql,
+        testConfig({ TELEMETRY_FLUSH_ROWS: 1_000_000, TELEMETRY_FLUSH_INTERVAL_MS: 600_000 }),
+        testLogger(),
+      );
+
+      const position = (lat: number) => ({
+        tenantId,
+        driverId,
+        routeId: null,
+        time: new Date(),
+        lat,
+        lon: 10.18,
+        speedMps: null,
+        headingDeg: null,
+        accuracyM: null,
+        batteryPct: null,
+        isMoving: null,
+        source: null,
+      });
+
+      lazy.enqueue([position(36.8)]);
+
+      // Start a flush; its drain has already taken the buffer.
+      const first = lazy.flush();
+      // This row therefore belongs to the NEXT batch.
+      lazy.enqueue([position(36.81)]);
+      // Second call arrives WHILE the first is still in flight — the shape a
+      // shutdown takes when a timer-driven flush is already running. It must
+      // not simply await the in-flight one and report success.
+      const second = lazy.flush();
+
+      await Promise.all([first, second]);
+
+      // Both awaited flushes have resolved, so nothing may remain in memory.
+      expect(lazy.stats().buffered).toBe(0);
+      expect(await storedPositions(tenantId)).toHaveLength(2);
+    });
+
     it("writes each tenant's rows under its own tenant, never mixed", async () => {
       const tenantA = await seedTenant("trk-mix-a");
       const tenantB = await seedTenant("trk-mix-b");

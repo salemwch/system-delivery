@@ -43,6 +43,15 @@ export interface TenantContextState {
   readonly merchantId?: string;
   /** Correlates a request with everything it causes, including async fan-out. */
   readonly requestId?: string;
+  /**
+   * Where the request came from. Carried here rather than passed down because
+   * the audit trail needs it at the point a business rule fires, several layers
+   * below the controller (docs/07-security-architecture.md §10).
+   *
+   * Absent for background work, which genuinely has no origin address.
+   */
+  readonly ipAddress?: string;
+  readonly userAgent?: string;
 }
 
 const storage = new AsyncLocalStorage<TenantContextState>();

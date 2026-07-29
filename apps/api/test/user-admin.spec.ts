@@ -7,6 +7,7 @@ import { AuthService } from "../src/modules/identity/application/auth.service.js
 import { PasswordService } from "../src/modules/identity/application/password.service.js";
 import { TokenService } from "../src/modules/identity/application/token.service.js";
 import { UserService } from "../src/modules/identity/application/user.service.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
@@ -66,9 +67,10 @@ describe("user administration", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     const passwords = new PasswordService();
-    usersService = new UserService(db, passwords, outbox);
+    const audit = new AuditService(db);
+    usersService = new UserService(db, passwords, outbox, audit);
     merchants = new MerchantService(db, outbox);
-    auth = new AuthService(db, passwords, new TokenService(stubConfig()));
+    auth = new AuthService(db, passwords, new TokenService(stubConfig()), audit);
   }, 240_000);
 
   afterEach(async () => {

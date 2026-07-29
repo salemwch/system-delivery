@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 
-import { OutboxService } from "../../platform/index.js";
+import { AuditService, OutboxService } from "../../platform/index.js";
 import {
   DatabaseService,
   TenantContext,
@@ -97,6 +97,7 @@ export class UserService {
     private readonly database: DatabaseService,
     private readonly passwords: PasswordService,
     private readonly outbox: OutboxService,
+    private readonly audit: AuditService,
   ) {}
 
   async create(input: unknown): Promise<CreatedUser> {
@@ -158,6 +159,26 @@ export class UserService {
             roles: dto.roles,
             merchantId: dto.merchantId ?? null,
             mfaEnabled,
+          },
+        });
+
+        // §10 makes role grants mandatory to audit. Minting a login is the
+        // strongest one there is — it creates access that did not exist.
+        await this.audit.record(tx, {
+          action: "user.created",
+          resourceType: "user",
+          resourceId: row.id,
+          actorLabel: dto.email,
+          changes: {
+            roles: { from: null, to: dto.roles },
+            merchantId: { from: null, to: dto.merchantId ?? null },
+            status: { from: null, to: "ACTIVE" },
+          },
+          context: {
+            mfaEnabled,
+            // WHETHER the password was chosen or generated is meaningful; the
+            // password itself never reaches this table.
+            passwordSource: dto.password === undefined ? "generated" : "supplied",
           },
         });
 
@@ -249,6 +270,14 @@ export class UserService {
         payload: { reason, disabledBy: actingUserId },
       });
 
+      await this.audit.record(tx, {
+        action: "user.disabled",
+        resourceType: "user",
+        resourceId: id,
+        changes: { status: { from: current.status, to: "DISABLED" } },
+        context: { reason, sessionsRevoked: true },
+      });
+
       return this.loadOne(tx, id);
     });
   }
@@ -278,6 +307,13 @@ export class UserService {
         aggregateType: "user",
         aggregateId: id,
         payload: { enabledBy: actingUserId },
+      });
+
+      await this.audit.record(tx, {
+        action: "user.enabled",
+        resourceType: "user",
+        resourceId: id,
+        changes: { status: { from: current.status, to: "ACTIVE" } },
       });
 
       return this.loadOne(tx, id);
@@ -326,6 +362,22 @@ export class UserService {
         aggregateType: "user",
         aggregateId: id,
         payload: { resetBy: actingUserId },
+      });
+
+      // An out-of-band password reset is an account-takeover path if misused,
+      // so the trail records that it happened, by whom, and that the previous
+      // sessions were killed. `passwordHash` is a redacted field name by
+      // construction, so no value can leak through `changes`.
+      await this.audit.record(tx, {
+        action: "user.password_reset",
+        resourceType: "user",
+        resourceId: id,
+        changes: { passwordHash: { from: null, to: null } },
+        context: {
+          sessionsRevoked: true,
+          lockoutCleared: true,
+          passwordSource: dto.password === undefined ? "generated" : "supplied",
+        },
       });
 
       return this.loadOne(tx, id);

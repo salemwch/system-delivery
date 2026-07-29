@@ -8,6 +8,17 @@ export { PlatformModule } from "./platform.module.js";
 export { OutboxService } from "./application/outbox.service.js";
 export { FeatureService } from "./application/feature.service.js";
 export { TenantService } from "./application/tenant.service.js";
+export { AuditService, ensureAuditPartitions } from "./application/audit.service.js";
+export type {
+  AuditInput,
+  AuditQuery,
+  AuditPage,
+  AuditActorType,
+  AuditOutcome,
+  FieldChange,
+} from "./application/audit.service.js";
+export { AUDIT_ACTIONS, isAuditAction } from "./domain/audit-actions.js";
+export type { AuditAction } from "./domain/audit-actions.js";
 
 export {
   OutboxRelayService,
@@ -36,6 +47,7 @@ export {
   outbox,
   processedEvents,
   deadLetterEvents,
+  auditLog,
 } from "./domain/schema.js";
 export type {
   Tenant,
@@ -48,6 +60,8 @@ export type {
   NewProcessedEvent,
   DeadLetterEvent,
   NewDeadLetterEvent,
+  AuditEntry,
+  NewAuditEntry,
 } from "./domain/schema.js";
 
 export {

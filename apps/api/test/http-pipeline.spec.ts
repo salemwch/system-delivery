@@ -15,6 +15,7 @@ import {
 } from "../src/modules/identity/api/request-context.js";
 import { AccessService } from "../src/modules/identity/application/access.service.js";
 import { AuthService } from "../src/modules/identity/application/auth.service.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { PasswordService } from "../src/modules/identity/application/password.service.js";
 import { TokenService } from "../src/modules/identity/application/token.service.js";
 import type { Principal } from "../src/modules/identity/application/token.service.js";
@@ -133,6 +134,7 @@ describe("http pipeline", () => {
         { provide: POSTGRES_CLIENT, useValue: database.app },
         DatabaseService,
         PasswordService,
+        AuditService,
         TokenService,
         AuthService,
         AccessService,

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 
+import { AuditService } from "../../platform/index.js";
 import { DatabaseService, asTenantId } from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
 import { isRole, permissionsForRoles } from "../domain/permissions.js";
@@ -67,6 +68,7 @@ export class AuthService {
     private readonly database: DatabaseService,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
+    private readonly audit: AuditService,
   ) {}
 
   async login(request: LoginRequest): Promise<AuthResult> {
@@ -82,26 +84,72 @@ export class AuthService {
 
       const user = found[0];
 
+      // Every rejection below is audited before it is returned (§10 makes
+      // authentication FAILURE mandatory, not just success). The response
+      // itself stays deliberately uniform — the audit trail records the real
+      // reason, the caller is never told which one it was.
+      const auditFailure = async (
+        reason: AuthFailureReason,
+        userId: string | null,
+      ): Promise<void> => {
+        await this.audit.record(tx, {
+          action: "auth.login_failed",
+          outcome: "FAILURE",
+          resourceType: "user",
+          ...(userId === null ? {} : { resourceId: userId }),
+          actorType: userId === null ? "ANONYMOUS" : "USER",
+          actorId: userId,
+          // The attempted address, so a spray across many accounts is visible.
+          // It is not a secret — the attacker already knows it.
+          actorLabel: email,
+          tenantId,
+          context: { reason },
+          ...(request.ipAddress === undefined ? {} : { ipAddress: request.ipAddress }),
+          ...(request.userAgent === undefined ? {} : { userAgent: request.userAgent }),
+        });
+      };
+
       if (user === undefined) {
         // Burn equivalent CPU so "unknown email" is not measurably faster.
         await this.passwords.verifyDummy(request.password);
+        await auditFailure("UNKNOWN_USER", null);
         return { ok: false, reason: "UNKNOWN_USER" };
       }
 
       if (user.lockedUntil !== null && user.lockedUntil.getTime() > Date.now()) {
         await this.passwords.verifyDummy(request.password);
+        await auditFailure("ACCOUNT_LOCKED", user.id);
         return { ok: false, reason: "ACCOUNT_LOCKED" };
       }
 
       if (user.status !== "ACTIVE") {
         await this.passwords.verifyDummy(request.password);
+        await auditFailure("ACCOUNT_DISABLED", user.id);
         return { ok: false, reason: "ACCOUNT_DISABLED" };
       }
 
       const passwordValid = await this.passwords.verify(request.password, user.passwordHash);
 
       if (!passwordValid) {
-        await this.recordFailedAttempt(tx, user.id, user.failedLoginCount + 1);
+        const nextCount = user.failedLoginCount + 1;
+        await this.recordFailedAttempt(tx, user.id, nextCount);
+        await auditFailure("BAD_PASSWORD", user.id);
+
+        // The lockout itself is its own event: it is the moment access changed,
+        // and it is what an operator gets paged about.
+        if (nextCount >= MAX_FAILED_ATTEMPTS) {
+          await this.audit.record(tx, {
+            action: "auth.account_locked",
+            outcome: "FAILURE",
+            resourceType: "user",
+            resourceId: user.id,
+            actorType: "SYSTEM",
+            actorId: null,
+            tenantId,
+            context: { failedAttempts: nextCount },
+            ...(request.ipAddress === undefined ? {} : { ipAddress: request.ipAddress }),
+          });
+        }
         return { ok: false, reason: "BAD_PASSWORD" };
       }
 
@@ -112,6 +160,7 @@ export class AuthService {
       // MFA configured cannot authenticate at all — deliberately fail closed
       // rather than silently granting a session that skips the requirement.
       if (this.requiresMfa(roles) && !user.mfaEnabled) {
+        await auditFailure("MFA_REQUIRED", user.id);
         return { ok: false, reason: "MFA_REQUIRED" };
       }
 
@@ -142,6 +191,19 @@ export class AuthService {
         deviceId: request.deviceId,
         userAgent: request.userAgent,
         ipAddress: request.ipAddress,
+      });
+
+      await this.audit.record(tx, {
+        action: "auth.login_succeeded",
+        resourceType: "user",
+        resourceId: user.id,
+        actorType: "USER",
+        actorId: user.id,
+        actorLabel: email,
+        tenantId,
+        context: { roles, sessionId: principal.sessionId },
+        ...(request.ipAddress === undefined ? {} : { ipAddress: request.ipAddress }),
+        ...(request.userAgent === undefined ? {} : { userAgent: request.userAgent }),
       });
 
       return { ok: true, session };
@@ -187,6 +249,28 @@ export class AuthService {
               sql`${refreshTokens.revokedAt} is null`,
             ),
           );
+
+        // A captured token being replayed. This is a security INCIDENT, not a
+        // failed request, and it is the single highest-value entry this table
+        // holds — it is the only signal that a session was stolen rather than
+        // merely expired.
+        await this.audit.record(tx, {
+          action: "auth.refresh_reuse_detected",
+          outcome: "FAILURE",
+          resourceType: "user",
+          resourceId: stored.userId,
+          actorType: "ANONYMOUS",
+          actorId: null,
+          tenantId,
+          context: {
+            familyId: stored.familyId,
+            alreadyRotated: stored.rotatedAt !== null,
+            alreadyRevoked: stored.revokedAt !== null,
+          },
+          ...(context.ipAddress === undefined ? {} : { ipAddress: context.ipAddress }),
+          ...(context.userAgent === undefined ? {} : { userAgent: context.userAgent }),
+        });
+
         return { ok: false, reason: "BAD_PASSWORD" };
       }
 

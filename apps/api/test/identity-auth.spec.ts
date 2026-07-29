@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AuthService } from "../src/modules/identity/application/auth.service.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { PasswordService } from "../src/modules/identity/application/password.service.js";
 import { TokenService } from "../src/modules/identity/application/token.service.js";
 import {
@@ -75,7 +76,7 @@ describe("identity", () => {
     dbService = new DatabaseService(database.app);
     passwords = new PasswordService();
     tokens = new TokenService(stubConfig());
-    auth = new AuthService(dbService, passwords, tokens);
+    auth = new AuthService(dbService, passwords, tokens, new AuditService(dbService));
     access = new AccessService();
 
     tenantA = asTenantId(await createTenant(database.migrator, "identity-a"));

@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   index,
+  inet,
   integer,
   jsonb,
   pgTable,
@@ -208,3 +209,60 @@ export type ProcessedEvent = typeof processedEvents.$inferSelect;
 export type NewProcessedEvent = typeof processedEvents.$inferInsert;
 export type DeadLetterEvent = typeof deadLetterEvents.$inferSelect;
 export type NewDeadLetterEvent = typeof deadLetterEvents.$inferInsert;
+
+/**
+ * docs/07-security-architecture.md §10 — the append-only audit trail.
+ *
+ * The authoritative DDL is `migrations/0022_audit_log.sql`: monthly RANGE
+ * partitioning, SELECT+INSERT grants only, and a trigger that rejects UPDATE
+ * and DELETE. None of that is expressible here, so this definition exists to
+ * give the query builder its types and nothing more.
+ *
+ * The primary key in the database is `(id, created_at)` — a partitioned table
+ * requires its partition key in every unique constraint. `id` alone is declared
+ * here because it is a UUIDv7 and therefore already unique; the composite only
+ * matters to Postgres.
+ */
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    /** USER | DRIVER | SYSTEM | API_CLIENT | ANONYMOUS | PLATFORM_ADMIN. */
+    actorType: text("actor_type").notNull(),
+    actorId: uuid("actor_id"),
+    /** Denormalised: the actor row may be renamed or gone in seven years. */
+    actorLabel: text("actor_label"),
+    /** `domain.action`, past tense — e.g. `auth.login_failed`. */
+    action: text("action").notNull(),
+    /** SUCCESS | FAILURE | DENIED. */
+    outcome: text("outcome").notNull().default("SUCCESS"),
+    resourceType: text("resource_type").notNull(),
+    resourceId: uuid("resource_id"),
+    /** Before/after for significant fields only — never a blanket row dump. */
+    changes: jsonb("changes")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    context: jsonb("context")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    ipAddress: inet("ip_address"),
+    userAgent: text("user_agent"),
+    correlationId: uuid("correlation_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("audit_log_resource_idx").on(
+      table.tenantId,
+      table.resourceType,
+      table.resourceId,
+      table.createdAt,
+    ),
+    index("audit_log_tenant_time_idx").on(table.tenantId, table.createdAt),
+  ],
+);
+
+export type AuditEntry = typeof auditLog.$inferSelect;
+export type NewAuditEntry = typeof auditLog.$inferInsert;

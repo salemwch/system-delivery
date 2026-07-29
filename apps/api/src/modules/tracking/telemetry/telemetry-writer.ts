@@ -118,21 +118,44 @@ export class TelemetryWriter implements OnApplicationShutdown {
   }
 
   /**
-   * Writes everything buffered.
+   * Writes everything buffered, and does not return until the buffer is empty.
    *
    * Serialised: a second call while a flush is in flight awaits the first rather
    * than opening a competing write. Concurrent flushes would race on the buffer
    * and could write the same rows twice.
+   *
+   * ⚠️ The LOOP is load-bearing, and awaiting the in-flight flush alone is not
+   * enough. `drain()` takes the whole buffer up front, so rows enqueued after it
+   * started belong to the NEXT batch — a caller that simply awaited the current
+   * flush would be told "everything is written" while those rows sat in memory.
+   * On `onApplicationShutdown` that is the difference between draining the last
+   * second of every driver's trail and silently discarding it, which is the
+   * exact guarantee this class exists to provide.
+   *
+   * Terminates: `drain()` empties the buffer and `write()` contains its own
+   * failures, so each pass strictly consumes what was there. Only new arrivals
+   * extend the loop, and each one is written rather than spun on.
    */
   async flush(): Promise<void> {
-    if (this.flushing !== null) {
+    for (;;) {
+      const inFlight = this.flushing;
+      if (inFlight !== null) {
+        await inFlight;
+        if (this.buffer.length === 0) {
+          return;
+        }
+        continue;
+      }
+
+      if (this.buffer.length === 0) {
+        return;
+      }
+
+      this.flushing = this.drain().finally(() => {
+        this.flushing = null;
+      });
       await this.flushing;
-      return;
     }
-    this.flushing = this.drain().finally(() => {
-      this.flushing = null;
-    });
-    await this.flushing;
   }
 
   stats(): WriterStats {

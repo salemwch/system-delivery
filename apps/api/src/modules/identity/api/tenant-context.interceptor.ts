@@ -6,6 +6,13 @@ import { TenantContext, asTenantId } from "../../../shared/database/index.js";
 import type { AuthenticatedRequest } from "./request-context.js";
 
 /**
+ * A user agent is attacker-controlled and unbounded. Truncated before it is
+ * stored so a client cannot inflate an append-only, seven-year table one header
+ * at a time. Long enough to keep every real browser and device string intact.
+ */
+const MAX_USER_AGENT_LENGTH = 512;
+
+/**
  * Binds the ambient tenant context for the duration of a request.
  *
  * Runs after AuthGuard, so the tenant comes from a VERIFIED token claim. Every
@@ -54,6 +61,14 @@ export class TenantContextInterceptor implements NestInterceptor {
       // a merchant must not be able to widen their own scope by asking.
       ...(principal.merchantId === null ? {} : { merchantId: principal.merchantId }),
       ...(typeof request.id === "string" ? { requestId: request.id } : {}),
+      // Origin of the request, carried for the audit trail. Read from Fastify's
+      // own `ip`, which already honours `trustProxy` — parsing
+      // `x-forwarded-for` by hand here would let a client forge its own source
+      // address on any deployment that does not sit behind a trusted proxy.
+      ...(typeof request.ip === "string" ? { ipAddress: request.ip } : {}),
+      ...(typeof request.headers["user-agent"] === "string"
+        ? { userAgent: request.headers["user-agent"].slice(0, MAX_USER_AGENT_LENGTH) }
+        : {}),
     };
 
     return new Observable((subscriber) => {

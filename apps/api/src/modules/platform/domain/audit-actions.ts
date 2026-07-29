@@ -1,0 +1,79 @@
+/**
+ * The audit action catalogue.
+ *
+ * docs/07-security-architecture.md §10 enumerates what MUST be audited. This
+ * list is that requirement made into a type: a typo in an action name is a
+ * build error, and the mandatory set cannot silently shrink because someone
+ * renamed a string.
+ *
+ * Names follow `domain.action`, past tense — the same convention as domain
+ * events. They are NOT domain events: an event says something happened to the
+ * business, an audit action says someone did something and who. A single
+ * operation frequently produces both, and they answer different questions.
+ */
+export const AUDIT_ACTIONS = [
+  // ── Authentication (§10: success AND failure) ──────────────────────────────
+  // Failures are the load-bearing half. A brute-force attempt is invisible
+  // without them, and they are the reason `ANONYMOUS` is an actor type.
+  "auth.login_succeeded",
+  "auth.login_failed",
+  "auth.logout",
+  "auth.token_refreshed",
+  "auth.refresh_reuse_detected",
+  "auth.account_locked",
+  "auth.mfa_enrolled",
+  "auth.mfa_challenge_failed",
+  "auth.mfa_reset",
+
+  // ── Users, permissions, roles (§10) ────────────────────────────────────────
+  "user.created",
+  "user.updated",
+  "user.disabled",
+  "user.enabled",
+  "user.password_reset",
+  "user.role_granted",
+  "user.role_revoked",
+
+  // ── Tenant lifecycle and configuration (§10) ───────────────────────────────
+  "tenant.provisioned",
+  "tenant.updated",
+  "tenant.suspended",
+  "tenant.reactivated",
+  "feature.changed",
+
+  // ── Shipments — status overrides only ──────────────────────────────────────
+  // A normal delivery is already in the immutable custody log; duplicating it
+  // here would bury the entries that matter. An OVERRIDE is different: it is a
+  // human asserting a status the custody chain did not produce.
+  "shipment.status_overridden",
+  "shipment.cancelled",
+
+  // ── Money (§10: all ledger adjustments, variance, approvals) ───────────────
+  "ledger.adjusted",
+  "remittance.confirmed_with_variance",
+  "remittance.disputed",
+  "settlement.approved",
+  "settlement.marked_paid",
+  "cod.amount_changed",
+
+  // ── Privacy (§10) ──────────────────────────────────────────────────────────
+  "pii.exported",
+  "tracking_token.bulk_issued",
+  "driver.location_history_read",
+
+  // ── Platform Admin (§10: EVERY action) ─────────────────────────────────────
+  // Cross-tenant support access. The tenant owner is additionally notified —
+  // support access without the customer's knowledge is a trust failure,
+  // whatever the contract permits.
+  "platform_admin.tenant_accessed",
+  "platform_admin.action_performed",
+] as const;
+
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+const ACTION_SET: ReadonlySet<string> = new Set<string>(AUDIT_ACTIONS);
+
+/** Narrows an arbitrary string to a known audit action. */
+export function isAuditAction(value: string): value is AuditAction {
+  return ACTION_SET.has(value);
+}

@@ -4,6 +4,7 @@ import { ConfigController } from "./api/config.controller.js";
 import { ConfigBootstrapService } from "./application/config-bootstrap.service.js";
 import { FeatureService } from "./application/feature.service.js";
 import { OutboxService } from "./application/outbox.service.js";
+import { AuditService } from "./application/audit.service.js";
 import { TenantService } from "./application/tenant.service.js";
 
 /**
@@ -14,7 +15,7 @@ import { TenantService } from "./application/tenant.service.js";
  */
 @Module({
   controllers: [ConfigController],
-  providers: [OutboxService, FeatureService, TenantService, ConfigBootstrapService],
-  exports: [OutboxService, FeatureService, TenantService],
+  providers: [OutboxService, FeatureService, TenantService, ConfigBootstrapService, AuditService],
+  exports: [OutboxService, FeatureService, TenantService, AuditService],
 })
 export class PlatformModule {}
