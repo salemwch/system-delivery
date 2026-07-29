@@ -119,6 +119,18 @@ The extraction path is preserved *mechanically*, not by intention:
 | 2.12 | **Recipient book** — reusable receiver directory, shipments reference it | P0 | Added 2026-07-22. Removes re-typing and accumulates address quality per person ([§3.19](./02-domain-model.md#319-recipient)) |
 | 2.13 | **Complaints / réclamations** — basic operational tracking | P0 | Added 2026-07-22. `COD_DISPUTE` type drives ledger reversal ([§3.20](./02-domain-model.md#320-complaint)) |
 | 2.14 | **Delivery document generation** — bon de livraison, bon d'envoi, bon de retour (printable PDF) | P1 | Added 2026-07-22. Paper documents are standard practice in Tunisian courier operations |
+| 2.15 | **Parcel label + QR/barcode generation** | P0 | Added 2026-07-29. The `trackingNumber` already exists and every scan path consumes it; nothing rendered it. Without a printable code the scan-based custody chain (2.11, 3.2) cannot start — a driver cannot scan a parcel that has no label |
+| 2.16 | **Merchant portal** — merchant users log in, create their own parcels, print labels, track them, and see COD owed | P0 | **Added 2026-07-29, reversing the V2 deferral in §5.** See the note below |
+
+> **Reversal note (2026-07-29) — merchant-facing login moved from V2 into MVP.**
+>
+> §5 previously deferred merchant logins on the assumption that *"the tenant dashboard is operated by courier staff at MVP"* — merchants would email CSVs and staff would key them in (which is why 2.5 is P0).
+>
+> That assumption does not match how the business actually runs. The merchant (*expéditeur*) is the one who knows the recipient, the address, and the COD amount; he packs the box and needs a label on it **before** he carries it to the depot. Making courier staff re-key that data moves the error to the party with the least context, and leaves the merchant with no answer to the question he asks most: *how much money am I owed?*
+>
+> What is **not** reversed: merchants still do not self-register. The courier company provisions each merchant account and hands over the credentials — there is a commercial relationship before there is a login. Public signup stays V2.
+>
+> Cost of the reversal is small because the domain model was already built for it: `merchants` is per-tenant, `MERCHANT_PAYABLE` is per-merchant, `merchantStats(merchantId)` exists, and `createShipment` already takes recipient + COD. What was missing was the access layer, not the data.
 
 ### 4.3 Dispatch & tracking
 
@@ -199,7 +211,7 @@ Cheap now, cross-cutting migrations later. Each is explicitly justified:
 | Go `tracking-gateway`, `optimization-service` | ADR-005 — load does not justify them at Tier 1 | Trigger-based (§3) |
 | Python `ml-service` | No AI/ML in the system | Not scheduled |
 | Kubernetes, Kafka/Redpanda, MQTT, OpenSearch, feature store | Q5 — premature | Trigger-based |
-| Merchant **self-service login** (merchants logging in themselves) | The tenant dashboard is operated by courier staff at MVP. Merchant-facing logins come later | V2 |
+| Merchant **public self-registration** (a merchant signing themselves up) | Accounts are provisioned by the courier company, who has a commercial relationship with each merchant first. Public signup needs an approval flow and tenant assignment that nothing else in the MVP requires | V2 |
 | Public partner API + webhooks + SDKs | No integration partners yet | V2.11 |
 | Billing, invoicing, usage metering, plan entitlements | Pilot tenants are contracted manually | V2.15 |
 | Customer self-scheduling / reschedule | High value, but not on the critical loop | V2.12 |
@@ -224,7 +236,7 @@ Cheap now, cross-cutting migrations later. Each is explicitly justified:
 
 ## 6. MVP User Roles
 
-Six roles, fixed. Custom role definition is deferred.
+Seven roles, fixed. Custom role definition is deferred.
 
 | Role | Who | Core capability |
 |---|---|---|
@@ -234,30 +246,35 @@ Six roles, fixed. Custom role definition is deferred.
 | **Hub Operator** | Sorting-centre staff | Scan in/out, manifests, hub transfers, driver cash remittance intake |
 | **Finance** | Accounting staff | Ledger, COD reconciliation, settlements, financial reports. **Read-only on operations** |
 | **Driver** | Field courier | Own route only, own shipments only, POD, COD collection, own metrics |
+| **Merchant** | The *expéditeur* — the shipper handing parcels to the courier | **Own merchant only.** Create and track own parcels, print own labels, see own COD owed and settlements. No route, driver, fleet, or other-merchant visibility whatsoever |
 
 *Customers hold no account* — access is via an unguessable, expiring, single-shipment tracking token.
 
+> **Merchant is the first role scoped BELOW the tenant.** Every other role sees the whole tenant, so RLS alone is sufficient isolation for them. A merchant must see only their own rows *within* a tenant that also holds their competitors' parcels, which means `users.merchant_id` scoping in addition to RLS — enforced in the data layer, not by remembering to add a `WHERE` clause. Getting this wrong leaks one merchant's volume, customers, and revenue to another.
+
 ### Permission matrix (abbreviated)
 
-| Capability | Owner | Dispatcher | Hub Op | Finance | Driver |
-|---|:--:|:--:|:--:|:--:|:--:|
-| Create/edit shipment | ✅ | ✅ | ➖ | ❌ | ❌ |
-| Assign shipment to driver | ✅ | ✅ | ❌ | ❌ | ❌ |
-| View live driver location | ✅ | ✅ | ✅ | ❌ | ❌ |
-| View driver location **history** | ✅ | ➖ audited | ❌ | ❌ | own only |
-| Scan at hub / manage manifest | ✅ | ➖ | ✅ | ❌ | ❌ |
-| Capture POD | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Record COD collection | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Accept cash remittance | ✅ | ❌ | ✅ | ✅ | ❌ |
-| View COD amounts / ledger | ✅ | ❌ | ➖ own hub | ✅ | own only |
-| Post ledger adjustment | ✅ | ❌ | ❌ | ✅ | ❌ |
-| Manage users & roles | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Override shipment status | ✅ | ➖ audited | ❌ | ❌ | ❌ |
-| Export customer PII | ✅ | ❌ | ❌ | ➖ audited | ❌ |
+| Capability | Owner | Dispatcher | Hub Op | Finance | Driver | Merchant |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| Create/edit shipment | ✅ | ✅ | ➖ | ❌ | ❌ | ➖ own only |
+| Print parcel label / QR | ✅ | ✅ | ✅ | ❌ | ❌ | ➖ own only |
+| Assign shipment to driver | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| View live driver location | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| View driver location **history** | ✅ | ➖ audited | ❌ | ❌ | own only | ❌ |
+| Scan at hub / manage manifest | ✅ | ➖ | ✅ | ❌ | ❌ | ❌ |
+| Capture POD | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Record COD collection | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Accept cash remittance | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| View COD amounts / ledger | ✅ | ❌ | ➖ own hub | ✅ | own only | ➖ own owed |
+| Request pickup | ✅ | ✅ | ➖ | ❌ | ❌ | ➖ own only |
+| Post ledger adjustment | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Manage users & roles | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Override shipment status | ✅ | ➖ audited | ❌ | ❌ | ❌ | ❌ |
+| Export customer PII | ✅ | ❌ | ❌ | ➖ audited | ❌ | ➖ own only |
 
-✅ full · ➖ limited/audited · ❌ denied
+✅ full · ➖ limited/audited/own-scoped · ❌ denied
 
-**Two deliberate choices:** dispatchers do not see COD amounts (they do not need them, and it shrinks the blast radius of a compromised dispatcher account), and finance is read-only on operations (separation of duties — the person who reconciles cash cannot also alter delivery status to hide a discrepancy).
+**Three deliberate choices:** dispatchers do not see COD amounts (they do not need them, and it shrinks the blast radius of a compromised dispatcher account); finance is read-only on operations (separation of duties — the person who reconciles cash cannot also alter delivery status to hide a discrepancy); and a merchant sees **money but not operations** — their own COD balance and settlements, never a route, a driver, or another merchant. A merchant is a customer of the tenant, not a member of it.
 
 ---
 

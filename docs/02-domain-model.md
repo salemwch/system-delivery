@@ -184,8 +184,9 @@ PROVISIONING → ACTIVE ⇄ SUSPENDED → CLOSED
 | `failedLoginCount` | int | Lockout counter |
 | `lockedUntil?` | timestamptz | |
 | `hubScope?` | UUID[] | Restricts a Dispatcher or Hub Operator to specific hubs |
+| `merchantId?` | UUID | **Set only for the `MERCHANT` role.** Scopes the user to one merchant's data *within* the tenant (added 2026-07-29) |
 
-**Relationships.** Belongs to `Tenant`. Has many `UserRole` → `Role`. May be linked 1:1 to a `Driver` record if a person is both.
+**Relationships.** Belongs to `Tenant`. Has many `UserRole` → `Role`. May be linked 1:1 to a `Driver` record if a person is both. May be linked to one `Merchant` when the user is a merchant portal login.
 
 **Business rules**
 
@@ -195,6 +196,8 @@ PROVISIONING → ACTIVE ⇄ SUSPENDED → CLOSED
 4. Users are disabled, never deleted — `audit_log` and `shipment_event` reference them as actors forever.
 5. Role changes are always audited with before/after.
 6. Password reset tokens are single-use, expire in 30 minutes, and invalidate all sessions on use.
+7. **`merchantId` is required for a `MERCHANT` user and forbidden for every other role** (added 2026-07-29). A merchant login with no merchant would see the whole tenant; a dispatcher carrying one would be silently narrowed. Both are enforced by a DB constraint, not by application discipline — this is the only sub-tenant scope in the system and the one place where a missing `WHERE` clause leaks one merchant's volume, customers, and revenue to a competitor sharing the tenant.
+8. **Merchant users are provisioned by the courier company, never self-registered** (2026-07-29). There is a commercial relationship before there is a login; public signup is deferred (01-mvp-scope §5).
 
 **Lifecycle.** `INVITED → ACTIVE ⇄ DISABLED`
 
@@ -1045,6 +1048,8 @@ Invariants that span aggregates. Each is enforced by a database constraint, a do
 | I20 | A `Shipment` stores its own `recipientName`/`recipientPhone` snapshot even when `recipientId` is set | Editing the address book must never rewrite a past delivery record |
 | I21 | A `PickupRequest` cannot be `CANCELLED` after `COLLECTED` | State machine — custody has already transferred |
 | I22 | A `Complaint` cannot be `RESOLVED`/`REJECTED` with an empty `resolution` | DB check constraint |
+| I23 | A `User` holds `merchantId` **if and only if** they have the `MERCHANT` role | DB check constraint + role-assignment guard. A merchant login without a merchant sees the whole tenant; any other role with one is silently narrowed |
+| I24 | A `MERCHANT` user can read and write only rows whose `merchantId` matches their own | Enforced in the data layer, not per query. The only sub-tenant scope in the system — a missed `WHERE` here leaks a competitor's volume, customers, and revenue |
 
 ---
 
