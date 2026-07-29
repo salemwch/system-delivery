@@ -38,6 +38,48 @@ export const DEFAULT_TEMPLATES: Readonly<Record<string, Readonly<Record<Locale, 
     ar: "فشل تسليم طردك {{trackingNumber}}. سنحاول مرة أخرى.",
     en: "Delivery of your parcel {{trackingNumber}} failed. We will try again.",
   },
+  // The parcel is going back. The recipient is told because the most common cause
+  // is that they were unreachable, and they may still want to intervene.
+  "shipment.return_pending": {
+    fr: "Votre colis {{trackingNumber}} va être retourné à l'expéditeur.",
+    ar: "سيتم إرجاع طردك {{trackingNumber}} إلى المرسل.",
+    en: "Your parcel {{trackingNumber}} is being returned to the sender.",
+  },
+  "shipment.cancelled": {
+    fr: "Votre colis {{trackingNumber}} a été annulé.",
+    ar: "تم إلغاء طردك {{trackingNumber}}.",
+    en: "Your parcel {{trackingNumber}} has been cancelled.",
+  },
+
+  // ── Merchant-facing ────────────────────────────────────────────────────────
+  //
+  // The two questions a merchant actually asks: has my parcel been collected, and
+  // has my money been paid.
+  "pickup.completed": {
+    fr: "Collecte confirmée : {{parcelCount}} colis récupérés.",
+    ar: "تم تأكيد الاستلام: {{parcelCount}} طرد.",
+    en: "Pickup confirmed: {{parcelCount}} parcels collected.",
+  },
+  "settlement.paid": {
+    fr: "Règlement {{reference}} payé : {{amount}}.",
+    ar: "تم دفع التسوية {{reference}}: {{amount}}.",
+    en: "Settlement {{reference}} paid: {{amount}}.",
+  },
+
+  // ── Driver-facing (PUSH, not SMS) ──────────────────────────────────────────
+  //
+  // The driver app renders these and they are operational rather than commercial,
+  // so they go over a channel that costs nothing per message.
+  "route.published": {
+    fr: "Nouvelle tournée : {{stopCount}} arrêts.",
+    ar: "مسار جديد: {{stopCount}} محطة.",
+    en: "New route: {{stopCount}} stops.",
+  },
+  "shipment.assigned": {
+    fr: "Nouveau colis assigné : {{trackingNumber}}.",
+    ar: "طرد جديد مُعيَّن: {{trackingNumber}}.",
+    en: "New parcel assigned: {{trackingNumber}}.",
+  },
 };
 
 /** The default body for a key+locale, or undefined if the key is unknown. */
@@ -63,4 +105,37 @@ export function renderTemplate(body: string, params: Readonly<Record<string, unk
     }
     return "";
   });
+}
+
+/** GSM-7 fits 160 characters per segment; anything outside it forces UCS-2 at 70. */
+const GSM7_SEGMENT = 160;
+const UCS2_SEGMENT = 70;
+
+/**
+ * A conservative GSM-7 alphabet check.
+ *
+ * ⚠️ Arabic — and any accented Latin outside the GSM-7 extension — forces the
+ * WHOLE message to UCS-2, where a segment holds 70 characters instead of 160. One
+ * non-representable character therefore more than doubles the cost of every
+ * segment in the message.
+ *
+ * Deliberately conservative: over-estimating a segment costs a fraction of a
+ * millime, under-estimating hides a real invoice.
+ */
+const GSM7_PATTERN =
+  /^[A-Za-z0-9 \r\n@£$¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ!"#¤%&'()*+,\-./:;<=>?¡ÄÖÑÜ§¿äöñüà^{}[\]~|€]*$/u;
+
+/**
+ * How many SMS segments a rendered body will cost.
+ *
+ * Exists so that a template edit which triples the per-message cost shows up in a
+ * test rather than on an invoice three weeks later. An Arabic body that reads
+ * naturally in review is easily three segments.
+ */
+export function estimateSegments(body: string): number {
+  if (body.length === 0) {
+    return 0;
+  }
+  const size = GSM7_PATTERN.test(body) ? GSM7_SEGMENT : UCS2_SEGMENT;
+  return Math.ceil(body.length / size);
 }

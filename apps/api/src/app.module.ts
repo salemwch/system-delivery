@@ -9,6 +9,7 @@ import { FinanceModule } from "./modules/finance/index.js";
 import { FleetModule } from "./modules/fleet/index.js";
 import { IdentityModule } from "./modules/identity/index.js";
 import { NetworkModule } from "./modules/network/index.js";
+import { NotificationModule } from "./modules/notification/index.js";
 import { PickupModule } from "./modules/pickup/index.js";
 import { PlatformModule } from "./modules/platform/index.js";
 import { ShipmentModule } from "./modules/shipment/index.js";
@@ -42,6 +43,7 @@ import { DatabaseModule } from "./shared/database/database.module.js";
     FinanceModule,
     TrackingModule,
     ComplaintModule,
+    NotificationModule,
     LoggerModule.forRootAsync({
       imports: [AppConfigModule],
       inject: [AppConfigService],

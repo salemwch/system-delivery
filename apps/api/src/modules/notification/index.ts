@@ -8,6 +8,7 @@
 export { NotificationModule } from "./notification.module.js";
 export { NotificationService } from "./application/notification.service.js";
 export { NotificationEventHandler } from "./application/notification-event.handler.js";
+export { TemplateService } from "./application/template.service.js";
 export type { SendCommand } from "./application/notification.service.js";
 
 // NOTIFICATION_PROVIDER and its implementations moved to `platform`: identity
@@ -20,6 +21,7 @@ export {
   defaultTemplateBody,
   renderTemplate,
   toLocale,
+  estimateSegments,
 } from "./domain/templates.js";
 export type { Locale } from "./domain/templates.js";
 

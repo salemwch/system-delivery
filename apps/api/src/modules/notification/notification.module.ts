@@ -3,6 +3,8 @@ import { Module } from "@nestjs/common";
 import { PlatformModule } from "../platform/index.js";
 import { NotificationService } from "./application/notification.service.js";
 import { NotificationEventHandler } from "./application/notification-event.handler.js";
+import { TemplateService } from "./application/template.service.js";
+import { TemplateController } from "./api/template.controller.js";
 
 /**
  * Notification context (docs/04-context-map.md §3.11) — Layer 3.
@@ -23,7 +25,8 @@ import { NotificationEventHandler } from "./application/notification-event.handl
   // and identity is layer 0, so the transport abstraction cannot sit in a
   // layer-3 module. One port, one binding, two consumers.
   imports: [PlatformModule],
-  providers: [NotificationService, NotificationEventHandler],
-  exports: [NotificationService, NotificationEventHandler],
+  controllers: [TemplateController],
+  providers: [NotificationService, NotificationEventHandler, TemplateService],
+  exports: [NotificationService, NotificationEventHandler, TemplateService],
 })
 export class NotificationModule {}

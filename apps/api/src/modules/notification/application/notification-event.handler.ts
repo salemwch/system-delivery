@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
-import type { ConsumedEvent, EventHandler } from "../../platform/index.js";
+import type { ConsumedEvent, EventHandler, NotificationChannel } from "../../platform/index.js";
 import { toLocale } from "../domain/templates.js";
 import type { Locale } from "../domain/templates.js";
 import { NotificationService } from "./notification.service.js";
@@ -8,30 +8,105 @@ import { NotificationService } from "./notification.service.js";
 /** The consumer group this handler owns — stable, durable state in Valkey. */
 const CONSUMER_GROUP = "notification";
 
-/** The customer-facing shipment events that produce an SMS at MVP (policies P3/P9). */
-const HANDLED_EVENTS: ReadonlySet<string> = new Set<string>([
-  "shipment.out_for_delivery",
-  "shipment.delivered",
-  "delivery.failed",
-]);
+/**
+ * Which payload field carries the recipient, per event, and over which channel.
+ *
+ * ⚠️ A table rather than a switch, because the interesting property is what is
+ * ABSENT. Notifying every status change is the obvious mistake: a customer who
+ * gets six messages per parcel stops reading them, and the one that matters —
+ * "the driver is coming today" — is the one they miss. Every row here is a
+ * decision that somebody needs this particular message.
+ *
+ * `recipientField` names where the destination lives in the SELF-CONTAINED event
+ * payload (event-storming §2.2). This handler imports no domain module —
+ * context-map §3.11 allows it `platform` and `identity` only — so an event that
+ * does not carry its own recipient cannot be notified, and is skipped rather
+ * than failed.
+ */
+interface Route {
+  readonly channel: NotificationChannel;
+  readonly recipientField: string;
+  /** Payload fields copied into the template's `{{tokens}}`. */
+  readonly params: readonly string[];
+}
+
+const ROUTES: Readonly<Record<string, Route>> = {
+  // ── Customer (SMS) ─────────────────────────────────────────────────────────
+  "shipment.out_for_delivery": {
+    channel: "SMS",
+    recipientField: "recipientPhone",
+    params: ["trackingNumber", "recipientName"],
+  },
+  "shipment.delivered": {
+    channel: "SMS",
+    recipientField: "recipientPhone",
+    params: ["trackingNumber", "recipientName"],
+  },
+  "delivery.failed": {
+    channel: "SMS",
+    recipientField: "recipientPhone",
+    params: ["trackingNumber", "recipientName", "reason"],
+  },
+  "shipment.return_pending": {
+    channel: "SMS",
+    recipientField: "recipientPhone",
+    params: ["trackingNumber"],
+  },
+  "shipment.cancelled": {
+    channel: "SMS",
+    recipientField: "recipientPhone",
+    params: ["trackingNumber"],
+  },
+
+  // ── Merchant (SMS) ─────────────────────────────────────────────────────────
+  "pickup.completed": {
+    channel: "SMS",
+    recipientField: "merchantPhone",
+    params: ["parcelCount", "merchantName"],
+  },
+  "settlement.paid": {
+    channel: "SMS",
+    recipientField: "merchantPhone",
+    params: ["reference", "amount"],
+  },
+
+  // ── Driver (PUSH) ──────────────────────────────────────────────────────────
+  //
+  // Push rather than SMS: the driver app renders these, and paying per message
+  // for what an existing channel delivers free is waste.
+  "route.published": {
+    channel: "PUSH",
+    recipientField: "driverDeviceToken",
+    params: ["stopCount", "plannedDate"],
+  },
+  "shipment.assigned": {
+    channel: "PUSH",
+    recipientField: "driverDeviceToken",
+    params: ["trackingNumber"],
+  },
+};
 
 interface NotificationSpec {
   readonly templateKey: string;
+  readonly channel: NotificationChannel;
   readonly recipient: string;
   readonly locale: Locale;
   readonly params: Record<string, unknown>;
 }
 
 /**
- * Turns customer-facing shipment events into SMS notifications
- * (docs/03-event-storming.md P3 "SMS customer with tracking link" — the
- * highest-value customer message — and P9 re-attempt).
+ * Turns domain events into customer, merchant and driver notifications
+ * (docs/01-mvp-scope.md §4.6 #6.2/#6.3; event-storming policies P3, P9).
  *
  * This is the notification module's {@link EventHandler}: the generic stream
- * consumer calls it per event, having already deduped on eventId. It reads
- * everything it needs from the SELF-CONTAINED event payload (§2.2) — it never
- * imports `shipment` (context-map §3.11: notification depends only on platform +
- * identity). An event that lacks a recipient phone is skipped, not failed.
+ * consumer calls it per event, having already deduped on eventId. Everything it
+ * needs comes from the SELF-CONTAINED event payload (§2.2) — it imports no domain
+ * module (context-map §3.11: notification depends only on platform + identity),
+ * so it can never be the reason a notification lags behind a status change.
+ *
+ * An event with no deliverable recipient is a clean NO-OP, not a failure. A
+ * parcel with no phone on file is ordinary in this market, and failing would
+ * retry it five times and then dead-letter something nobody can act on.
  */
 @Injectable()
 export class NotificationEventHandler implements EventHandler {
@@ -40,7 +115,7 @@ export class NotificationEventHandler implements EventHandler {
   constructor(private readonly notifications: NotificationService) {}
 
   handles(eventType: string): boolean {
-    return HANDLED_EVENTS.has(eventType);
+    return Object.hasOwn(ROUTES, eventType);
   }
 
   async handle(event: ConsumedEvent): Promise<void> {
@@ -52,7 +127,7 @@ export class NotificationEventHandler implements EventHandler {
     }
     await this.notifications.send({
       tenantId: event.tenantId,
-      channel: "SMS",
+      channel: spec.channel,
       templateKey: spec.templateKey,
       locale: spec.locale,
       recipient: spec.recipient,
@@ -63,19 +138,38 @@ export class NotificationEventHandler implements EventHandler {
   }
 
   private specFor(event: ConsumedEvent): NotificationSpec | null {
-    if (!HANDLED_EVENTS.has(event.eventType)) {
+    const route = ROUTES[event.eventType];
+    if (route === undefined) {
       return null;
     }
-    const recipient = strOf(event.payload["recipientPhone"]);
+
+    const recipient = strOf(event.payload[route.recipientField]);
     if (recipient === null) {
+      // No phone on file, or a driver whose app has never registered a device
+      // token. Nothing to send, and nothing broken.
       return null;
     }
-    const locale = toLocale(strOf(event.payload["recipientLocale"]) ?? undefined);
-    const params: Record<string, unknown> = {
-      trackingNumber: strOf(event.payload["trackingNumber"]) ?? "",
-      recipientName: strOf(event.payload["recipientName"]) ?? "",
+
+    const params: Record<string, unknown> = {};
+    for (const field of route.params) {
+      const value = event.payload[field];
+      // Only primitives reach a template: `renderTemplate` renders an object as
+      // empty anyway, and copying one in would put a structure into a log row
+      // that people read.
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        params[field] = value;
+      }
+    }
+
+    return {
+      templateKey: event.eventType,
+      channel: route.channel,
+      recipient,
+      // The recipient's own language, falling back to French. A Tunisian customer
+      // who reads Arabic must not get French because the event omitted a locale.
+      locale: toLocale(strOf(event.payload["recipientLocale"]) ?? undefined),
+      params,
     };
-    return { templateKey: event.eventType, recipient, locale, params };
   }
 }
 

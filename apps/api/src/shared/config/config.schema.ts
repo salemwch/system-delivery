@@ -210,6 +210,15 @@ export const configSchema = z
     // registration takes ~18 days and must never block development.
     // `console` writes to the log instead of sending — the default for dev/test.
     NOTIFICATION_SMS_PROVIDER: z.enum(["console", "http"]).default("console"),
+    /**
+     * Driver push. `console` by default for the same reason as SMS: a
+     * misconfigured staging box must not reach a real driver's handset.
+     */
+    NOTIFICATION_PUSH_PROVIDER: z.enum(["console", "fcm"]).default("console"),
+    FCM_PROJECT_ID: z.string().default(""),
+    FCM_CLIENT_EMAIL: z.string().default(""),
+    /** Service-account private key (PEM). Literal `\n` is un-escaped at read. */
+    FCM_PRIVATE_KEY: z.string().default(""),
     SMS_SENDER_ID: z.string().default(""),
     SMS_API_KEY: z.string().default(""),
     SMS_API_SECRET: z.string().default(""),
@@ -232,6 +241,20 @@ export const configSchema = z
       message:
         "NOTIFICATION_SMS_PROVIDER=http requires SMS_API_KEY, SMS_BASE_URL and SMS_SENDER_ID to be set",
       path: ["NOTIFICATION_SMS_PROVIDER"],
+    },
+  )
+  // Same reasoning for push: a driver app that silently receives nothing is
+  // indistinguishable from one with no work assigned.
+  .refine(
+    (config) =>
+      config.NOTIFICATION_PUSH_PROVIDER !== "fcm" ||
+      (config.FCM_PROJECT_ID.length > 0 &&
+        config.FCM_CLIENT_EMAIL.length > 0 &&
+        config.FCM_PRIVATE_KEY.length > 0),
+    {
+      message:
+        "NOTIFICATION_PUSH_PROVIDER=fcm requires FCM_PROJECT_ID, FCM_CLIENT_EMAIL and FCM_PRIVATE_KEY to be set",
+      path: ["NOTIFICATION_PUSH_PROVIDER"],
     },
   )
   // The three database roles must be distinct. Pointing any two at the same

@@ -881,9 +881,19 @@ describe("tracking", () => {
           }),
         );
       }
+      const failedBefore = writer.stats().failedFlushes;
       await writer.flush();
 
+      // Asserted FIRST, and it is not decoration. `write()` deliberately drops a
+      // group whose insert failed rather than re-buffering it ("loud, counted,
+      // and dropped") — so a contended telemetry pool can legitimately store 19
+      // of 20. Checking the counter here means a flush failure reports itself as
+      // a flush failure, instead of surfacing as an inexplicable off-by-one.
+      expect(writer.stats().failedFlushes).toBe(failedBefore);
       expect(await storedPositions(tenantId)).toHaveLength(20);
+
+      // The actual subject of this test: raw telemetry must never reach the
+      // outbox (docs/03 §2.4) — it would swamp every consumer at 170:1.
       const events = await outboxEventTypes(tenantId);
       expect(events.filter((e) => e.startsWith("shipment."))).toHaveLength(0);
       expect(events).not.toContain("driver.location_updated");
