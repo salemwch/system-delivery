@@ -72,3 +72,36 @@ export function balanceDelta(
 export function asNormalBalance(value: string): NormalBalance {
   return value === "CREDIT" ? "CREDIT" : "DEBIT";
 }
+
+/**
+ * Narrowing helpers for values read back out of the database.
+ *
+ * The columns are TEXT behind CHECK constraints, so a row is `string` to
+ * TypeScript. These throw rather than defaulting: a value the build does not
+ * recognise means the schema and the code disagree about the accounting
+ * vocabulary, and guessing would post money to the wrong kind of account.
+ */
+const OWNER_TYPE_SET: ReadonlySet<string> = new Set<string>(OWNER_TYPES);
+const ACCOUNT_TYPE_SET: ReadonlySet<string> = new Set<string>(ACCOUNT_TYPES);
+const DIRECTION_SET: ReadonlySet<string> = new Set<string>(DIRECTIONS);
+
+export function toOwnerType(value: string): OwnerType {
+  if (!OWNER_TYPE_SET.has(value)) {
+    throw new Error(`Unknown ledger owner type "${value}"`);
+  }
+  return value as OwnerType;
+}
+
+export function toAccountType(value: string): AccountType {
+  if (!ACCOUNT_TYPE_SET.has(value)) {
+    throw new Error(`Unknown ledger account type "${value}"`);
+  }
+  return value as AccountType;
+}
+
+export function toDirection(value: string): Direction {
+  if (!DIRECTION_SET.has(value)) {
+    throw new Error(`Unknown ledger direction "${value}"`);
+  }
+  return value as Direction;
+}

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { LoggerModule } from "nestjs-pino";
 
+import { ComplaintModule } from "./modules/complaint/index.js";
 import { CustodyModule } from "./modules/custody/index.js";
 import { DirectoryModule } from "./modules/directory/index.js";
 import { DispatchModule } from "./modules/dispatch/index.js";
@@ -40,6 +41,7 @@ import { DatabaseModule } from "./shared/database/database.module.js";
     DispatchModule,
     FinanceModule,
     TrackingModule,
+    ComplaintModule,
     LoggerModule.forRootAsync({
       imports: [AppConfigModule],
       inject: [AppConfigService],

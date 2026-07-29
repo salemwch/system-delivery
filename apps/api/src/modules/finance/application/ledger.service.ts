@@ -6,7 +6,14 @@ import { and, eq, sql } from "drizzle-orm";
 import { DatabaseService } from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
 import { BusinessRuleError } from "../../../shared/errors/index.js";
-import { asNormalBalance, balanceDelta, normalBalanceFor } from "../domain/ledger.js";
+import {
+  asNormalBalance,
+  balanceDelta,
+  normalBalanceFor,
+  toAccountType,
+  toDirection,
+  toOwnerType,
+} from "../domain/ledger.js";
 import type {
   AccountType,
   Direction,
@@ -110,6 +117,62 @@ export class LedgerService {
     }
 
     return transactionId;
+  }
+
+  /**
+   * Reads posted entries back, resolved to their account references.
+   *
+   * Exists so a REVERSAL can mirror what was actually posted rather than
+   * recomputing it. Those differ more often than one would like: a partial
+   * collection, a later adjustment, a shipment whose COD was edited before
+   * delivery. Reversing a recomputed figure leaves the ledger balanced against
+   * itself but wrong against reality, which is the harder error to find.
+   *
+   * Joins to `ledger_accounts` because a reversal needs the owner triple, not the
+   * opaque `account_id` — `postTransaction` resolves accounts by reference.
+   */
+  async entriesFor(
+    tx: TenantTransaction,
+    filter: { readonly shipmentId: string; readonly entryType: EntryType },
+  ): Promise<
+    readonly {
+      readonly account: AccountRef;
+      readonly direction: Direction;
+      readonly amountMinor: bigint;
+      readonly currency: string;
+    }[]
+  > {
+    const rows = await tx
+      .select({
+        ownerType: ledgerAccounts.ownerType,
+        ownerId: ledgerAccounts.ownerId,
+        accountType: ledgerAccounts.accountType,
+        direction: ledgerEntries.direction,
+        amountMinor: ledgerEntries.amountMinor,
+        currency: ledgerEntries.currency,
+      })
+      .from(ledgerEntries)
+      .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, ledgerEntries.accountId))
+      .where(
+        and(
+          eq(ledgerEntries.shipmentId, filter.shipmentId),
+          eq(ledgerEntries.entryType, filter.entryType),
+        ),
+      )
+      .orderBy(ledgerEntries.id);
+
+    return rows.map((row) => ({
+      account: {
+        // TEXT columns behind CHECK constraints; narrowed on the way out so an
+        // unrecognised value fails here rather than deep inside a posting.
+        ownerType: toOwnerType(row.ownerType),
+        ownerId: row.ownerId,
+        accountType: toAccountType(row.accountType),
+      },
+      direction: toDirection(row.direction),
+      amountMinor: row.amountMinor,
+      currency: row.currency,
+    }));
   }
 
   /**

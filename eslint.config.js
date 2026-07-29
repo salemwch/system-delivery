@@ -19,7 +19,7 @@ const LAYERS = {
   0: ["platform", "identity"],
   1: ["directory", "network", "fleet"],
   2: ["shipment", "pickup", "dispatch", "custody"],
-  3: ["tracking", "finance", "notification", "fraud"],
+  3: ["tracking", "finance", "notification", "fraud", "complaint"],
 };
 
 /** Explicit per-module allow-list, derived from the layer rule. */
@@ -41,6 +41,9 @@ const MODULE_DEPENDENCIES = {
   tracking: ["platform", "identity", "fleet", "network"],
   finance: ["platform", "identity", "fleet", "directory"],
   notification: ["platform", "identity"],
+  // Layer 3. A complaint is ABOUT a shipment, a merchant, a driver — it reads
+  // their context and, for COD_DISPUTE, posts a reversing ledger transaction.
+  complaint: ["platform", "identity", "directory", "shipment", "finance"],
   fraud: ["platform", "identity", "tracking"],
 };
 
