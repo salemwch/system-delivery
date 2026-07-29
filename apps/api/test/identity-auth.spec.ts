@@ -1,8 +1,12 @@
+import { randomBytes } from "node:crypto";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AuthService } from "../src/modules/identity/application/auth.service.js";
 import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { PasswordService } from "../src/modules/identity/application/password.service.js";
+import { MfaService } from "../src/modules/identity/application/mfa.service.js";
+import { FieldCipher } from "../src/shared/crypto/field-cipher.js";
 import { TokenService } from "../src/modules/identity/application/token.service.js";
 import {
   ROLE_PERMISSIONS,
@@ -76,7 +80,18 @@ describe("identity", () => {
     dbService = new DatabaseService(database.app);
     passwords = new PasswordService();
     tokens = new TokenService(stubConfig());
-    auth = new AuthService(dbService, passwords, tokens, new AuditService(dbService));
+    auth = new AuthService(
+      dbService,
+      passwords,
+      tokens,
+      new AuditService(dbService),
+      new MfaService(
+        dbService,
+        passwords,
+        new AuditService(dbService),
+        new FieldCipher(randomBytes(32)),
+      ),
+    );
     access = new AccessService();
 
     tenantA = asTenantId(await createTenant(database.migrator, "identity-a"));
@@ -206,7 +221,15 @@ describe("identity", () => {
         email: "owner@a.tn",
         password: PASSWORD,
       });
-      expect(result).toEqual({ ok: false, reason: "MFA_REQUIRED" });
+      // MFA_ENROLMENT_REQUIRED, not MFA_REQUIRED: the two are different states.
+      // This account has never enrolled, so there is no factor to challenge —
+      // it holds no session and can do nothing but enrol one.
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("unreachable");
+      expect(result.reason).toBe("MFA_ENROLMENT_REQUIRED");
+      // A challenge IS issued, and must be: without it this role could never
+      // log in and never enrol, locking an OWNER out of their own tenant.
+      expect(result.challenge).toBeDefined();
     });
 
     it("locks the account after repeated failures, then rejects even a correct password", async () => {
@@ -281,10 +304,22 @@ describe("identity", () => {
       });
 
       expect(inA.ok).toBe(true);
-      expect(inB.ok).toBe(true);
-      if (!inA.ok || !inB.ok) return;
+
+      // Tenant B's user has a second factor, so the correct password buys a
+      // CHALLENGE rather than a session. That is the point of the change: this
+      // assertion used to be `inB.ok === true`, because `mfa_enabled` was set
+      // with no enrolment behind it and the flag alone granted a session.
+      // Reaching the challenge still proves the email resolved to a different
+      // user in tenant B and that the password matched it.
+      expect(inB.ok).toBe(false);
+      if (inB.ok) throw new Error("unreachable");
+      expect(inB.reason).toBe("MFA_REQUIRED");
+      expect(inB.challenge).toBeDefined();
+
+      if (!inA.ok) throw new Error("tenant A login should have succeeded");
       expect(inA.session.principal.roles).toEqual(["DISPATCHER"]);
-      expect(inB.session.principal.roles).toEqual(["FINANCE"]);
+      // Tenant A's session is scoped to tenant A, never to B.
+      expect(inA.session.principal.tenantId).toBe(tenantA);
     });
   });
 

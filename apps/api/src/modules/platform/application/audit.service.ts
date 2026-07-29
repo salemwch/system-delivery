@@ -8,7 +8,6 @@ import { parseWithZod } from "../../../shared/http/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
 import { auditLog } from "../domain/schema.js";
 import type { AuditEntry } from "../domain/schema.js";
-import { AUDIT_ACTIONS } from "../domain/audit-actions.js";
 import type { AuditAction } from "../domain/audit-actions.js";
 
 /** Who performed the action. `ANONYMOUS` covers a failed login — the one that matters most. */
@@ -259,7 +258,6 @@ export class AuditService implements OnApplicationBootstrap {
     };
   }
 }
-
 
 function clampLimit(limit: number | undefined): number {
   if (limit === undefined) {

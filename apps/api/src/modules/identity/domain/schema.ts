@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   inet,
@@ -51,6 +52,11 @@ export const users = pgTable(
      * sub-tenant scope in the system.
      */
     merchantId: uuid("merchant_id"),
+    /** Set when the user first proved possession of the TOTP secret (migration 0023). */
+    mfaEnrolledAt: timestamp("mfa_enrolled_at", { withTimezone: true }),
+    /** Highest TOTP step already accepted — makes each code single-use. */
+    mfaLastStep: bigint("mfa_last_step", { mode: "number" }),
+    mfaFailedCount: integer("mfa_failed_count").notNull().default(0),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     failedLoginCount: integer("failed_login_count").notNull().default(0),
     lockedUntil: timestamp("locked_until", { withTimezone: true }),
@@ -112,4 +118,32 @@ export const refreshTokens = pgTable(
     uniqueIndex("refresh_tokens_digest_uq").on(table.tokenDigest),
     index("refresh_tokens_family_idx").on(table.familyId),
   ],
+);
+
+/**
+ * Single-use MFA recovery codes (migration 0023).
+ *
+ * Argon2id hashes, never the codes. They bypass the second factor entirely, so
+ * they are treated exactly like passwords: issued once at enrolment, shown once,
+ * and unrecoverable afterwards. `DELETE` is revoked on the table — consuming a
+ * code marks it used so the evidence survives.
+ */
+export const mfaRecoveryCodes = pgTable(
+  "mfa_recovery_codes",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    usedIp: inet("used_ip"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("mfa_recovery_codes_tenant_idx").on(table.tenantId)],
 );

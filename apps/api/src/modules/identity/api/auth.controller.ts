@@ -24,6 +24,15 @@ const loginSchema = z
     email: z.email().max(320),
     password: z.string().min(1).max(512),
     deviceId: z.string().max(200).optional(),
+    /**
+     * The second factor, when the client already holds one.
+     *
+     * Optional so the two-step flow still works: omit it and a correct password
+     * returns a challenge instead of a session. Supplying it collapses both
+     * steps into one call, which is what a client that has already prompted for
+     * the code wants.
+     */
+    mfaCode: z.string().trim().min(6).max(32).optional(),
   })
   .strict();
 
@@ -66,6 +75,7 @@ export class AuthController {
       email: body.email,
       password: body.password,
       ...(body.deviceId === undefined ? {} : { deviceId: body.deviceId }),
+      ...(body.mfaCode === undefined ? {} : { mfaCode: body.mfaCode }),
       ...(request.headers["user-agent"] === undefined
         ? {}
         : { userAgent: request.headers["user-agent"] }),

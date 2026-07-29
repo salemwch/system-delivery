@@ -54,6 +54,10 @@ const ALGORITHM = "HS256";
  */
 const KNOWN_ROLES: ReadonlySet<string> = new Set<string>(ROLES);
 
+/** Marks a token as an MFA challenge, so it can never be used as a session. */
+const MFA_CHALLENGE_TYPE = "mfa";
+const MFA_CHALLENGE_TTL_SECONDS = 300;
+
 /** A generated refresh token and the digest to persist for it. */
 export interface RefreshTokenPair {
   /** Returned to the client exactly once. Never stored in this form. */
@@ -94,6 +98,51 @@ export class TokenService {
       .sign(this.accessSecret);
 
     return { token, expiresIn };
+  }
+
+  /**
+   * Signs a short-lived token proving the PASSWORD step was passed.
+   *
+   * Deliberately minimal. It carries no roles, no permissions and no merchant
+   * scope, and `typ: "mfa"` means {@link authenticate} rejects it outright — so
+   * possession of one grants nothing anywhere in the system except the right to
+   * present a second factor.
+   *
+   * Five minutes: long enough to open an authenticator app, short enough that a
+   * token captured in transit is worthless by the time it is replayed.
+   */
+  async issueMfaChallenge(userId: string, tenantId: string): Promise<string> {
+    return new SignJWT({ tid: tenantId, typ: MFA_CHALLENGE_TYPE })
+      .setProtectedHeader({ alg: ALGORITHM })
+      .setSubject(userId)
+      .setIssuedAt()
+      .setExpirationTime(`${String(MFA_CHALLENGE_TTL_SECONDS)}s`)
+      .sign(this.accessSecret);
+  }
+
+  /**
+   * Verifies a challenge token, returning who it belongs to.
+   *
+   * Returns null for anything that is not a live challenge — including a
+   * perfectly valid ACCESS token, which must never be usable here: that would
+   * let an existing session skip the second factor for another account.
+   */
+  async verifyMfaChallenge(token: string): Promise<{ userId: string; tenantId: string } | null> {
+    try {
+      const { payload } = await jwtVerify(token, this.accessSecret, { algorithms: [ALGORITHM] });
+      if (payload["typ"] !== MFA_CHALLENGE_TYPE) {
+        return null;
+      }
+      const userId = payload.sub;
+      const tenantId = payload["tid"];
+      if (typeof userId !== "string" || typeof tenantId !== "string") {
+        return null;
+      }
+      return { userId, tenantId };
+    } catch {
+      // Expired, tampered, or signed with another key. All equally "no".
+      return null;
+    }
   }
 
   /**

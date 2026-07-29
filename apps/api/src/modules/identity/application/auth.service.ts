@@ -4,7 +4,9 @@ import { Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 
 import { AuditService } from "../../platform/index.js";
+import { MfaService } from "./mfa.service.js";
 import { DatabaseService, asTenantId } from "../../../shared/database/index.js";
+import { UnauthenticatedError } from "../../../shared/errors/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
 import { isRole, permissionsForRoles } from "../domain/permissions.js";
 import type { Role } from "../domain/permissions.js";
@@ -29,11 +31,25 @@ export type AuthFailureReason =
   | "ACCOUNT_DISABLED"
   | "ACCOUNT_LOCKED"
   | "TENANT_INACTIVE"
-  | "MFA_REQUIRED";
+  /** Password accepted; a second factor is now required. Carries a challenge. */
+  | "MFA_REQUIRED"
+  /** The supplied second factor was wrong. */
+  | "MFA_INVALID"
+  /** A privileged role that has never completed enrolment. Cannot log in at all. */
+  | "MFA_ENROLMENT_REQUIRED";
 
 export type AuthResult =
   | { readonly ok: true; readonly session: AuthSession }
-  | { readonly ok: false; readonly reason: AuthFailureReason };
+  | {
+      readonly ok: false;
+      readonly reason: AuthFailureReason;
+      /**
+       * Present only for `MFA_REQUIRED`. Short-lived, single-purpose, and
+       * carries no permissions — it proves the password step was passed and
+       * nothing more.
+       */
+      readonly challenge?: string;
+    };
 
 export interface AuthSession {
   readonly accessToken: string;
@@ -50,6 +66,8 @@ export interface LoginRequest {
   readonly deviceId?: string;
   readonly userAgent?: string;
   readonly ipAddress?: string;
+  /** The second factor, when the client already holds one. */
+  readonly mfaCode?: string;
 }
 
 /** Lockout policy: exponential backoff, capped. Permanent lockout is itself a DoS. */
@@ -69,6 +87,7 @@ export class AuthService {
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
+    private readonly mfa: MfaService,
   ) {}
 
   async login(request: LoginRequest): Promise<AuthResult> {
@@ -156,12 +175,49 @@ export class AuthService {
       const roles = await this.rolesOf(tx, user.id);
 
       // MFA is mandatory for privileged roles. Enforced at login, not offered.
-      // Until the TOTP challenge endpoint exists, a privileged account without
-      // MFA configured cannot authenticate at all — deliberately fail closed
-      // rather than silently granting a session that skips the requirement.
+      // A privileged role that has not finished enrolment cannot authenticate.
+      // Fail closed: granting a session that skips the requirement is exactly
+      // the hole this used to have, when the flag was set true at provisioning
+      // with no enrolment behind it.
       if (this.requiresMfa(roles) && !user.mfaEnabled) {
         await auditFailure("MFA_REQUIRED", user.id);
-        return { ok: false, reason: "MFA_REQUIRED" };
+        // A challenge token, even though there is nothing yet to challenge.
+        //
+        // Without it this role could never log in and never enrol — it would
+        // need a session to enrol and enrolment to get a session. The token
+        // grants exactly one thing: the right to enrol a factor on THIS
+        // account. It is not a session, carries no permissions, and expires in
+        // five minutes, so the fail-closed property holds.
+        const challenge = await this.tokens.issueMfaChallenge(user.id, tenantId);
+        return { ok: false, reason: "MFA_ENROLMENT_REQUIRED", challenge };
+      }
+
+      // The second factor. Enrolled users are challenged whatever their role —
+      // someone who has chosen to enrol expects to be asked.
+      if (user.mfaEnabled) {
+        if (request.mfaCode === undefined) {
+          // The password was correct. Rather than issuing a session, hand back a
+          // short-lived challenge token bound to this user, which is the only
+          // thing the challenge endpoint accepts. It carries no permissions, so
+          // possession of it alone grants nothing.
+          const challenge = await this.tokens.issueMfaChallenge(user.id, tenantId);
+          return { ok: false, reason: "MFA_REQUIRED", challenge };
+        }
+
+        const verified = await this.mfa.verifyChallenge(
+          tx,
+          user.id,
+          request.mfaCode,
+          request.ipAddress,
+        );
+
+        if (!verified.ok) {
+          await auditFailure("MFA_REQUIRED", user.id);
+          return {
+            ok: false,
+            reason: verified.reason === "TOO_MANY_ATTEMPTS" ? "ACCOUNT_LOCKED" : "MFA_INVALID",
+          };
+        }
       }
 
       // Transparent upgrade if hashing parameters have strengthened.
@@ -376,6 +432,156 @@ export class AuthService {
       .update(users)
       .set({ failedLoginCount: failedCount, lockedUntil })
       .where(eq(users.id, userId));
+  }
+
+  /**
+   * Second half of a two-step login: the challenge token is already verified,
+   * so this checks the factor and issues the session.
+   *
+   * Re-reads the user rather than trusting anything carried in the challenge.
+   * The token proves only WHICH account passed the password step; whether that
+   * account is still active, still enrolled, and what roles it holds are facts
+   * that may have changed in the five minutes since, and each is authoritative
+   * only from the database.
+   */
+  async completeMfaLogin(
+    tenantIdRaw: string,
+    userId: string,
+    code: string,
+    context: { deviceId?: string; userAgent?: string; ipAddress?: string } = {},
+  ): Promise<
+    | {
+        readonly ok: true;
+        readonly session: AuthSession;
+        readonly usedRecoveryCode: boolean;
+        readonly remainingRecoveryCodes: number;
+      }
+    | { readonly ok: false; readonly reason: AuthFailureReason }
+  > {
+    const tenantId = asTenantId(tenantIdRaw);
+
+    return this.database.withTenant(async (tx) => {
+      const found = await tx.select().from(users).where(eq(users.id, userId)).limit(1);
+      const user = found[0];
+
+      if (user === undefined || user.status !== "ACTIVE") {
+        return { ok: false, reason: "ACCOUNT_DISABLED" };
+      }
+      if (user.lockedUntil !== null && user.lockedUntil.getTime() > Date.now()) {
+        return { ok: false, reason: "ACCOUNT_LOCKED" };
+      }
+
+      const verified = await this.mfa.verifyChallenge(tx, user.id, code, context.ipAddress);
+      if (!verified.ok) {
+        return {
+          ok: false,
+          reason: verified.reason === "TOO_MANY_ATTEMPTS" ? "ACCOUNT_LOCKED" : "MFA_INVALID",
+        };
+      }
+
+      const roles = await this.rolesOf(tx, user.id);
+
+      await tx
+        .update(users)
+        .set({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() })
+        .where(eq(users.id, user.id));
+
+      const principal: Principal = {
+        userId: user.id,
+        tenantId,
+        actorType: "user",
+        roles,
+        permissions: permissionsForRoles(roles),
+        hubScope: user.hubScope,
+        merchantId: user.merchantId,
+        sessionId: randomUUID(),
+      };
+
+      const session = await this.issueSession(tx, principal, {
+        familyId: randomUUID(),
+        deviceId: context.deviceId,
+        userAgent: context.userAgent,
+        ipAddress: context.ipAddress,
+      });
+
+      await this.audit.record(tx, {
+        action: "auth.login_succeeded",
+        resourceType: "user",
+        resourceId: user.id,
+        actorType: "USER",
+        actorId: user.id,
+        tenantId,
+        context: {
+          roles,
+          sessionId: principal.sessionId,
+          secondFactor: verified.usedRecoveryCode ? "recovery_code" : "totp",
+        },
+        ...(context.ipAddress === undefined ? {} : { ipAddress: context.ipAddress }),
+      });
+
+      return {
+        ok: true,
+        session,
+        usedRecoveryCode: verified.usedRecoveryCode,
+        remainingRecoveryCodes: verified.remainingCodes,
+      };
+    }, tenantId);
+  }
+
+  /**
+   * Issues the first session immediately after a bootstrap enrolment.
+   *
+   * No code is re-checked here, and that is deliberate rather than an omission:
+   * the caller has just presented a correct password (to obtain the challenge)
+   * and a correct TOTP code (to complete enrolment). Demanding a third proof
+   * would only force the user to wait 30 seconds for the next code, because the
+   * replay guard has already spent this one.
+   *
+   * Reached only from `bootstrap/confirm`, after `completeEnrolment` succeeded —
+   * which itself throws unless the code matched.
+   */
+  async issueSessionAfterEnrolment(tenantIdRaw: string, userId: string): Promise<AuthSession> {
+    const tenantId = asTenantId(tenantIdRaw);
+
+    return this.database.withTenant(async (tx) => {
+      const found = await tx.select().from(users).where(eq(users.id, userId)).limit(1);
+      const user = found[0];
+      if (user === undefined || user.status !== "ACTIVE") {
+        throw new UnauthenticatedError();
+      }
+
+      const roles = await this.rolesOf(tx, user.id);
+
+      await tx
+        .update(users)
+        .set({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() })
+        .where(eq(users.id, user.id));
+
+      const principal: Principal = {
+        userId: user.id,
+        tenantId,
+        actorType: "user",
+        roles,
+        permissions: permissionsForRoles(roles),
+        hubScope: user.hubScope,
+        merchantId: user.merchantId,
+        sessionId: randomUUID(),
+      };
+
+      const session = await this.issueSession(tx, principal, { familyId: randomUUID() });
+
+      await this.audit.record(tx, {
+        action: "auth.login_succeeded",
+        resourceType: "user",
+        resourceId: user.id,
+        actorType: "USER",
+        actorId: user.id,
+        tenantId,
+        context: { roles, sessionId: principal.sessionId, secondFactor: "enrolment" },
+      });
+
+      return session;
+    }, tenantId);
   }
 
   private async issueSession(

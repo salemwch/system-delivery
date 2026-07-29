@@ -57,7 +57,11 @@ export class ProvisioningService {
         fullName: input.owner.fullName,
         locale: input.owner.locale ?? input.tenant.defaultLocale ?? "fr",
         status: "ACTIVE",
-        mfaEnabled: true,
+        // FALSE, honestly: no factor exists yet. The owner enrols on first
+        // login using the challenge token that MFA_ENROLMENT_REQUIRED returns.
+        // Setting this true with no secret behind it is exactly the hole that
+        // made privileged accounts password-only.
+        mfaEnabled: false,
       })
       .returning({ id: users.id });
 

@@ -185,6 +185,14 @@ export const configSchema = z
     DRIVER_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(90),
     TRACKING_TOKEN_SECRET: secretSchema,
     TRACKING_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+    /**
+     * The name shown beside the code in the user's authenticator app, and the
+     * `issuer` in the `otpauth://` URI. Deployments run several environments
+     * against the same phone, so this must distinguish them — three identical
+     * "Delivery Platform" entries is how someone types a staging code into
+     * production.
+     */
+    MFA_ISSUER: z.string().trim().min(1).default("Delivery Platform"),
 
     // ── Encryption (field-level PII at rest) ─────────────────────────────────
     // AES-256-GCM key as base64-encoded 32 bytes. Encrypts driver PII

@@ -1,5 +1,8 @@
+import { randomBytes } from "node:crypto";
+
 import { Controller, Get, Module } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import * as OTPAuth from "otpauth";
 import { FastifyAdapter } from "@nestjs/platform-fastify";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -16,6 +19,9 @@ import {
 import { AccessService } from "../src/modules/identity/application/access.service.js";
 import { AuthService } from "../src/modules/identity/application/auth.service.js";
 import { AuditService } from "../src/modules/platform/application/audit.service.js";
+import { MfaService } from "../src/modules/identity/application/mfa.service.js";
+import { FieldCipher } from "../src/shared/crypto/field-cipher.js";
+import { FIELD_CIPHER } from "../src/shared/crypto/crypto.tokens.js";
 import { PasswordService } from "../src/modules/identity/application/password.service.js";
 import { TokenService } from "../src/modules/identity/application/token.service.js";
 import type { Principal } from "../src/modules/identity/application/token.service.js";
@@ -93,23 +99,64 @@ describe("http pipeline", () => {
 
   const PASSWORD = "pipeline-test-password-8823";
 
+  /**
+   * One cipher for both the module and the fixtures, so a secret seeded by a
+   * raw INSERT is decryptable by the service that reads it back.
+   */
+  const testCipher = new FieldCipher(randomBytes(32));
+
+  /** TOTP secrets of the enrolled fixtures, so `tokenFor` can answer the challenge. */
+  const mfaSecrets = new Map<string, string>();
+
+  /** The code an authenticator would show for a seeded user right now. */
+  function codeFor(email: string): string | undefined {
+    const secret = mfaSecrets.get(email);
+    if (secret === undefined) {
+      return undefined;
+    }
+    return new OTPAuth.TOTP({
+      issuer: "pipeline",
+      label: email,
+      algorithm: "SHA1",
+      digits: 6,
+      period: 30,
+      secret: OTPAuth.Secret.fromBase32(secret),
+    }).generate();
+  }
+
   async function seedUser(tenantId: TenantId, email: string, roles: string[]): Promise<string> {
     const passwords = new PasswordService();
     const passwordHash = await passwords.hash(PASSWORD);
 
-    // OWNER, FINANCE, and PLATFORM_ADMIN cannot authenticate without MFA
-    // (fail-closed, docs/07-security-architecture.md §3). Seeding them with MFA
-    // disabled would make every privileged-route test fail at login rather than
-    // exercising the pipeline.
+    // OWNER, FINANCE and PLATFORM_ADMIN cannot authenticate without a SECOND
+    // FACTOR (fail-closed, docs/07-security-architecture.md §3), so these are
+    // seeded FULLY ENROLLED — a real secret, encrypted with the same cipher the
+    // module under test uses.
+    //
+    // Not with a bare `mfa_enabled = true`: that flag with no secret behind it
+    // was the historical hole, and a fixture reproducing it would exercise a
+    // login path production no longer has.
     const mfaEnabled = roles.some(
       (role) => role === "OWNER" || role === "FINANCE" || role === "PLATFORM_ADMIN",
     );
+    const mfaSecret = mfaEnabled ? new OTPAuth.Secret({ size: 20 }).base32 : null;
+    if (mfaSecret !== null) {
+      mfaSecrets.set(email, mfaSecret);
+    }
 
     return database.migrator.begin(async (tx) => {
       await tx`select set_config('app.current_tenant_id', ${tenantId}, true)`;
       const inserted = await tx<{ id: string }[]>`
-        insert into users (tenant_id, email, password_hash, full_name, status, mfa_enabled)
-        values (${tenantId}, ${email}, ${passwordHash}, 'Pipeline User', 'ACTIVE', ${mfaEnabled})
+        insert into users (
+          tenant_id, email, password_hash, full_name, status,
+          mfa_enabled, mfa_secret, mfa_enrolled_at
+        )
+        values (
+          ${tenantId}, ${email}, ${passwordHash}, 'Pipeline User', 'ACTIVE',
+          ${mfaEnabled},
+          ${mfaSecret === null ? null : testCipher.encrypt(mfaSecret)},
+          ${mfaEnabled ? new Date() : null}
+        )
         returning id
       `;
       const row = inserted[0];
@@ -135,6 +182,8 @@ describe("http pipeline", () => {
         DatabaseService,
         PasswordService,
         AuditService,
+        MfaService,
+        { provide: FIELD_CIPHER, useValue: testCipher },
         TokenService,
         AuthService,
         AccessService,
@@ -178,10 +227,18 @@ describe("http pipeline", () => {
 
   async function tokenFor(roles: string[], email: string): Promise<string> {
     const userId = await seedUser(tenantA, email, roles);
+    const code = codeFor(email);
     const login = await inject({
       method: "POST",
       url: "/v1/auth/login",
-      payload: { tenantId: tenantA, email, password: PASSWORD },
+      payload: {
+        tenantId: tenantA,
+        email,
+        password: PASSWORD,
+        // Privileged roles are enrolled, so the password alone buys only a
+        // challenge. Supplying the code inline completes the login in one call.
+        ...(code === undefined ? {} : { mfaCode: code }),
+      },
     });
     expect(login.statusCode, login.body).toBe(200);
     const body = JSON.parse(login.body) as { accessToken: string; user: { id: string } };
