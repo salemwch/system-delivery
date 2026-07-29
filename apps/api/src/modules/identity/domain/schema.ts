@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   index,
+  smallint,
   inet,
   integer,
   pgTable,
@@ -146,4 +147,35 @@ export const mfaRecoveryCodes = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("mfa_recovery_codes_tenant_idx").on(table.tenantId)],
+);
+
+/**
+ * One-time codes for driver phone login (migration 0024).
+ *
+ * Keyed by PHONE, not driver id: the code is requested before anyone is
+ * authenticated, and resolving the driver first would make an unknown number
+ * distinguishable from a known one by response time or shape.
+ */
+export const otpCodes = pgTable(
+  "otp_codes",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    /** E.164. */
+    phone: text("phone").notNull(),
+    /** Argon2id. Never the code itself. */
+    codeHash: text("code_hash").notNull(),
+    purpose: text("purpose").notNull().default("DRIVER_LOGIN"),
+    attemptCount: smallint("attempt_count").notNull().default(0),
+    /** Set on acceptance OR on attempt exhaustion — either way the code is dead. */
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    requestedIp: inet("requested_ip"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("otp_codes_rate_idx").on(table.tenantId, table.phone, table.createdAt)],
 );

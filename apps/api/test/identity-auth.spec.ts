@@ -1,12 +1,7 @@
-import { randomBytes } from "node:crypto";
-
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { AuthService } from "../src/modules/identity/application/auth.service.js";
-import { AuditService } from "../src/modules/platform/application/audit.service.js";
-import { PasswordService } from "../src/modules/identity/application/password.service.js";
-import { MfaService } from "../src/modules/identity/application/mfa.service.js";
-import { FieldCipher } from "../src/shared/crypto/field-cipher.js";
+import type { AuthService } from "../src/modules/identity/application/auth.service.js";
+import type { PasswordService } from "../src/modules/identity/application/password.service.js";
 import { TokenService } from "../src/modules/identity/application/token.service.js";
 import {
   ROLE_PERMISSIONS,
@@ -23,6 +18,7 @@ import {
   withTenantContext,
 } from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
+import { buildAuthStack } from "./auth.factory.js";
 import { stubConfig } from "./config.stub.js";
 
 /**
@@ -78,20 +74,8 @@ describe("identity", () => {
   beforeAll(async () => {
     database = await createTestDatabase();
     dbService = new DatabaseService(database.app);
-    passwords = new PasswordService();
-    tokens = new TokenService(stubConfig());
-    auth = new AuthService(
-      dbService,
-      passwords,
-      tokens,
-      new AuditService(dbService),
-      new MfaService(
-        dbService,
-        passwords,
-        new AuditService(dbService),
-        new FieldCipher(randomBytes(32)),
-      ),
-    );
+    const stack = buildAuthStack(dbService);
+    ({ auth, tokens, passwords } = stack);
     access = new AccessService();
 
     tenantA = asTenantId(await createTenant(database.migrator, "identity-a"));

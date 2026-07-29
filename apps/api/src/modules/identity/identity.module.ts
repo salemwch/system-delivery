@@ -8,6 +8,7 @@ import { PasswordService } from "./application/password.service.js";
 import { ProvisioningService } from "./application/provisioning.service.js";
 import { TokenService } from "./application/token.service.js";
 import { MfaService } from "./application/mfa.service.js";
+import { OtpService } from "./application/otp.service.js";
 import { UserService } from "./application/user.service.js";
 import { AuditController } from "./api/audit.controller.js";
 import { MfaController } from "./api/mfa.controller.js";
@@ -39,6 +40,7 @@ import { TenantContextInterceptor } from "./api/tenant-context.interceptor.js";
     ProvisioningService,
     UserService,
     MfaService,
+    OtpService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },

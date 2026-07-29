@@ -10,14 +10,9 @@ export { NotificationService } from "./application/notification.service.js";
 export { NotificationEventHandler } from "./application/notification-event.handler.js";
 export type { SendCommand } from "./application/notification.service.js";
 
-export { NOTIFICATION_PROVIDER } from "./domain/notification-provider.js";
-export type {
-  NotificationProvider,
-  NotificationChannel,
-  OutboundMessage,
-  DeliveryReceipt,
-} from "./domain/notification-provider.js";
-export { ConsoleNotificationProvider } from "./infrastructure/console-notification.provider.js";
+// NOTIFICATION_PROVIDER and its implementations moved to `platform`: identity
+// needs the same transport to deliver a driver's OTP, and identity is layer 0.
+// Import them from `platform`, not from here.
 
 export {
   NOTIFICATION_LOCALES,

@@ -20,6 +20,9 @@ import { AccessService } from "../src/modules/identity/application/access.servic
 import { AuthService } from "../src/modules/identity/application/auth.service.js";
 import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { MfaService } from "../src/modules/identity/application/mfa.service.js";
+import { OtpService } from "../src/modules/identity/application/otp.service.js";
+import { NOTIFICATION_PROVIDER } from "../src/modules/platform/domain/notification-provider.js";
+import { CapturingNotificationProvider } from "./auth.factory.js";
 import { FieldCipher } from "../src/shared/crypto/field-cipher.js";
 import { FIELD_CIPHER } from "../src/shared/crypto/crypto.tokens.js";
 import { PasswordService } from "../src/modules/identity/application/password.service.js";
@@ -183,6 +186,8 @@ describe("http pipeline", () => {
         PasswordService,
         AuditService,
         MfaService,
+        OtpService,
+        { provide: NOTIFICATION_PROVIDER, useValue: new CapturingNotificationProvider() },
         { provide: FIELD_CIPHER, useValue: testCipher },
         TokenService,
         AuthService,

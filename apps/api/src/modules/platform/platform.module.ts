@@ -6,6 +6,8 @@ import { FeatureService } from "./application/feature.service.js";
 import { OutboxService } from "./application/outbox.service.js";
 import { AuditService } from "./application/audit.service.js";
 import { TenantService } from "./application/tenant.service.js";
+import { NOTIFICATION_PROVIDER } from "./domain/notification-provider.js";
+import { ConsoleNotificationProvider } from "./infrastructure/console-notification.provider.js";
 
 /**
  * Platform context (docs/04-context-map.md §3.1).
@@ -15,7 +17,17 @@ import { TenantService } from "./application/tenant.service.js";
  */
 @Module({
   controllers: [ConfigController],
-  providers: [OutboxService, FeatureService, TenantService, ConfigBootstrapService, AuditService],
-  exports: [OutboxService, FeatureService, TenantService, AuditService],
+  providers: [
+    OutboxService,
+    FeatureService,
+    TenantService,
+    ConfigBootstrapService,
+    AuditService,
+    // The single binding of the outbound-message transport. Both `notification`
+    // (business notifications) and `identity` (driver OTP) consume it, so it is
+    // bound once here rather than in each.
+    { provide: NOTIFICATION_PROVIDER, useClass: ConsoleNotificationProvider },
+  ],
+  exports: [OutboxService, FeatureService, TenantService, AuditService, NOTIFICATION_PROVIDER],
 })
 export class PlatformModule {}

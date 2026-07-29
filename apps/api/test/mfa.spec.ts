@@ -1,17 +1,14 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import * as OTPAuth from "otpauth";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { AuthService } from "../src/modules/identity/application/auth.service.js";
-import { MfaService } from "../src/modules/identity/application/mfa.service.js";
-import { PasswordService } from "../src/modules/identity/application/password.service.js";
-import { TokenService } from "../src/modules/identity/application/token.service.js";
+import type { AuthService } from "../src/modules/identity/application/auth.service.js";
+import type { MfaService } from "../src/modules/identity/application/mfa.service.js";
+import type { TokenService } from "../src/modules/identity/application/token.service.js";
 import { UserService } from "../src/modules/identity/application/user.service.js";
-import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
-import { FieldCipher } from "../src/shared/crypto/field-cipher.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
 import { BusinessRuleError } from "../src/shared/errors/index.js";
 import {
@@ -21,7 +18,7 @@ import {
   withTenantContext,
 } from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
-import { stubConfig } from "./config.stub.js";
+import { buildAuthStack } from "./auth.factory.js";
 
 /**
  * Multi-factor authentication (docs/07-security-architecture.md §3, §4.1).
@@ -109,13 +106,9 @@ describe("mfa", () => {
   beforeAll(async () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
-    const passwords = new PasswordService();
-    const audit = new AuditService(db);
-    const cipher = new FieldCipher(randomBytes(32));
-    mfa = new MfaService(db, passwords, audit, cipher);
-    tokens = new TokenService(stubConfig());
-    auth = new AuthService(db, passwords, tokens, audit, mfa);
-    usersService = new UserService(db, passwords, new OutboxService(), audit);
+    const stack = buildAuthStack(db);
+    ({ auth, mfa, tokens } = stack);
+    usersService = new UserService(db, stack.passwords, new OutboxService(), stack.audit);
   }, 240_000);
 
   afterEach(async () => {

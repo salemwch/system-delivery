@@ -5,7 +5,9 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { AuditService } from "../../platform/index.js";
 import { MfaService } from "./mfa.service.js";
-import { DatabaseService, asTenantId } from "../../../shared/database/index.js";
+import { OtpService } from "./otp.service.js";
+import type { OtpRequestOutcome } from "./otp.service.js";
+import { DatabaseService, TenantContext, asTenantId } from "../../../shared/database/index.js";
 import { UnauthenticatedError } from "../../../shared/errors/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
 import { isRole, permissionsForRoles } from "../domain/permissions.js";
@@ -88,6 +90,7 @@ export class AuthService {
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
     private readonly mfa: MfaService,
+    private readonly otp: OtpService,
   ) {}
 
   async login(request: LoginRequest): Promise<AuthResult> {
@@ -581,6 +584,172 @@ export class AuthService {
       });
 
       return session;
+    }, tenantId);
+  }
+
+  /**
+   * Step one of driver login: ask for a code.
+   *
+   * ⚠️ ALWAYS returns the same shape, whether or not the phone belongs to a
+   * driver. A response that differed would let anyone enumerate a courier's
+   * fleet one number at a time — the roster is competitive information and the
+   * numbers are personal data. Only the SEND is conditional.
+   */
+  async requestDriverOtp(
+    tenantIdRaw: string,
+    phone: string,
+    context: { ipAddress?: string } = {},
+  ): Promise<OtpRequestOutcome> {
+    const tenantId = asTenantId(tenantIdRaw);
+
+    return TenantContext.run({ tenantId, actorType: "system" }, async () => {
+      const account = await this.database.withTenant(
+        (tx) => this.findDriverByPhone(tx, phone),
+        tenantId,
+      );
+
+      // Only an ACTIVE account holding the DRIVER role gets a message. A
+      // disabled driver, or a dispatcher who happens to have a phone on file,
+      // is told exactly what a stranger is told.
+      const deliver = account !== null && account.status === "ACTIVE";
+
+      return this.otp.request(phone, {
+        deliver,
+        ...(context.ipAddress === undefined ? {} : { ipAddress: context.ipAddress }),
+        ...(account === null ? {} : { locale: account.locale }),
+      });
+    });
+  }
+
+  /**
+   * Resolves a phone to the account that may log in with it.
+   *
+   * Requires the DRIVER role: OTP is the driver channel, and letting any account
+   * with a phone number on file bypass its password would be a downgrade attack
+   * on every other role — including the MFA-required ones.
+   *
+   * Returns null rather than throwing. The caller must not let the difference
+   * reach the client.
+   */
+  private async findDriverByPhone(
+    tx: TenantTransaction,
+    phone: string,
+  ): Promise<{ id: string; status: string; locale: string } | null> {
+    const rows = await tx
+      .select({
+        id: users.id,
+        status: users.status,
+        locale: users.locale,
+        role: userRoles.role,
+      })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      // Unique per tenant (`users_tenant_phone_uq`), and RLS supplies the
+      // tenant, so at most one account matches.
+      .where(and(eq(users.phone, phone), eq(userRoles.role, "DRIVER")))
+      .limit(1);
+
+    const row = rows[0];
+    return row === undefined ? null : { id: row.id, status: row.status, locale: row.locale };
+  }
+
+  /**
+   * Step two: exchange a code for a driver session.
+   *
+   * The code is verified inside the same transaction that mints the session, so
+   * a code cannot be consumed by a login that then fails to complete.
+   */
+  async verifyDriverOtp(
+    tenantIdRaw: string,
+    phone: string,
+    code: string,
+    context: { deviceId?: string; userAgent?: string; ipAddress?: string } = {},
+  ): Promise<AuthResult> {
+    const tenantId = asTenantId(tenantIdRaw);
+
+    return this.database.withTenant(async (tx) => {
+      const auditFailure = async (reason: string): Promise<void> => {
+        await this.audit.record(tx, {
+          action: "auth.login_failed",
+          outcome: "FAILURE",
+          resourceType: "driver",
+          actorType: "ANONYMOUS",
+          actorId: null,
+          tenantId,
+          context: { reason, channel: "OTP" },
+          ...(context.ipAddress === undefined ? {} : { ipAddress: context.ipAddress }),
+        });
+      };
+
+      // The code is checked FIRST, before the driver is resolved. Reversing the
+      // order would answer "is this number registered?" without a valid code.
+      const verified = await this.otp.verify(tx, phone, code);
+      if (!verified.ok) {
+        await auditFailure(`OTP_${verified.reason}`);
+        return { ok: false, reason: "BAD_PASSWORD" };
+      }
+
+      const account = await this.findDriverByPhone(tx, phone);
+      if (account === null) {
+        // A correct code for a number with no driver account. Reachable only if
+        // the account was removed between request and verify.
+        await auditFailure("OTP_NO_DRIVER");
+        return { ok: false, reason: "UNKNOWN_USER" };
+      }
+
+      // Re-checked here, not merely at request time: an account disabled during
+      // the code's five-minute life must not be able to spend it.
+      if (account.status !== "ACTIVE") {
+        await auditFailure("OTP_DRIVER_INACTIVE");
+        return { ok: false, reason: "ACCOUNT_DISABLED" };
+      }
+
+      const found = await tx.select().from(users).where(eq(users.id, account.id)).limit(1);
+      const user = found[0];
+      if (user === undefined) {
+        await auditFailure("OTP_USER_INACTIVE");
+        return { ok: false, reason: "ACCOUNT_DISABLED" };
+      }
+
+      const roles = await this.rolesOf(tx, user.id);
+
+      await tx
+        .update(users)
+        .set({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() })
+        .where(eq(users.id, user.id));
+
+      const principal: Principal = {
+        userId: user.id,
+        tenantId,
+        // `driver`, not `user`: it selects the longer driver token TTL and is
+        // what the telemetry and shift endpoints check.
+        actorType: "driver",
+        roles,
+        permissions: permissionsForRoles(roles),
+        hubScope: user.hubScope,
+        merchantId: user.merchantId,
+        sessionId: randomUUID(),
+      };
+
+      const session = await this.issueSession(tx, principal, {
+        familyId: randomUUID(),
+        deviceId: context.deviceId,
+        userAgent: context.userAgent,
+        ipAddress: context.ipAddress,
+      });
+
+      await this.audit.record(tx, {
+        action: "auth.login_succeeded",
+        resourceType: "driver",
+        resourceId: user.id,
+        actorType: "DRIVER",
+        actorId: user.id,
+        tenantId,
+        context: { channel: "OTP", roles, sessionId: principal.sessionId },
+        ...(context.ipAddress === undefined ? {} : { ipAddress: context.ipAddress }),
+      });
+
+      return { ok: true, session };
     }, tenantId);
   }
 

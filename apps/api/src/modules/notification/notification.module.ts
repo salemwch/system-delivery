@@ -3,8 +3,6 @@ import { Module } from "@nestjs/common";
 import { PlatformModule } from "../platform/index.js";
 import { NotificationService } from "./application/notification.service.js";
 import { NotificationEventHandler } from "./application/notification-event.handler.js";
-import { NOTIFICATION_PROVIDER } from "./domain/notification-provider.js";
-import { ConsoleNotificationProvider } from "./infrastructure/console-notification.provider.js";
 
 /**
  * Notification context (docs/04-context-map.md §3.11) — Layer 3.
@@ -20,12 +18,12 @@ import { ConsoleNotificationProvider } from "./infrastructure/console-notificati
  * real aggregator implements the same port with no caller change.
  */
 @Module({
+  // The NOTIFICATION_PROVIDER binding lives in PlatformModule, which is where
+  // the port itself now lives: `identity` needs it to deliver a driver's OTP,
+  // and identity is layer 0, so the transport abstraction cannot sit in a
+  // layer-3 module. One port, one binding, two consumers.
   imports: [PlatformModule],
-  providers: [
-    NotificationService,
-    NotificationEventHandler,
-    { provide: NOTIFICATION_PROVIDER, useClass: ConsoleNotificationProvider },
-  ],
+  providers: [NotificationService, NotificationEventHandler],
   exports: [NotificationService, NotificationEventHandler],
 })
 export class NotificationModule {}

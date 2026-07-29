@@ -36,6 +36,32 @@ const loginSchema = z
   })
   .strict();
 
+/** E.164 — the driver's identity, matching the format `users.phone` stores. */
+const e164 = z
+  .string()
+  .trim()
+  .regex(/^\+[1-9]\d{6,14}$/u, "must be an E.164 phone number, e.g. +21620123456");
+
+const otpRequestSchema = z
+  .object({
+    tenantId: z.uuid(),
+    phone: e164,
+  })
+  .strict();
+
+const otpVerifySchema = z
+  .object({
+    tenantId: z.uuid(),
+    phone: e164,
+    /** Exactly six digits. Length is validated before any hash comparison. */
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/u, "must be a 6-digit code"),
+    deviceId: z.string().max(200).optional(),
+  })
+  .strict();
+
 const refreshSchema = z
   .object({
     tenantId: z.uuid(),
@@ -141,6 +167,52 @@ export class AuthController {
    * distinguishing "unknown email" from "wrong password" is a user-enumeration
    * oracle (docs/07-security-architecture.md §3.1).
    */
+  /**
+   * Step one of driver login: send a one-time code to a phone.
+   *
+   * ⚠️ The response is IDENTICAL whether or not the number belongs to a driver,
+   * and deliberately so — a different answer would let anyone enumerate a
+   * courier's fleet one number at a time. Only the SMS is conditional.
+   *
+   * `retryAfterSeconds` on a rate-limited response is not a leak: it describes
+   * the caller's own request history, which they already know.
+   */
+  @Public()
+  @Post("driver/otp/request")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async requestDriverOtp(
+    @Body(zodBody(otpRequestSchema)) body: z.infer<typeof otpRequestSchema>,
+    @Req() request: FastifyRequest,
+  ): Promise<{ sent: true; expiresInSeconds?: number; retryAfterSeconds?: number }> {
+    const outcome = await this.auth.requestDriverOtp(body.tenantId, body.phone, {
+      ...(request.ip === undefined ? {} : { ipAddress: request.ip }),
+    });
+
+    if (!outcome.ok) {
+      return { sent: true, retryAfterSeconds: outcome.retryAfterSeconds };
+    }
+    return { sent: true, expiresInSeconds: outcome.expiresInSeconds };
+  }
+
+  /** Step two: exchange the code for a driver session. */
+  @Public()
+  @Post("driver/otp/verify")
+  @HttpCode(HttpStatus.OK)
+  async verifyDriverOtp(
+    @Body(zodBody(otpVerifySchema)) body: z.infer<typeof otpVerifySchema>,
+    @Req() request: FastifyRequest,
+  ): Promise<SessionResponse> {
+    const result = await this.auth.verifyDriverOtp(body.tenantId, body.phone, body.code, {
+      ...(body.deviceId === undefined ? {} : { deviceId: body.deviceId }),
+      ...(request.headers["user-agent"] === undefined
+        ? {}
+        : { userAgent: request.headers["user-agent"] }),
+      ...(request.ip === undefined ? {} : { ipAddress: request.ip }),
+    });
+
+    return this.toResponse(result);
+  }
+
   private toResponse(result: AuthResult): SessionResponse {
     if (!result.ok) {
       throw new UnauthenticatedError("Invalid credentials");

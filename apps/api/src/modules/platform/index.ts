@@ -38,6 +38,23 @@ export { EVENT_PUBLISHER } from "./domain/event-publisher.js";
 export type { EventPublisher, PublishableEvent } from "./domain/event-publisher.js";
 export { ValkeyStreamEventPublisher } from "./infrastructure/valkey-stream.publisher.js";
 
+/**
+ * The outbound-message transport port.
+ *
+ * Lives in `platform` rather than in `notification` because `identity` needs the
+ * same transport to deliver a driver's OTP, and `identity` is layer 0 — it
+ * cannot depend on a layer-3 module. A transport is cross-cutting mechanics, not
+ * a business rule, so this is exactly what platform is for.
+ */
+export { NOTIFICATION_PROVIDER } from "./domain/notification-provider.js";
+export type {
+  NotificationProvider,
+  NotificationChannel,
+  OutboundMessage,
+  DeliveryReceipt,
+} from "./domain/notification-provider.js";
+export { ConsoleNotificationProvider } from "./infrastructure/console-notification.provider.js";
+
 export { EVENT_HANDLER } from "./domain/consumed-event.js";
 export type { ConsumedEvent, EventHandler } from "./domain/consumed-event.js";
 

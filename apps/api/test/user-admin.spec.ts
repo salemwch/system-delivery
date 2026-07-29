@@ -1,13 +1,10 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { MerchantService } from "../src/modules/directory/application/merchant.service.js";
-import { AuthService } from "../src/modules/identity/application/auth.service.js";
+import type { AuthService } from "../src/modules/identity/application/auth.service.js";
 import { PasswordService } from "../src/modules/identity/application/password.service.js";
-import { MfaService } from "../src/modules/identity/application/mfa.service.js";
-import { FieldCipher } from "../src/shared/crypto/field-cipher.js";
-import { TokenService } from "../src/modules/identity/application/token.service.js";
 import { UserService } from "../src/modules/identity/application/user.service.js";
 import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
@@ -26,7 +23,7 @@ import {
   withTenantContext,
 } from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
-import { stubConfig } from "./config.stub.js";
+import { buildAuthStack } from "./auth.factory.js";
 
 /**
  * User administration — the endpoint that mints the logins a courier hands out.
@@ -72,13 +69,7 @@ describe("user administration", () => {
     const audit = new AuditService(db);
     usersService = new UserService(db, passwords, outbox, audit);
     merchants = new MerchantService(db, outbox);
-    auth = new AuthService(
-      db,
-      passwords,
-      new TokenService(stubConfig()),
-      audit,
-      new MfaService(db, passwords, audit, new FieldCipher(randomBytes(32))),
-    );
+    auth = buildAuthStack(db).auth;
   }, 240_000);
 
   afterEach(async () => {

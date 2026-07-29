@@ -14,7 +14,7 @@ import type {
   DeliveryReceipt,
   NotificationProvider,
   OutboundMessage,
-} from "../src/modules/notification/domain/notification-provider.js";
+} from "../src/modules/platform/domain/notification-provider.js";
 import type { AppConfigService } from "../src/shared/config/index.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
