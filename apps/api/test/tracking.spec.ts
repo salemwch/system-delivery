@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import postgres from "postgres";
 import type { Sql } from "postgres";
 import { Redis } from "ioredis";
-import { PinoLogger } from "nestjs-pino";
+import type { PinoLogger } from "nestjs-pino";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { AddressService } from "../src/modules/directory/application/address.service.js";
@@ -13,7 +13,9 @@ import { ShiftService } from "../src/modules/fleet/application/shift.service.js"
 import { VehicleService } from "../src/modules/fleet/application/vehicle.service.js";
 import { GeofenceService } from "../src/modules/network/application/geofence.service.js";
 import { HubService } from "../src/modules/network/application/hub.service.js";
+import { TokenService } from "../src/modules/identity/application/token.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
+import { RealtimeGateway } from "../src/modules/tracking/realtime/realtime.gateway.js";
 import { GeofenceMonitor } from "../src/modules/tracking/telemetry/geofence-monitor.js";
 import { PresenceService } from "../src/modules/tracking/telemetry/presence.service.js";
 import { TelemetryService } from "../src/modules/tracking/telemetry/telemetry.service.js";
@@ -43,6 +45,18 @@ function testConfig(overrides: Record<string, unknown> = {}) {
   return { get: (key: string) => values[key] } as never;
 }
 
+/** Token config for the realtime gateway telemetry publishes through. */
+function tokenConfig() {
+  const values: Record<string, unknown> = {
+    JWT_ACCESS_SECRET: "test-secret-that-is-at-least-32-characters-long",
+    JWT_ACCESS_TTL_SECONDS: 900,
+    DRIVER_ACCESS_TTL_SECONDS: 3_600,
+    JWT_ISSUER: "delivery-platform",
+    JWT_AUDIENCE: "delivery-platform",
+  };
+  return { get: (key: string) => values[key] } as never;
+}
+
 /** Pino's logger requires DI context; telemetry only ever warns/errors on it. */
 function testLogger(): PinoLogger {
   return {
@@ -57,6 +71,7 @@ describe("tracking", () => {
   let db: DatabaseService;
   let telemetrySql: Sql;
   let valkey: Redis;
+  let realtimeSubscriber: Redis;
 
   let telemetry: TelemetryService;
   let writer: TelemetryWriter;
@@ -193,7 +208,25 @@ describe("tracking", () => {
     writer = new TelemetryWriter(telemetrySql, testConfig(), testLogger());
     presence = new PresenceService(valkey, testConfig());
     monitor = new GeofenceMonitor(db, geofencesSvc, outbox, valkey);
-    telemetry = new TelemetryService(writer, presence, monitor, shifts, valkey, testConfig());
+    realtimeSubscriber = new Redis(process.env["VALKEY_URL"] ?? "redis://localhost:6379", {
+      maxRetriesPerRequest: null,
+    });
+    const realtime = new RealtimeGateway(
+      new TokenService(tokenConfig()),
+      db,
+      valkey,
+      realtimeSubscriber,
+      testLogger(),
+    );
+    telemetry = new TelemetryService(
+      writer,
+      presence,
+      monitor,
+      shifts,
+      realtime,
+      valkey,
+      testConfig(),
+    );
   }, 240_000);
 
   afterEach(async () => {
@@ -213,6 +246,7 @@ describe("tracking", () => {
 
   afterAll(async () => {
     await telemetrySql.end({ timeout: 5 });
+    await realtimeSubscriber.quit();
     await valkey.quit();
     await database.close();
   });

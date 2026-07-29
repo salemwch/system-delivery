@@ -9,6 +9,7 @@ import { VALKEY_CLIENT } from "../../../shared/valkey/index.js";
 import { ShiftService } from "../../fleet/index.js";
 import { ingestTelemetrySchema, sourceCode } from "../domain/dtos.js";
 import type { PositionInput } from "../domain/dtos.js";
+import { RealtimeGateway } from "../realtime/realtime.gateway.js";
 import { GeofenceMonitor } from "./geofence-monitor.js";
 import { PresenceService } from "./presence.service.js";
 import { TelemetryWriter } from "./telemetry-writer.js";
@@ -64,6 +65,7 @@ export class TelemetryService {
     private readonly presence: PresenceService,
     private readonly geofences: GeofenceMonitor,
     private readonly shifts: ShiftService,
+    private readonly realtime: RealtimeGateway,
     @Inject(VALKEY_CLIENT) private readonly valkey: Redis,
     config: AppConfigService,
   ) {
@@ -138,6 +140,19 @@ export class TelemetryService {
         speedMps: newest.spd ?? null,
         batteryPct: newest.bat ?? null,
         at: newest.t,
+      });
+
+      // Fan out to any dispatcher watching. Fire-and-forget across Valkey
+      // pub/sub so the socket a dispatcher happens to hold on another instance
+      // still receives it — and so a realtime hiccup never fails an upload.
+      this.realtime.publishPosition(tenantId, {
+        driverId: ctx.driverId,
+        lat: newest.lat,
+        lon: newest.lon,
+        headingDeg: newest.hdg ?? null,
+        speedMps: newest.spd ?? null,
+        batteryPct: newest.bat ?? null,
+        routeId: dto.routeId ?? null,
       });
 
       const entries = await this.geofences.evaluateTrack(

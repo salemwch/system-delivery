@@ -17,3 +17,15 @@ export type { DriverPosition, NewDriverPosition } from "./domain/schema.js";
 
 export { POSITION_SOURCES } from "./domain/dtos.js";
 export type { PositionSource, PositionInput, IngestTelemetryInput } from "./domain/dtos.js";
+
+export { RealtimeGateway } from "./realtime/realtime.gateway.js";
+export { registerRealtime } from "./realtime/realtime.plugin.js";
+export { RealtimeConnection } from "./realtime/realtime-connection.js";
+export type { Socket, DriverPositionUpdate } from "./realtime/realtime-connection.js";
+export { withinBbox, clientMessageSchema } from "./realtime/protocol.js";
+export type {
+  Bbox,
+  ClientMessage,
+  ServerMessage,
+  PositionFrameEntry,
+} from "./realtime/protocol.js";

@@ -1,18 +1,22 @@
 import { Inject, Module } from "@nestjs/common";
 import type { OnApplicationShutdown } from "@nestjs/common";
+import { Redis } from "ioredis";
+import { PinoLogger } from "nestjs-pino";
 import postgres from "postgres";
 import type { Sql } from "postgres";
 
 import { AppConfigService } from "../../shared/config/index.js";
 import { FleetModule } from "../fleet/index.js";
+import { IdentityModule } from "../identity/index.js";
 import { NetworkModule } from "../network/index.js";
 import { PlatformModule } from "../platform/index.js";
 import { DriverPositionController, TelemetryController } from "./api/telemetry.controller.js";
+import { RealtimeGateway } from "./realtime/realtime.gateway.js";
 import { GeofenceMonitor } from "./telemetry/geofence-monitor.js";
 import { PresenceService } from "./telemetry/presence.service.js";
 import { TelemetryService } from "./telemetry/telemetry.service.js";
 import { TelemetryWriter } from "./telemetry/telemetry-writer.js";
-import { TELEMETRY_POSTGRES_CLIENT } from "./tracking.tokens.js";
+import { REALTIME_SUBSCRIBER, TELEMETRY_POSTGRES_CLIENT } from "./tracking.tokens.js";
 
 /**
  * Tracking context (docs/04-context-map.md §3.9) — Layer 3.
@@ -31,7 +35,7 @@ import { TELEMETRY_POSTGRES_CLIENT } from "./tracking.tokens.js";
  * business logic — which is why it depends only on platform, fleet, and network.
  */
 @Module({
-  imports: [PlatformModule, FleetModule, NetworkModule],
+  imports: [PlatformModule, IdentityModule, FleetModule, NetworkModule],
   controllers: [TelemetryController, DriverPositionController],
   providers: [
     {
@@ -51,16 +55,32 @@ import { TELEMETRY_POSTGRES_CLIENT } from "./tracking.tokens.js";
           },
         }),
     },
+    {
+      // Realtime fan-out needs its own Valkey connection: a client in subscriber
+      // mode may issue nothing but subscribe/unsubscribe, so it cannot be the
+      // shared client that presence and dedup run GET/SET through.
+      provide: REALTIME_SUBSCRIBER,
+      inject: [AppConfigService, PinoLogger],
+      useFactory: (config: AppConfigService, logger: PinoLogger): Redis => {
+        const client = new Redis(config.get("VALKEY_URL"), { maxRetriesPerRequest: null });
+        client.on("error", (error: Error) => {
+          logger.error({ err: error, component: "realtime-subscriber" }, "Valkey error");
+        });
+        return client;
+      },
+    },
     TelemetryWriter,
     PresenceService,
     GeofenceMonitor,
+    RealtimeGateway,
     TelemetryService,
   ],
-  exports: [TelemetryService, PresenceService],
+  exports: [TelemetryService, PresenceService, RealtimeGateway],
 })
 export class TrackingModule implements OnApplicationShutdown {
   constructor(
     @Inject(TELEMETRY_POSTGRES_CLIENT) private readonly telemetryClient: Sql,
+    @Inject(REALTIME_SUBSCRIBER) private readonly subscriber: Redis,
     private readonly writer: TelemetryWriter,
   ) {}
 
@@ -73,5 +93,6 @@ export class TrackingModule implements OnApplicationShutdown {
   async onApplicationShutdown(): Promise<void> {
     await this.writer.flush();
     await this.telemetryClient.end({ timeout: 5 });
+    await this.subscriber.quit();
   }
 }

@@ -9,7 +9,12 @@
         "src/shared/*/index.ts"
       ],
       "project": ["src/**/*.ts", "test/**/*.ts"],
-      "ignoreDependencies": ["pino-pretty", "@testcontainers/postgresql", "drizzle-kit"]
+      "ignoreDependencies": [
+        "pino-pretty",
+        "@testcontainers/postgresql",
+        "drizzle-kit",
+        "@types/ws"
+      ]
     }
   }
 }

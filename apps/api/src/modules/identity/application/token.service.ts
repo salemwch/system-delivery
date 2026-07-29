@@ -4,6 +4,7 @@ import { Injectable } from "@nestjs/common";
 import { SignJWT, jwtVerify } from "jose";
 
 import { AppConfigService } from "../../../shared/config/index.js";
+import { ROLES, permissionsForRoles } from "../domain/permissions.js";
 import type { Permission, Role } from "../domain/permissions.js";
 
 /**
@@ -36,6 +37,12 @@ interface AccessTokenClaims {
 }
 
 const ALGORITHM = "HS256";
+
+/**
+ * Roles a token may name. Derived from ROLES rather than restated, so adding a
+ * role cannot leave an allow-list quietly behind.
+ */
+const KNOWN_ROLES: ReadonlySet<string> = new Set<string>(ROLES);
 
 /** A generated refresh token and the digest to persist for it. */
 export interface RefreshTokenPair {
@@ -114,6 +121,35 @@ export class TokenService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Verifies a token and resolves the caller it represents.
+   *
+   * The single implementation of "bearer token → Principal". Both the HTTP
+   * AuthGuard and the WebSocket handshake go through here, so a socket and a
+   * request cannot end up disagreeing about who someone is or what they may do
+   * — which is exactly the drift that makes a realtime channel the soft spot in
+   * an otherwise well-guarded API.
+   *
+   * Returns null for anything not provably valid. Expired, tampered, malformed,
+   * and carrying an unknown role are all indistinguishable to the caller.
+   */
+  async authenticate(token: string): Promise<Principal | null> {
+    const claims = await this.verifyAccessToken(token);
+    if (claims === null) {
+      return null;
+    }
+    const roles = claims.rol.filter((role): role is Role => KNOWN_ROLES.has(role));
+    return {
+      userId: claims.sub,
+      tenantId: claims.tid,
+      actorType: claims.typ,
+      roles,
+      permissions: permissionsForRoles(roles),
+      hubScope: claims.hub,
+      sessionId: claims.sid,
+    };
   }
 
   /**

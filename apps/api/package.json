@@ -24,6 +24,7 @@
   "private": true,
   "type": "commonjs",
   "dependencies": {
+    "@fastify/websocket": "11.3.0",
     "@nestjs/common": "11.1.28",
     "@nestjs/config": "4.0.4",
     "@nestjs/core": "11.1.28",
@@ -58,6 +59,7 @@
     "@swc/core": "1.13.5",
     "@testcontainers/postgresql": "12.0.4",
     "@types/node": "24.10.1",
+    "@types/ws": "8.18.1",
     "drizzle-kit": "0.31.10",
     "testcontainers": "12.0.4",
     "typescript": "5.9.3",

@@ -8,6 +8,7 @@ import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Logger } from "nestjs-pino";
 
 import { AppModule } from "./app.module.js";
+import { RealtimeGateway, registerRealtime } from "./modules/tracking/index.js";
 import { AppConfigService } from "./shared/config/index.js";
 import { ProblemDetailsFilter } from "./shared/http/index.js";
 
@@ -42,6 +43,10 @@ async function bootstrap(): Promise<void> {
     origin: config.get("CORS_ALLOWED_ORIGINS"),
     credentials: true,
   });
+
+  // The dispatcher realtime channel, upgraded on the server already listening
+  // rather than a second one beside it (docs/05-api-contracts.md §10).
+  await registerRealtime(app.getHttpAdapter().getInstance(), app.get(RealtimeGateway));
 
   // Fail closed on unknown routes rather than leaking framework defaults.
   app.enableShutdownHooks();

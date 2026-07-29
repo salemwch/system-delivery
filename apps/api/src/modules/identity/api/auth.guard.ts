@@ -3,20 +3,9 @@ import type { CanActivate, ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 
 import { UnauthenticatedError } from "../../../shared/errors/domain-error.js";
-import { permissionsForRoles } from "../domain/permissions.js";
-import type { Role } from "../domain/permissions.js";
 import { TokenService } from "../application/token.service.js";
 import { IS_PUBLIC_KEY } from "./request-context.js";
 import type { AuthenticatedRequest } from "./request-context.js";
-
-const KNOWN_ROLES: ReadonlySet<string> = new Set<string>([
-  "OWNER",
-  "DISPATCHER",
-  "HUB_OPERATOR",
-  "FINANCE",
-  "DRIVER",
-  "PLATFORM_ADMIN",
-]);
 
 /**
  * Authenticates every request from its bearer token.
@@ -54,9 +43,11 @@ export class AuthGuard implements CanActivate {
       throw new UnauthenticatedError();
     }
 
-    const claims = await this.tokens.verifyAccessToken(token);
+    // One implementation of "token → Principal", shared with the realtime
+    // handshake, so a socket and a request can never disagree about identity.
+    const principal = await this.tokens.authenticate(token);
 
-    if (claims === null) {
+    if (principal === null) {
       if (isPublic === true) {
         return true;
       }
@@ -65,17 +56,7 @@ export class AuthGuard implements CanActivate {
       throw new UnauthenticatedError();
     }
 
-    const roles = claims.rol.filter((role): role is Role => KNOWN_ROLES.has(role));
-
-    request.principal = {
-      userId: claims.sub,
-      tenantId: claims.tid,
-      actorType: claims.typ,
-      roles,
-      permissions: permissionsForRoles(roles),
-      hubScope: claims.hub,
-      sessionId: claims.sid,
-    };
+    request.principal = principal;
 
     return true;
   }
