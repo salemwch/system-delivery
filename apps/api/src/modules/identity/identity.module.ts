@@ -7,7 +7,9 @@ import { AuthService } from "./application/auth.service.js";
 import { PasswordService } from "./application/password.service.js";
 import { ProvisioningService } from "./application/provisioning.service.js";
 import { TokenService } from "./application/token.service.js";
+import { UserService } from "./application/user.service.js";
 import { AuthController } from "./api/auth.controller.js";
+import { UserController } from "./api/user.controller.js";
 import { AuthGuard } from "./api/auth.guard.js";
 import { PermissionGuard } from "./api/permission.guard.js";
 import { TenantContextInterceptor } from "./api/tenant-context.interceptor.js";
@@ -25,13 +27,14 @@ import { TenantContextInterceptor } from "./api/tenant-context.interceptor.js";
  */
 @Module({
   imports: [PlatformModule],
-  controllers: [AuthController],
+  controllers: [AuthController, UserController],
   providers: [
     PasswordService,
     TokenService,
     AuthService,
     AccessService,
     ProvisioningService,
+    UserService,
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },

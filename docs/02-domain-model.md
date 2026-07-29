@@ -951,8 +951,16 @@ REQUESTED → ACCEPTED → ASSIGNED → COLLECTED → COMPLETED
 5. Merging duplicates re-points shipment references and sums the counters; the merge is audited and reversible.
 6. A Recipient is never hard-deleted while any shipment references it.
 
-🟥 **Open decision (RM-R1): is the book scoped to the Tenant or to `(Tenant, Merchant)`?**
-Modelled here as **tenant-scoped**, per your instruction, which is correct while the dashboard is used only by courier staff. **The consequence to be aware of:** if merchants ever get their own logins, tenant scoping means Merchant A could see that Merchant B ships to the same person. At that point access must be filtered to recipients the requesting merchant has actually shipped to. Recording it now so it is a deliberate choice, not a surprise.
+✅ **RESOLVED (RM-R1), 2026-07-29: the book stays scoped to the Tenant.**
+_Original question: is the book scoped to the Tenant or to `(Tenant, Merchant)`? Recorded because if merchants ever got their own logins, tenant scoping would mean Merchant A could see that Merchant B ships to the same person._
+
+Merchant logins shipped, so the question came due. The answer is **tenant-scoped, and merchants never read this table.**
+
+Scoping the rows per merchant was rejected on three grounds: it breaks invariant I19 by making one human several rows; it destroys the entity's stated purpose, since history would stop accumulating per person; and it splits the `isBlocked` list (rule 4), which is the defence against repeat refusers and the single most expensive problem in a COD market. A per-merchant block-list defends nobody.
+
+It is also not implementable as RLS without a `BYPASSRLS` identity the platform deliberately does not have. Measured against PostgreSQL 18: with the conflicting row hidden by a SELECT policy, `INSERT` raises `23505`, `ON CONFLICT DO UPDATE … RETURNING` raises `42501`, `ON CONFLICT DO NOTHING … RETURNING` yields no id, and `UPDATE … WHERE phone = …` matches zero rows. A merchant could never create a parcel for anyone already in the book — broken for exactly the buyers who order most.
+
+**What was built instead** is what this entry always asked for — _"access filtered to recipients the requesting merchant has actually shipped to"_ — sourced from the merchant's own shipments, which RLS already narrows by `merchant_id`. Every shipment carries its own recipient snapshot (rule 2), so the projection needs no join back to this table. Merchants hold no `recipient:*` permission; they use `GET /v1/address-book`. See migration `0021_address_book.sql`.
 
 **Lifecycle.** Created on first shipment or manually; `isBlocked` toggled; merged into another Recipient.
 

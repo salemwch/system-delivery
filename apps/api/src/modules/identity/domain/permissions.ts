@@ -124,6 +124,20 @@ export const ROLES = [
 
 export type Role = (typeof ROLES)[number];
 
+const ROLE_SET: ReadonlySet<string> = new Set<string>(ROLES);
+
+/**
+ * Narrows an arbitrary string to a known Role.
+ *
+ * The database stores `user_roles.role` as TEXT behind a CHECK constraint, so a
+ * row read back is `string` to TypeScript. This is the one place that turns it
+ * into a `Role` — an unrecognised value is dropped rather than trusted, so a
+ * role added by a future migration but unknown to this build grants nothing.
+ */
+export function isRole(value: string): value is Role {
+  return ROLE_SET.has(value);
+}
+
 /**
  * Role → permission bundles (docs/07-security-architecture.md §4.2).
  *
@@ -253,14 +267,18 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
    * a member of it — they see their parcels and their money, never the courier's
    * operations.
    *
-   * ALSO ABSENT, and worth the explanation: `recipient:*`. docs/02-domain-model
-   * §3.19 says a Recipient belongs to a `(tenantId, merchantId)` pair because
-   * "merchants must not see each other's address books" — but the `recipients`
-   * table is tenant-scoped only, with no `merchant_id`. That was harmless while
-   * every login saw the whole tenant; granting it to a merchant would hand them
-   * a competitor's entire customer list. Creating a parcel resolves the
-   * recipient internally from the shipment payload, so a merchant does not need
-   * the permission to work. Restore it once `recipients` carries a merchant.
+   * ALSO ABSENT, and PERMANENTLY so: `recipient:*`. This is settled, not
+   * pending — open decision RM-R1 (docs/02-domain-model.md §3.19) was resolved
+   * on 2026-07-29 in favour of leaving `recipients` tenant-scoped.
+   *
+   * The table is one row per person on purpose, so address quality, delivery
+   * history, and above all the repeat-refuser block-list accumulate across the
+   * whole tenant. Splitting it per merchant would defeat all three. A merchant
+   * therefore never reads it; they read `GET /v1/address-book`, a projection of
+   * their OWN shipments that RLS already narrows (migration 0020), which is
+   * precisely the "recipients the merchant has actually shipped to" that RM-R1
+   * called for. See migration 0021 for the full reasoning and the measurements
+   * that ruled out the alternative.
    */
   MERCHANT: [
     // Their own parcels, end to end.

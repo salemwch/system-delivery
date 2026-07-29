@@ -12,12 +12,13 @@ import { TokenService } from "../src/modules/identity/application/token.service.
 import type { Principal } from "../src/modules/identity/application/token.service.js";
 import { ROLES, permissionsForRoles } from "../src/modules/identity/domain/permissions.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
+import { AddressBookService } from "../src/modules/shipment/application/address-book.service.js";
 import { LabelService } from "../src/modules/shipment/application/label.service.js";
 import { ShipmentEventService } from "../src/modules/shipment/application/shipment-event.service.js";
 import { ShipmentService } from "../src/modules/shipment/application/shipment.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
-import { NotFoundError } from "../src/shared/errors/index.js";
+import { NotFoundError, ValidationError } from "../src/shared/errors/index.js";
 import {
   createTenant,
   createTestDatabase,
@@ -41,6 +42,7 @@ describe("merchant portal", () => {
   let shipments: ShipmentService;
   let merchants: MerchantService;
   let labels: LabelService;
+  let addressBook: AddressBookService;
   let tokens: TokenService;
   let createdTenants: string[] = [];
 
@@ -128,6 +130,7 @@ describe("merchant portal", () => {
     const events = new ShipmentEventService(outbox);
     shipments = new ShipmentService(db, events, outbox, merchants, recipients, addresses);
     labels = new LabelService(shipments);
+    addressBook = new AddressBookService(db);
     tokens = new TokenService(tokenConfig());
   }, 240_000);
 
@@ -179,13 +182,17 @@ describe("merchant portal", () => {
       }
     });
 
-    it("does not grant recipient access while recipients are tenant-scoped", () => {
-      // docs/02 §3.19 says merchants must not see each other's address books,
-      // but `recipients` has no merchant_id yet. Granting it would leak a
-      // competitor's customer list, so it stays denied until the table is scoped.
+    it("never grants access to the tenant-wide recipient book", () => {
+      // Settled by RM-R1 (docs/02 §3.19, resolved 2026-07-29): `recipients`
+      // stays one row per person so history and the repeat-refuser block-list
+      // accumulate tenant-wide. It therefore holds every rival's buyers, and a
+      // merchant must never read it. They use the address book instead — a
+      // projection of their own shipments. This denial is permanent.
       const granted = permissionsForRoles(["MERCHANT"]);
       expect(granted.has("recipient:read")).toBe(false);
       expect(granted.has("recipient:create")).toBe(false);
+      expect(granted.has("recipient:update")).toBe(false);
+      expect(granted.has("recipient:block")).toBe(false);
     });
   });
 
@@ -442,6 +449,253 @@ describe("merchant portal", () => {
       await expect(asStaff(tenantId, () => labels.render(randomUUID()))).rejects.toBeInstanceOf(
         NotFoundError,
       );
+    });
+  });
+
+  // ── The address book (open decision RM-R1) ─────────────────────────────────
+
+  describe("address book", () => {
+    /** A parcel to a named buyer, so entries can be told apart. */
+    async function parcelTo(
+      tenantId: string,
+      merchantId: string,
+      recipientName: string,
+      recipientPhone: string,
+    ): Promise<string> {
+      const created = await asStaff(tenantId, () =>
+        shipments.create(
+          {
+            idempotencyKey: randomUUID(),
+            merchantId,
+            senderName: "Boutique",
+            senderPhone: "+21620000001",
+            origin: {
+              rawInput: "Tunis",
+              countryCode: "TN",
+              coordinates: { lat: 36.8, lng: 10.18 },
+            },
+            recipientName,
+            recipientPhone,
+            destination: {
+              rawInput: "Sfax",
+              countryCode: "TN",
+              coordinates: { lat: 34.74, lng: 10.76 },
+            },
+            currency: "TND",
+            codAmountMinor: 30_000,
+          },
+          { actor: { actorType: "API_CLIENT" as const } },
+        ),
+      );
+      return created.id;
+    }
+
+    it("lists the people this merchant has shipped to, newest first", async () => {
+      const tenantId = await seedTenant("mp-ab-list");
+      const merchantId = await seedMerchant(tenantId, "Boutique");
+
+      await parcelTo(tenantId, merchantId, "Ahmed Ben Ali", "+21620000101");
+      await parcelTo(tenantId, merchantId, "Sonia Gharbi", "+21620000102");
+
+      const page = await asMerchant(tenantId, merchantId, () => addressBook.list({}));
+
+      expect(page.items.map((e) => e.phone)).toEqual(["+21620000102", "+21620000101"]);
+      expect(page.items[0]?.fullName).toBe("Sonia Gharbi");
+      expect(page.nextCursor).toBeNull();
+    });
+
+    it("collapses repeat parcels to one person into a single entry", async () => {
+      const tenantId = await seedTenant("mp-ab-repeat");
+      const merchantId = await seedMerchant(tenantId, "Boutique");
+
+      await parcelTo(tenantId, merchantId, "Ahmed Ben Ali", "+21620000201");
+      await parcelTo(tenantId, merchantId, "Ahmed Ben Ali", "+21620000201");
+      await parcelTo(tenantId, merchantId, "Ahmed Ben Ali", "+21620000201");
+
+      const page = await asMerchant(tenantId, merchantId, () => addressBook.list({}));
+
+      expect(page.items).toHaveLength(1);
+      expect(page.items[0]?.totalShipments).toBe(3);
+    });
+
+    it("shows the name as written on the most recent parcel", async () => {
+      const tenantId = await seedTenant("mp-ab-rename");
+      const merchantId = await seedMerchant(tenantId, "Boutique");
+
+      await parcelTo(tenantId, merchantId, "Ahmed BenAli", "+21620000301");
+      await parcelTo(tenantId, merchantId, "Ahmed Ben Ali", "+21620000301");
+
+      const page = await asMerchant(tenantId, merchantId, () => addressBook.list({}));
+      // People correct spellings; the newest wins rather than the first ever typed.
+      expect(page.items[0]?.fullName).toBe("Ahmed Ben Ali");
+    });
+
+    it("NEVER shows a rival merchant's buyers", async () => {
+      const tenantId = await seedTenant("mp-ab-isolation");
+      const alpha = await seedMerchant(tenantId, "Alpha");
+      const beta = await seedMerchant(tenantId, "Beta");
+
+      await parcelTo(tenantId, alpha, "Alpha Buyer", "+21620000401");
+      await parcelTo(tenantId, beta, "Beta Buyer", "+21620000402");
+
+      const forAlpha = await asMerchant(tenantId, alpha, () => addressBook.list({}));
+      expect(forAlpha.items.map((e) => e.phone)).toEqual(["+21620000401"]);
+
+      // This is the guarantee RM-R1 was recorded for. It holds because the
+      // projection reads `shipments`, which RLS narrows — not because a query
+      // remembered a WHERE clause.
+      const searchingForThem = await asMerchant(tenantId, alpha, () =>
+        addressBook.list({ q: "+21620000402" }),
+      );
+      expect(searchingForThem.items).toHaveLength(0);
+    });
+
+    it("shares one person between two merchants without either seeing the other", async () => {
+      const tenantId = await seedTenant("mp-ab-shared");
+      const alpha = await seedMerchant(tenantId, "Alpha");
+      const beta = await seedMerchant(tenantId, "Beta");
+      const sharedPhone = "+21620000501";
+
+      await parcelTo(tenantId, alpha, "Ahmed Ben Ali", sharedPhone);
+      await parcelTo(tenantId, beta, "Ahmed Ben Ali", sharedPhone);
+      await parcelTo(tenantId, beta, "Ahmed Ben Ali", sharedPhone);
+
+      const forAlpha = await asMerchant(tenantId, alpha, () => addressBook.list({}));
+      const forBeta = await asMerchant(tenantId, beta, () => addressBook.list({}));
+
+      // The same human, one shared Recipient row (I19 intact) — but each
+      // merchant sees only their own history with them.
+      expect(forAlpha.items[0]?.totalShipments).toBe(1);
+      expect(forBeta.items[0]?.totalShipments).toBe(2);
+      expect(forAlpha.items[0]?.recipientId).toBe(forBeta.items[0]?.recipientId);
+    });
+
+    it("gives courier staff the whole tenant's book", async () => {
+      const tenantId = await seedTenant("mp-ab-staff");
+      const alpha = await seedMerchant(tenantId, "Alpha");
+      const beta = await seedMerchant(tenantId, "Beta");
+
+      await parcelTo(tenantId, alpha, "Alpha Buyer", "+21620000601");
+      await parcelTo(tenantId, beta, "Beta Buyer", "+21620000602");
+
+      const page = await asStaff(tenantId, () => addressBook.list({}));
+      expect(page.items).toHaveLength(2);
+    });
+
+    it("counts deliveries and returns from the merchant's own parcels", async () => {
+      const tenantId = await seedTenant("mp-ab-counts");
+      const merchantId = await seedMerchant(tenantId, "Boutique");
+
+      const delivered = await parcelTo(tenantId, merchantId, "Ahmed Ben Ali", "+21620000701");
+      const returned = await parcelTo(tenantId, merchantId, "Ahmed Ben Ali", "+21620000701");
+      await parcelTo(tenantId, merchantId, "Ahmed Ben Ali", "+21620000701");
+
+      // Seeding the read model's INPUT directly. Driving the full custody
+      // lifecycle would test ShipmentEventService, which shipment.spec.ts
+      // already does; what is under test here is the projection over statuses.
+      await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx`
+          update shipments set status = 'DELIVERED' where id = ${delivered};
+        `,
+      );
+      await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx`
+          update shipments set status = 'RETURNED' where id = ${returned};
+        `,
+      );
+
+      const page = await asMerchant(tenantId, merchantId, () => addressBook.list({}));
+      const entry = page.items[0];
+      expect(entry?.totalShipments).toBe(3);
+      expect(entry?.delivered).toBe(1);
+      // ATTEMPT_FAILED is a retry, not an outcome — only a parcel that actually
+      // came back counts here.
+      expect(entry?.returned).toBe(1);
+    });
+
+    it("finds a person by phone prefix or by part of their name", async () => {
+      const tenantId = await seedTenant("mp-ab-search");
+      const merchantId = await seedMerchant(tenantId, "Boutique");
+
+      await parcelTo(tenantId, merchantId, "Ahmed Ben Ali", "+21620000801");
+      await parcelTo(tenantId, merchantId, "Sonia Gharbi", "+21698000802");
+
+      const byPhone = await asMerchant(tenantId, merchantId, () =>
+        addressBook.list({ q: "+21698" }),
+      );
+      expect(byPhone.items.map((e) => e.fullName)).toEqual(["Sonia Gharbi"]);
+
+      const byName = await asMerchant(tenantId, merchantId, () =>
+        addressBook.list({ q: "gharbi" }),
+      );
+      expect(byName.items.map((e) => e.phone)).toEqual(["+21698000802"]);
+    });
+
+    it("paginates without dropping or repeating anyone", async () => {
+      const tenantId = await seedTenant("mp-ab-page");
+      const merchantId = await seedMerchant(tenantId, "Boutique");
+
+      for (let i = 0; i < 5; i += 1) {
+        await parcelTo(tenantId, merchantId, `Buyer ${String(i)}`, `+2162000090${String(i)}`);
+      }
+
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 5; page += 1) {
+        const result: { items: readonly { phone: string }[]; nextCursor: string | null } =
+          await asMerchant(tenantId, merchantId, () =>
+            addressBook.list(cursor === null ? { limit: 2 } : { limit: 2, cursor }),
+          );
+        seen.push(...result.items.map((e) => e.phone));
+        cursor = result.nextCursor;
+        if (cursor === null) break;
+      }
+
+      expect(seen).toHaveLength(5);
+      expect(new Set(seen).size).toBe(5);
+    });
+
+    it("issues a cursor in UTC with microseconds, not the session's timezone", async () => {
+      const tenantId = await seedTenant("mp-ab-cursorfmt");
+      const merchantId = await seedMerchant(tenantId, "Boutique");
+      await parcelTo(tenantId, merchantId, "Buyer A", "+21620001001");
+      await parcelTo(tenantId, merchantId, "Buyer B", "+21620001002");
+
+      const first = await asMerchant(tenantId, merchantId, () => addressBook.list({ limit: 1 }));
+      expect(first.nextCursor).not.toBeNull();
+
+      const decoded = Buffer.from(first.nextCursor ?? "", "base64url").toString("utf8");
+      const [timestamp] = decoded.split("|");
+      // `::text` would render in the session TimeZone, so a replica set to
+      // anything but UTC would emit "+05:30" and hand out cursors this endpoint
+      // then rejects. Microseconds are what stop a keyset paginator from
+      // repeating or skipping the row on a page boundary.
+      expect(timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u);
+
+      const second = await asMerchant(tenantId, merchantId, () =>
+        addressBook.list({ limit: 1, cursor: first.nextCursor ?? "" }),
+      );
+      expect(second.items[0]?.phone).toBe("+21620001001");
+    });
+
+    it("rejects a malformed cursor instead of failing on a bad cast", async () => {
+      const tenantId = await seedTenant("mp-ab-cursor");
+      const merchantId = await seedMerchant(tenantId, "Boutique");
+      await expect(
+        asMerchant(tenantId, merchantId, () => addressBook.list({ cursor: "not-a-cursor" })),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("rejects a search too short to be selective", async () => {
+      const tenantId = await seedTenant("mp-ab-shortq");
+      const merchantId = await seedMerchant(tenantId, "Boutique");
+      await expect(
+        asMerchant(tenantId, merchantId, () => addressBook.list({ q: "a" })),
+      ).rejects.toBeInstanceOf(ValidationError);
     });
   });
 });

@@ -2,8 +2,10 @@ import { Module } from "@nestjs/common";
 
 import { DirectoryModule } from "../directory/index.js";
 import { PlatformModule } from "../platform/index.js";
+import { AddressBookController } from "./api/address-book.controller.js";
 import { ShipmentController } from "./api/shipment.controller.js";
 import { TrackingController } from "./api/tracking.controller.js";
+import { AddressBookService } from "./application/address-book.service.js";
 import { BulkShipmentService } from "./application/bulk-shipment.service.js";
 import { PickupScanEventHandler } from "./application/pickup-scan-event.handler.js";
 import { LabelService } from "./application/label.service.js";
@@ -27,12 +29,13 @@ import { TrackingService } from "./application/tracking.service.js";
  */
 @Module({
   imports: [PlatformModule, DirectoryModule],
-  controllers: [ShipmentController, TrackingController],
+  controllers: [ShipmentController, TrackingController, AddressBookController],
   providers: [
     ShipmentService,
     ShipmentEventService,
     ShipmentStatsService,
     BulkShipmentService,
+    AddressBookService,
     TrackingService,
     ShipmentTraceabilityService,
     LabelService,

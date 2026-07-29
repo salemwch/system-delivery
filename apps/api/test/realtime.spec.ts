@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Redis } from "ioredis";
-import { PinoLogger } from "nestjs-pino";
+import type { PinoLogger } from "nestjs-pino";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { TokenService } from "../src/modules/identity/application/token.service.js";

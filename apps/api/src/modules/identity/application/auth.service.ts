@@ -5,7 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { DatabaseService, asTenantId } from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
-import { permissionsForRoles } from "../domain/permissions.js";
+import { isRole, permissionsForRoles } from "../domain/permissions.js";
 import type { Role } from "../domain/permissions.js";
 import { refreshTokens, userRoles, users } from "../domain/schema.js";
 import { PasswordService } from "./password.service.js";
@@ -270,13 +270,12 @@ export class AuthService {
       .from(userRoles)
       .where(eq(userRoles.userId, userId));
 
-    return rows
-      .map((row) => row.role)
-      .filter((role): role is Role =>
-        ["OWNER", "DISPATCHER", "HUB_OPERATOR", "FINANCE", "DRIVER", "PLATFORM_ADMIN"].includes(
-          role,
-        ),
-      );
+    // Narrowed through `isRole`, which derives from ROLES. A hand-written list
+    // here silently dropped MERCHANT when that role was added: the account
+    // authenticated, but with no roles it resolved to no permissions and was
+    // refused by every guard. A role the database knows and this build does not
+    // must never be a role that half-works.
+    return rows.map((row) => row.role).filter(isRole);
   }
 
   private async recordFailedAttempt(
