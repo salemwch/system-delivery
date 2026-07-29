@@ -24,6 +24,14 @@ export interface Principal {
   readonly permissions: ReadonlySet<Permission>;
   /** Restricts a Dispatcher or Hub Operator to specific hubs. Empty = all. */
   readonly hubScope: readonly string[];
+  /**
+   * Set if and only if the caller holds the `MERCHANT` role (invariant I23).
+   *
+   * The only sub-tenant scope in the system: every other role sees the whole
+   * tenant, so RLS alone isolates them. A merchant must see only their own rows
+   * inside a tenant that also holds their competitors' parcels.
+   */
+  readonly merchantId: string | null;
   readonly sessionId: string;
 }
 
@@ -33,6 +41,8 @@ interface AccessTokenClaims {
   readonly typ: "user" | "driver";
   readonly rol: readonly string[];
   readonly hub: readonly string[];
+  /** The merchant a MERCHANT user is scoped to. Absent for every other role. */
+  readonly mid?: string;
   readonly sid: string;
 }
 
@@ -72,6 +82,9 @@ export class TokenService {
       typ: principal.actorType,
       rol: [...principal.roles],
       hub: [...principal.hubScope],
+      // Carried in the token so every request is scoped without a lookup. The
+      // token is signed, so a merchant cannot widen their own scope by editing it.
+      ...(principal.merchantId === null ? {} : { mid: principal.merchantId }),
       sid: principal.sessionId,
     })
       .setProtectedHeader({ alg: ALGORITHM })
@@ -97,7 +110,7 @@ export class TokenService {
         algorithms: [ALGORITHM],
       });
 
-      const { sub, tid, typ, rol, hub, sid } = payload as Record<string, unknown>;
+      const { sub, tid, typ, rol, hub, mid, sid } = payload as Record<string, unknown>;
 
       if (
         typeof sub !== "string" ||
@@ -110,13 +123,24 @@ export class TokenService {
         return null;
       }
 
+      const roles = rol.filter((value): value is string => typeof value === "string");
+
+      // Fail closed on a token whose scope contradicts its role (invariant I23).
+      // A MERCHANT claim without `mid` would otherwise be read as "no narrowing"
+      // and see the entire tenant — the exact escalation this role must not have.
+      const isMerchant = roles.includes("MERCHANT");
+      if (isMerchant !== (typeof mid === "string" && mid.length > 0)) {
+        return null;
+      }
+
       return {
         sub,
         tid,
         typ,
         sid,
-        rol: rol.filter((value): value is string => typeof value === "string"),
+        rol: roles,
         hub: hub.filter((value): value is string => typeof value === "string"),
+        ...(typeof mid === "string" ? { mid } : {}),
       };
     } catch {
       return null;
@@ -148,6 +172,7 @@ export class TokenService {
       roles,
       permissions: permissionsForRoles(roles),
       hubScope: claims.hub,
+      merchantId: claims.mid ?? null,
       sessionId: claims.sid,
     };
   }

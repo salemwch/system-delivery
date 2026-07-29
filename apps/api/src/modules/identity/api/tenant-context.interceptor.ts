@@ -49,6 +49,10 @@ export class TenantContextInterceptor implements NestInterceptor {
       tenantId: asTenantId(principal.tenantId),
       actorId: principal.userId,
       actorType: principal.actorType,
+      // Narrows a MERCHANT login to its own rows for the whole request
+      // (invariant I24). Taken from the signed token, never from the request —
+      // a merchant must not be able to widen their own scope by asking.
+      ...(principal.merchantId === null ? {} : { merchantId: principal.merchantId }),
       ...(typeof request.id === "string" ? { requestId: request.id } : {}),
     };
 

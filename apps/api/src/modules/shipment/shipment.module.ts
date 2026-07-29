@@ -6,6 +6,7 @@ import { ShipmentController } from "./api/shipment.controller.js";
 import { TrackingController } from "./api/tracking.controller.js";
 import { BulkShipmentService } from "./application/bulk-shipment.service.js";
 import { PickupScanEventHandler } from "./application/pickup-scan-event.handler.js";
+import { LabelService } from "./application/label.service.js";
 import { ShipmentEventService } from "./application/shipment-event.service.js";
 import { ShipmentStatsService } from "./application/shipment-stats.service.js";
 import { ShipmentService } from "./application/shipment.service.js";
@@ -34,6 +35,7 @@ import { TrackingService } from "./application/tracking.service.js";
     BulkShipmentService,
     TrackingService,
     ShipmentTraceabilityService,
+    LabelService,
     PickupScanEventHandler,
   ],
   exports: [ShipmentService, ShipmentEventService, TrackingService, PickupScanEventHandler],

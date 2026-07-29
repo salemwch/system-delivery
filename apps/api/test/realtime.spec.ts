@@ -86,6 +86,7 @@ describe("realtime", () => {
       roles,
       permissions: permissionsForRoles(roles),
       hubScope: [],
+      merchantId: null,
       sessionId: randomUUID(),
     };
   }

@@ -154,10 +154,27 @@ export async function createTenant(migrator: Sql, label: string): Promise<string
   return row.id;
 }
 
-/** Removes tenants created by a test run. Cascades to tenant_features. */
+/**
+ * Removes tenants created by a test run. Cascades to every tenant-scoped table.
+ *
+ * The `set_config` is not decoration. A custom GUC set transaction-locally
+ * reverts to the EMPTY STRING when that transaction ends — not to unset — and
+ * this pooled connection has usually just been used by `withTenantContext`. Any
+ * policy or trigger evaluated during the cascade then runs
+ * `current_setting('app.current_tenant_id', true)::uuid` against `''`, which is
+ * a cast error rather than a false predicate.
+ *
+ * NO_TENANT is a real, valid UUID that matches nothing, so the cascade proceeds
+ * and every policy simply evaluates to false. Production never hits this: every
+ * request goes through `withTenant`, which always sets a genuine tenant id.
+ */
 export async function deleteTenants(migrator: Sql, tenantIds: string[]): Promise<void> {
   if (tenantIds.length === 0) {
     return;
   }
-  await migrator`delete from tenants where id = any(${migrator.array(tenantIds)}::uuid[])`;
+  await migrator.begin(async (tx) => {
+    await tx`select set_config('app.current_tenant_id', '00000000-0000-0000-0000-000000000000', true)`;
+    await tx`select set_config('app.current_merchant_id', '', true)`;
+    await tx`delete from tenants where id = any(${migrator.array(tenantIds)}::uuid[])`;
+  });
 }

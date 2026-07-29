@@ -78,6 +78,22 @@ export class DatabaseService implements OnModuleDestroy {
           await tx.execute(
             sql`select set_config('app.current_tenant_id', ${scopedTenantId}, true)`,
           );
+
+          // Merchant narrowing (invariant I24). Set transaction-locally for the
+          // same reason as the tenant id: with PgBouncer the connection returns
+          // to the pool after every transaction, so a session-scoped value would
+          // be inherited by the NEXT request — here that would mean silently
+          // showing one merchant another merchant's parcels.
+          //
+          // Always set, never conditionally: leaving it unset would let a value
+          // from an earlier transaction on this connection survive. The empty
+          // string means "no merchant scope", which the RLS predicate treats as
+          // no narrowing.
+          const merchantScope = TenantContext.current()?.merchantId ?? "";
+          await tx.execute(
+            sql`select set_config('app.current_merchant_id', ${merchantScope}, true)`,
+          );
+
           return fn(tx);
         }),
     );

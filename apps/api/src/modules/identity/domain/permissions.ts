@@ -20,6 +20,12 @@ export const PERMISSIONS = [
   "shipment:override_status",
   "shipment:deliver",
   "shipment:fail",
+  /**
+   * Render a parcel's scannable label. Separate from `shipment:read` because a
+   * label is the physical token that starts the custody chain — a role that may
+   * look at a shipment does not necessarily get to print one.
+   */
+  "shipment:label",
 
   // Pickup requests
   "pickup:read",
@@ -113,6 +119,7 @@ export const ROLES = [
   "FINANCE",
   "DRIVER",
   "PLATFORM_ADMIN",
+  "MERCHANT",
 ] as const;
 
 export type Role = (typeof ROLES)[number];
@@ -229,6 +236,51 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
   // Cross-tenant support access. Every action is audited and the tenant owner
   // is notified (docs/07-security-architecture.md §10).
   PLATFORM_ADMIN: ["tenant:update", "feature:manage", "audit:read", "user:read"],
+
+  /**
+   * The *expéditeur* — the shipper who hands parcels to the courier
+   * (docs/01-mvp-scope.md §6, added 2026-07-29).
+   *
+   * ⚠️ Holding a permission here grants it only over the merchant's OWN rows.
+   * MERCHANT is the one role scoped BELOW the tenant, so every permission in
+   * this list is read as "…for my own merchant" and is narrowed again by
+   * `users.merchant_id` (invariant I24). A permission list alone would grant
+   * tenant-wide access, which for this role would mean reading competitors'
+   * shipment volume, customers, and revenue.
+   *
+   * Deliberately ABSENT: anything to do with routes, drivers, vehicles, hubs,
+   * manifests, or other merchants. A merchant is a customer of the tenant, not
+   * a member of it — they see their parcels and their money, never the courier's
+   * operations.
+   *
+   * ALSO ABSENT, and worth the explanation: `recipient:*`. docs/02-domain-model
+   * §3.19 says a Recipient belongs to a `(tenantId, merchantId)` pair because
+   * "merchants must not see each other's address books" — but the `recipients`
+   * table is tenant-scoped only, with no `merchant_id`. That was harmless while
+   * every login saw the whole tenant; granting it to a merchant would hand them
+   * a competitor's entire customer list. Creating a parcel resolves the
+   * recipient internally from the shipment payload, so a merchant does not need
+   * the permission to work. Restore it once `recipients` carries a merchant.
+   */
+  MERCHANT: [
+    // Their own parcels, end to end.
+    "shipment:read",
+    "shipment:create",
+    "shipment:update",
+    "shipment:cancel",
+    // The physical token that starts the custody chain.
+    "shipment:label",
+    // Ask the courier to come and collect.
+    "pickup:read",
+    "pickup:create",
+    "address:read",
+    // "How much am I owed?" — the question a merchant asks most.
+    "cod:read_amount",
+    "settlement:read",
+    // Raise a problem with their own parcel.
+    "complaint:create",
+    "complaint:read",
+  ],
 };
 
 /** Roles that must have MFA enabled before they can authenticate. */

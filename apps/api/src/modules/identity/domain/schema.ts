@@ -45,6 +45,12 @@ export const users = pgTable(
       .array()
       .notNull()
       .default(sql`ARRAY[]::UUID[]`),
+    /**
+     * Set if and only if the user holds the MERCHANT role (invariant I23,
+     * enforced by deferred constraint triggers in migration 0019). The only
+     * sub-tenant scope in the system.
+     */
+    merchantId: uuid("merchant_id"),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     failedLoginCount: integer("failed_login_count").notNull().default(0),
     lockedUntil: timestamp("locked_until", { withTimezone: true }),

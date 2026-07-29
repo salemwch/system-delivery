@@ -9,6 +9,7 @@ import type { Principal } from "../../identity/index.js";
 import { FeatureService } from "../../platform/index.js";
 import { BulkShipmentService } from "../application/bulk-shipment.service.js";
 import type { BulkCreateResult } from "../application/bulk-shipment.service.js";
+import { LabelService } from "../application/label.service.js";
 import { ShipmentStatsService } from "../application/shipment-stats.service.js";
 import type {
   DashboardStats,
@@ -167,7 +168,33 @@ export class ShipmentController {
     private readonly tracking: TrackingService,
     private readonly traceability: ShipmentTraceabilityService,
     private readonly features: FeatureService,
+    private readonly labels: LabelService,
   ) {}
+
+  /**
+   * The scannable label for a parcel (docs/01-mvp-scope.md §4.2 #2.15).
+   *
+   * Returns the QR as a data URI plus the tracking number, so a merchant or
+   * courier UI can drop it straight into a printable page. Reads through
+   * ShipmentService, so RLS and the merchant scope apply — asking for another
+   * merchant's label is a not-found, not a picture of their parcel.
+   */
+  @Get(":id/label")
+  @RequirePermissions("shipment:label")
+  async label(@Param("id") id: string): Promise<{
+    shipmentId: string;
+    trackingNumber: string;
+    recipientName: string;
+    qrDataUri: string;
+  }> {
+    const label = await this.labels.render(id);
+    return {
+      shipmentId: label.shipmentId,
+      trackingNumber: label.trackingNumber,
+      recipientName: label.recipientName,
+      qrDataUri: label.qrDataUri,
+    };
+  }
 
   @Get("dashboard")
   @RequirePermissions("shipment:read")

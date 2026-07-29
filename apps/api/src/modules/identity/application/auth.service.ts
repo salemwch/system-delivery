@@ -133,6 +133,7 @@ export class AuthService {
         roles,
         permissions: permissionsForRoles(roles),
         hubScope: user.hubScope,
+        merchantId: user.merchantId,
         sessionId: randomUUID(),
       };
 
@@ -228,6 +229,7 @@ export class AuthService {
         roles,
         permissions: permissionsForRoles(roles),
         hubScope: user.hubScope,
+        merchantId: user.merchantId,
         sessionId: randomUUID(),
       };
 

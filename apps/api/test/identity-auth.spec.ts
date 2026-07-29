@@ -328,6 +328,7 @@ describe("identity", () => {
         roles: ["OWNER"],
         permissions: permissionsForRoles(["OWNER"]),
         hubScope: [],
+        merchantId: null,
         sessionId: "018f0000-0000-7000-8000-000000000002",
       });
 
@@ -428,6 +429,7 @@ describe("identity", () => {
       roles,
       permissions: permissionsForRoles(roles),
       hubScope: [] as readonly string[],
+      merchantId: null,
       sessionId: "018f0000-0000-7000-8000-00000000000b",
     });
 

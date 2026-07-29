@@ -16,6 +16,8 @@ export const SHIPMENT_MODULE = "shipment" as const;
 export { ShipmentModule } from "./shipment.module.js";
 export { ShipmentService } from "./application/shipment.service.js";
 export { ShipmentEventService } from "./application/shipment-event.service.js";
+export { LabelService } from "./application/label.service.js";
+export type { ShipmentLabel } from "./application/label.service.js";
 export { PickupScanEventHandler } from "./application/pickup-scan-event.handler.js";
 
 export type {

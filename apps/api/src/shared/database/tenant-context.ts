@@ -32,6 +32,15 @@ export interface TenantContextState {
   /** Present for authenticated actors; absent for system/background work. */
   readonly actorId?: string;
   readonly actorType?: "user" | "driver" | "system" | "api_client";
+  /**
+   * Narrows the caller to one merchant WITHIN the tenant (invariant I24).
+   *
+   * Set only for a `MERCHANT` login. Written to `app.current_merchant_id` and
+   * read by RLS, so the narrowing happens in Postgres rather than depending on
+   * every query remembering a `WHERE merchant_id = ...`. Absent for every other
+   * role, where the policies are a no-op.
+   */
+  readonly merchantId?: string;
   /** Correlates a request with everything it causes, including async fan-out. */
   readonly requestId?: string;
 }
