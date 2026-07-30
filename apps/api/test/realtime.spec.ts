@@ -12,6 +12,7 @@ import { RealtimeGateway } from "../src/modules/tracking/realtime/realtime.gatew
 import { RealtimeConnection } from "../src/modules/tracking/realtime/realtime-connection.js";
 import type { Socket } from "../src/modules/tracking/realtime/realtime-connection.js";
 import { withinBbox } from "../src/modules/tracking/realtime/protocol.js";
+import { handleConnection } from "../src/modules/tracking/realtime/realtime.plugin.js";
 import type { ServerMessage } from "../src/modules/tracking/realtime/protocol.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { createTenant, createTestDatabase, deleteTenants } from "./database.harness.js";
@@ -691,6 +692,164 @@ describe("realtime", () => {
         gateway.release(connection);
       }).not.toThrow();
     });
+  });
+});
+
+/**
+ * A `ws`-shaped socket: it records listeners so a test can emit a frame at an
+ * exact moment relative to the handshake. `FakeSocket` above implements the
+ * gateway's narrow `Socket` port and has no `on()`, so it cannot express this.
+ */
+class EmittingSocket {
+  readonly sent: string[] = [];
+  closed = false;
+  closeCode: number | undefined;
+  private readonly listeners = new Map<string, ((data: unknown) => void)[]>();
+
+  on(event: string, listener: (data: unknown) => void): void {
+    const existing = this.listeners.get(event) ?? [];
+    existing.push(listener);
+    this.listeners.set(event, existing);
+  }
+
+  emit(event: string, data?: unknown): void {
+    for (const listener of this.listeners.get(event) ?? []) {
+      listener(data);
+    }
+  }
+
+  send(data: string): void {
+    this.sent.push(data);
+  }
+
+  close(code?: number): void {
+    this.closed = true;
+    this.closeCode = code;
+  }
+}
+
+/** A deferred, so a test can hold the handshake open and release it on cue. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+/**
+ * The handshake race (task #55).
+ *
+ * ⚠️ `handleConnection` used to be `async` and attached `socket.on("message")`
+ * only AFTER `await gateway.accept(...)` resolved. Every real client sends
+ * `subscribe` the instant the socket opens, so a frame landing inside that window
+ * had no listener and was silently discarded by `ws`.
+ *
+ * The victim saw a socket that opened normally (handshake 101), never received
+ * `subscribed`, and never received a single position — a dispatcher board that
+ * stays empty with nothing in any log. The k6 realtime scenario measured it at
+ * roughly 1 connection in 20, worst on the first connection for a tenant, where
+ * `accept` also waits on a Valkey SUBSCRIBE round-trip.
+ */
+describe("handshake race", () => {
+  function gatewayDouble(accept: Promise<unknown>) {
+    const handled: string[] = [];
+    const released: unknown[] = [];
+    return {
+      handled,
+      released,
+      gateway: {
+        accept: () => accept,
+        handleMessage: (_connection: unknown, raw: string) => {
+          handled.push(raw);
+          return Promise.resolve();
+        },
+        release: (connection: unknown) => {
+          released.push(connection);
+        },
+      } as never,
+    };
+  }
+
+  it("HANDLES a frame that arrives before the handshake resolves", async () => {
+    const gate = deferred<unknown>();
+    const { gateway: double, handled } = gatewayDouble(gate.promise);
+    const socket = new EmittingSocket();
+
+    handleConnection(socket as never, { headers: {}, query: { token: "t" } } as never, double);
+
+    // The client's `subscribe`, sent the moment the socket opened — while the
+    // handshake is still in flight.
+    socket.emit("message", '{"op":"subscribe","channels":["drivers:viewport"]}');
+    expect(handled).toHaveLength(0);
+
+    gate.resolve({ tenantId: "t" });
+    await waitFor(() => handled.length === 1);
+
+    expect(handled[0]).toContain("subscribe");
+  });
+
+  it("replays queued frames in ARRIVAL order", async () => {
+    const gate = deferred<unknown>();
+    const { gateway: double, handled } = gatewayDouble(gate.promise);
+    const socket = new EmittingSocket();
+
+    handleConnection(socket as never, { headers: {}, query: { token: "t" } } as never, double);
+    socket.emit("message", "first");
+    socket.emit("message", "second");
+    gate.resolve({ tenantId: "t" });
+    await waitFor(() => handled.length === 2);
+
+    // Out of order, a later `unsubscribe` could be applied before the
+    // `subscribe` it was meant to undo.
+    expect(handled).toEqual(["first", "second"]);
+  });
+
+  it("RELEASES a connection whose client hung up mid-handshake", async () => {
+    const gate = deferred<unknown>();
+    const { gateway: double, released } = gatewayDouble(gate.promise);
+    const socket = new EmittingSocket();
+
+    handleConnection(socket as never, { headers: {}, query: { token: "t" } } as never, double);
+    socket.emit("close");
+    gate.resolve({ tenantId: "t" });
+    await waitFor(() => released.length === 1);
+
+    // Otherwise it lingers in the gateway's connection set and the broadcast
+    // loop keeps writing into a dead socket.
+    expect(released).toHaveLength(1);
+  });
+
+  it("closes a client that floods before authenticating", async () => {
+    const gate = deferred<unknown>();
+    const { gateway: double, handled } = gatewayDouble(gate.promise);
+    const socket = new EmittingSocket();
+
+    handleConnection(socket as never, { headers: {}, query: { token: "t" } } as never, double);
+    for (let i = 0; i < 20; i += 1) {
+      socket.emit("message", `frame-${String(i)}`);
+    }
+
+    // Anything buffered before authentication is memory an unauthenticated peer
+    // can ask for. `maxPayload` bounds each frame; the queue bounds the count.
+    expect(socket.closed).toBe(true);
+    expect(socket.closeCode).toBe(4_401);
+
+    gate.resolve({ tenantId: "t" });
+    await sleep(20);
+    expect(handled.length).toBeLessThanOrEqual(16);
+  });
+
+  it("closes an unauthenticated socket and handles nothing", async () => {
+    const { gateway: double, handled } = gatewayDouble(Promise.resolve(null));
+    const socket = new EmittingSocket();
+
+    handleConnection(socket as never, { headers: {}, query: {} } as never, double);
+    socket.emit("message", '{"op":"subscribe","channels":["drivers:viewport"]}');
+    await waitFor(() => socket.closed);
+
+    expect(socket.closeCode).toBe(4_401);
+    expect(handled).toHaveLength(0);
   });
 });
 

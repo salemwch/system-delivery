@@ -73,23 +73,35 @@ positions concurrently.
 
 | Metric                       | Result                       |
 | ---------------------------- | ---------------------------- |
-| Frames per second per client | **0.99997** (median and p95) |
+| Frames per second per client | **0.99999** (min 0.99997)    |
 | Handshake success            | 100% (20/20)                 |
-| Subscription confirmed       | 95% (19/20) — see below      |
+| Subscription confirmed       | 100% (60/60 over three runs) |
 
 - **Coalescing works exactly as specified.** docs/05 §10 requires one `positions`
   frame per second per client regardless of fleet size; the measurement is 1.000
   per second with 200 drivers moving. Done naively this would be 200/sec/client.
+- The `min` matters as much as the average: it is now 0.99997, not 0. A single
+  client receiving zero frames is a dispatcher staring at an empty board, and it
+  averages away entirely.
 
-## Open finding
+## Resolved: the handshake race
 
-**1 subscription in 20 never confirmed.** The socket opened (handshake 101) but
-no `subscribed` frame came back, and that client received zero position frames
-for its whole session — a dispatcher whose board silently stays empty.
+An earlier run measured **1 subscription in 20 never confirming**. Diagnosed and
+fixed (task #55).
 
-Not yet diagnosed. It became visible only after the `subscribe_ok` metric was
-changed to record a result per session: as first written it called `.add(true)`
-on confirmation and nothing otherwise, so a session that never subscribed
-vanished from the metric instead of failing it. **Silence read as success.**
+`handleConnection` was `async` and attached `socket.on("message")` only after
+`await gateway.accept(...)` resolved. Every real client sends `subscribe` the
+instant the socket opens, so a frame landing inside that window had no listener
+and was discarded by `ws` — silently. The victim saw a socket that opened
+normally, never received `subscribed`, and never received a position. Worst on
+the first connection for a tenant, where `accept` also waits on a Valkey
+SUBSCRIBE round-trip.
 
-Worth resolving before the dispatcher board is built on this channel.
+Listeners are now attached synchronously, before the handshake is awaited, and
+frames that arrive early are queued and replayed in arrival order. Five tests in
+`realtime.spec.ts` cover it; four were confirmed to fail against the old code.
+
+**It was only visible because the metric was fixed first.** As originally
+written, `subscribe_ok` called `.add(true)` on confirmation and nothing
+otherwise, so a session that never subscribed vanished from the metric instead of
+failing it. Silence read as success.
