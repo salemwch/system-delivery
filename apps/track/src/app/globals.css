@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+/**
+ * ⚠️ LOGICAL PROPERTIES ONLY (CLAUDE.md, docs/08 §2).
+ *
+ * `ms-*`/`me-*`, never `ml-*`/`mr-*`; `text-start`, never `text-left`. The
+ * single stylesheet has to mirror correctly for Arabic, and a directional
+ * utility is how a page ends up with its padding on the wrong side in RTL —
+ * visible to half this market and invisible to whoever wrote it.
+ */
+
+@theme {
+  /* One accent, used for the current step and the amount due. A tracking page
+     with a palette is a tracking page that failed to say one thing clearly. */
+  --color-brand: oklch(0.55 0.16 250);
+  --color-brand-soft: oklch(0.96 0.02 250);
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  /* System stack: no webfont. The budget is <100 KB of JS and LCP <2.5 s on 3G
+     (docs/08 §9), and a font file is the single largest thing that would be
+     fetched before the page can paint. The OS Arabic font also shapes correctly
+     everywhere, which a subsetted Latin webfont would not. */
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "Noto Sans Arabic",
+    Roboto,
+    sans-serif;
+}
+
+/**
+ * A tracking number and an E.164 phone stay LTR inside an Arabic page.
+ *
+ * Mirrored, they get read back to a call centre wrong — the same reason the
+ * printed delivery documents isolate them.
+ */
+.ltr-isolate {
+  direction: ltr;
+  unicode-bidi: isolate;
+}

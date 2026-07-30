@@ -7,6 +7,8 @@ import { AppConfigService } from "../../../shared/config/index.js";
 import { DatabaseService, TenantContext } from "../../../shared/database/index.js";
 import type { TenantId } from "../../../shared/database/index.js";
 import { NotFoundError } from "../../../shared/errors/index.js";
+import { CurrencyService } from "../../../shared/money/index.js";
+import { tenants } from "../../platform/index.js";
 import { shipmentEvents, shipments } from "../domain/schema.js";
 
 const STATUS_LABELS: Record<string, Record<string, string>> = {
@@ -42,12 +44,16 @@ interface TimelineEntry {
 }
 
 export interface PublicTrackingView {
+  /** The courier company delivering it — the page letterhead. */
+  readonly courierName: string;
   readonly trackingNumber: string;
   readonly status: string;
   readonly statusLabel: Record<string, string>;
   readonly recipientFirstName: string;
   readonly codAmountMinor: number;
   readonly currency: string;
+  /** ISO 4217 minor-unit exponent. 3 for TND — never assume 2. */
+  readonly currencyExponent: number;
   readonly promisedFrom: string | null;
   readonly promisedTo: string | null;
   readonly timeline: readonly TimelineEntry[];
@@ -61,6 +67,7 @@ export class TrackingService {
 
   constructor(
     private readonly database: DatabaseService,
+    private readonly currency: CurrencyService,
     config: AppConfigService,
   ) {
     this.secret = config.get("TRACKING_TOKEN_SECRET");
@@ -146,15 +153,34 @@ export class TrackingService {
           }
         }
 
+        // FIRST NAME ONLY (docs/08 §7). Anyone holding the link sees this page,
+        // so it carries no surname, no phone, no address and no driver identity.
         const firstName = shipment.recipientName.split(/\s+/u)[0] ?? shipment.recipientName;
 
+        // The courier's own name, for the letterhead — a recipient needs to know
+        // who is delivering. Read here rather than passed in, so the controller
+        // stays a thin authorisation shell.
+        const [courier] = await tx
+          .select({ name: tenants.name })
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+
+        const currencyExponent = await this.currency.exponentOf(shipment.currency);
+
         return {
+          courierName: courier?.name ?? "",
           trackingNumber: shipment.trackingNumber,
           status: shipment.status,
           statusLabel: STATUS_LABELS[shipment.status] ?? {},
           recipientFirstName: firstName,
           codAmountMinor: Number(shipment.codAmountMinor),
           currency: shipment.currency,
+          // ⚠️ The exponent travels WITH the amount. TND has three decimal
+          // places, so 12500 is 12.500 — a client that assumes two prints 125.00
+          // on the page a recipient reads before handing over cash. docs/08 §2:
+          // "always formatted from `currencyExponent` returned by the API".
+          currencyExponent,
           promisedFrom: shipment.promisedFrom?.toISOString() ?? null,
           promisedTo: shipment.promisedTo?.toISOString() ?? null,
           timeline,

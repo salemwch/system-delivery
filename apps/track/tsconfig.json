@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Next compiles for the browser as well as the server, so the module
+    // settings differ from the API's NodeNext: `bundler` resolution is what the
+    // App Router expects, and the DOM libs are needed for JSX.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "noEmit": true,
+    "allowJs": true,
+    "isolatedModules": true,
+    // Next's own decorators are unused here, and leaving the API's settings on
+    // would emit metadata this app has no runtime for.
+    "experimentalDecorators": false,
+    "emitDecoratorMetadata": false,
+    "declaration": false,
+    "sourceMap": false,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", ".next"]
+}

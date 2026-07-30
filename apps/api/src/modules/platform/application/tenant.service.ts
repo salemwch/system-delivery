@@ -148,18 +148,31 @@ export class TenantService {
     });
   }
 
+  /**
+   * Public slug → tenant id, for unauthenticated entry points.
+   *
+   * ⚠️ Goes through `resolve_tenant_id_by_slug`, a SECURITY DEFINER function
+   * (migration 0029), and NOT through an ordinary select. `tenants` is FORCE RLS
+   * with `USING (id = current_setting('app.current_tenant_id'))`, and this is
+   * called by the PUBLIC tracking endpoint before any tenant context exists —
+   * because discovering the tenant is the whole point. A plain select therefore
+   * matched nothing and the tracking page answered "Tenant not found" for every
+   * request, always.
+   *
+   * The function returns only a uuid, and only for an ACTIVE tenant. It is
+   * deliberately narrower than an RLS policy would be: RLS is row-level, so
+   * "readable by anyone" would expose each tenant's name, plan and status too.
+   */
   async resolveBySlug(slug: string): Promise<TenantId> {
     return this.database.withoutTenantScope(async (tx) => {
-      const rows = await tx
-        .select({ id: tenants.id })
-        .from(tenants)
-        .where(eq(tenants.slug, slug))
-        .limit(1);
-      const row = rows[0];
-      if (row === undefined) {
+      const rows = await tx.execute<{ id: string | null }>(
+        sql`select resolve_tenant_id_by_slug(${slug}) as id`,
+      );
+      const id = rows[0]?.id;
+      if (id === null || id === undefined) {
         throw new NotFoundError("Tenant");
       }
-      return asTenantId(row.id);
+      return asTenantId(id);
     });
   }
 }

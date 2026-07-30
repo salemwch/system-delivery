@@ -56,6 +56,8 @@ export default tseslint.config(
       "**/dist/**",
       "**/build/**",
       "**/coverage/**",
+      // Next.js build output — generated, and not ours to lint.
+      "**/.next/**",
       "**/*.config.js",
       "infra/**",
     ],
@@ -81,17 +83,21 @@ export default tseslint.config(
   // project, which fails with "not found by the project service".
   ...tseslint.configs.recommendedTypeChecked.map((config) => ({
     ...config,
-    files: ["**/*.ts"],
+    files: ["**/*.ts", "**/*.tsx"],
   })),
 
   {
-    files: ["**/*.ts"],
+    files: ["**/*.ts", "**/*.tsx"],
     languageOptions: {
       parserOptions: {
         // Both projects listed explicitly: projectService only discovers
         // tsconfig.json, and test files live in a separate ESM project because
         // Vitest runs them as ESM while src emits CommonJS for Nest decorators.
-        project: ["./apps/api/tsconfig.json", "./apps/api/tsconfig.test.json"],
+        project: [
+          "./apps/api/tsconfig.json",
+          "./apps/api/tsconfig.test.json",
+          "./apps/track/tsconfig.json",
+        ],
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -99,7 +105,7 @@ export default tseslint.config(
 
   // ── Domain invariants (docs/02-domain-model.md §4) ────────────────────────
   {
-    files: ["**/*.ts"],
+    files: ["**/*.ts", "**/*.tsx"],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -275,6 +281,9 @@ export default tseslint.config(
       "**/migrations/**/*.ts",
       "**/scripts/**/*.ts",
       "**/shared/observability/telemetry.ts",
+      // The tracking app's single env boundary — same arrangement as the API's
+      // config schema: read here, validated here, nowhere else.
+      "apps/track/src/lib/config.ts",
     ],
     rules: {
       "no-restricted-properties": "off",
