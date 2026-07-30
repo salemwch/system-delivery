@@ -15,7 +15,7 @@ import {
 } from "../domain/dtos.js";
 import { codRemittances } from "../domain/schema.js";
 import type { CodRemittance } from "../domain/schema.js";
-import { CurrencyService } from "./currency.service.js";
+import { CurrencyService } from "../../../shared/money/index.js";
 import { LedgerService } from "./ledger.service.js";
 
 /** Who is performing a remittance command — recorded for audit and events. */

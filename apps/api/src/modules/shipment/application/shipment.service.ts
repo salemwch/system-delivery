@@ -595,6 +595,10 @@ export class ShipmentService {
           actor: { actorType: "SYSTEM" },
           idempotencyKey: `${dto.idempotencyKey}#return`,
           occurredAt,
+          // Persisted on the EVENT, not only in the outbox payload — outbox rows
+          // are relayed and deleted, and the bon de retour has to state why the
+          // parcel came back weeks later, when a merchant queries it.
+          reasonCode: dto.reasonCode,
           outboxPayload: {
             shipmentId: shipment.id,
             // Distinguishes "we tried three times" from "they said no" — the

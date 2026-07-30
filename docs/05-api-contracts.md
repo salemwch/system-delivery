@@ -430,6 +430,36 @@ The two halves of the RTO lifecycle (01-mvp-scope §4.2 #2.8).
 
 ---
 
+### `GET /v1/shipments/{id}/documents/{documentType}`
+
+Printable paperwork (01-mvp-scope §4.2 #2.14). `documentType` is
+`bon-de-livraison`, `bon-d-envoi` or `bon-de-retour`; `?locale=ar|fr|en` defaults
+to the tenant's own language, then French.
+
+**Response `200 text/html`** — a complete, self-contained A5 page, `cache-control:
+no-store`.
+
+**⚠️ HTML, not PDF, and deliberately.** Arabic requires bidirectional layout and
+contextual glyph shaping; browsers do both natively and Node PDF libraries do
+neither, so a generated PDF renders Arabic as disconnected letters in
+left-to-right order. The browser's own Print-to-PDF produces a correct PDF from
+this page. Nothing is fetched at render time — CSS and the QR SVG are inline, so a
+warehouse PC on a bad connection prints the same document as anyone else.
+
+The COD amount is formatted through the currency's real ISO 4217 exponent.
+**TND has three decimal places**, so this prints `45.500`, never `45.50`.
+
+**Permission.** `shipment:label` — the same authority as printing the parcel
+label, and RLS plus the merchant scope apply, so a merchant cannot fetch a rival's
+document.
+
+**Errors.** `404` for an unknown document type · `422 DOCUMENT_NOT_APPLICABLE` for
+a return note on a parcel that is not `RETURN_PENDING` or `RETURNED` — that
+document would otherwise be signed as proof a merchant took back a parcel still
+out for delivery.
+
+---
+
 ### `POST /v1/shipments/{id}/cancel` · `POST /v1/shipments/bulk`
 
 `cancel` takes `{ "reason": "MERCHANT_REQUEST", "notes": "..." }` → `200` with new status. Requires `OWNER` if already in custody.

@@ -2,7 +2,6 @@ import { Module } from "@nestjs/common";
 
 import { PlatformModule } from "../platform/index.js";
 import { FinanceController } from "./api/finance.controller.js";
-import { CurrencyService } from "./application/currency.service.js";
 import { LedgerService } from "./application/ledger.service.js";
 import { LedgerEventHandler } from "./application/ledger-event.handler.js";
 import { ReconciliationService } from "./application/reconciliation.service.js";
@@ -24,7 +23,6 @@ import { SettlementService } from "./application/settlement.service.js";
   imports: [PlatformModule],
   controllers: [FinanceController],
   providers: [
-    CurrencyService,
     LedgerService,
     LedgerEventHandler,
     RemittanceService,
@@ -32,7 +30,6 @@ import { SettlementService } from "./application/settlement.service.js";
     ReconciliationService,
   ],
   exports: [
-    CurrencyService,
     LedgerService,
     LedgerEventHandler,
     RemittanceService,

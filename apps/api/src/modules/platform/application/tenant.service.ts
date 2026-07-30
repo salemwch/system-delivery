@@ -10,6 +10,14 @@ import { tenantFeatures, tenants } from "../domain/schema.js";
 import { OperatingConfigService } from "./operating-config.service.js";
 import { OutboxService } from "./outbox.service.js";
 
+/** The tenant's display identity — what appears on anything it prints or sends. */
+export interface TenantProfile {
+  readonly name: string;
+  /** IANA zone. Dates render in the courier's own wall-clock time, never UTC. */
+  readonly timezone: string;
+  readonly defaultLocale: string;
+}
+
 /** Everything needed to stand up a new courier company. */
 export interface ProvisionTenantInput {
   readonly name: string;
@@ -108,6 +116,36 @@ export class TenantService {
     });
 
     return tenantId;
+  }
+
+  /**
+   * The current tenant's own name, timezone and default language.
+   *
+   * Exists for anything that renders on the tenant's behalf — printed paperwork
+   * puts its name on the letterhead and its dates in its own wall-clock time.
+   * Deliberately narrow: three display fields, not the whole row, so this cannot
+   * become a way for another context to read a tenant's plan or status.
+   *
+   * Scoped by `withTenant`, so a tenant can only ever resolve itself.
+   */
+  async profile(): Promise<TenantProfile> {
+    return this.database.withTenant(async (tx) => {
+      const tenantId = TenantContext.requireTenantId();
+      const rows = await tx
+        .select({
+          name: tenants.name,
+          timezone: tenants.defaultTimezone,
+          defaultLocale: tenants.defaultLocale,
+        })
+        .from(tenants)
+        .where(eq(tenants.id, tenantId))
+        .limit(1);
+      const row = rows[0];
+      if (row === undefined) {
+        throw new NotFoundError("Tenant");
+      }
+      return row;
+    });
   }
 
   async resolveBySlug(slug: string): Promise<TenantId> {

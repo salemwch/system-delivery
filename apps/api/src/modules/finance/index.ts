@@ -8,7 +8,6 @@
  * them. It never imports higher layers; it consumes self-contained events.
  */
 export { FinanceModule } from "./finance.module.js";
-export { CurrencyService } from "./application/currency.service.js";
 export { LedgerService } from "./application/ledger.service.js";
 export type {
   AccountRef,
@@ -58,10 +57,7 @@ export type {
   NormalBalance,
 } from "./domain/ledger.js";
 
-export { formatMinorUnits, parseMinorUnits } from "./domain/money.js";
-
 export {
-  currencies,
   ledgerAccounts,
   ledgerEntries,
   codRemittances,
@@ -69,7 +65,6 @@ export {
   settlementShipments,
 } from "./domain/schema.js";
 export type {
-  Currency,
   LedgerAccount,
   NewLedgerAccount,
   LedgerEntry,

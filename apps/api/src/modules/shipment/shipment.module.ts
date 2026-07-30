@@ -8,6 +8,7 @@ import { TrackingController } from "./api/tracking.controller.js";
 import { AddressBookService } from "./application/address-book.service.js";
 import { BulkShipmentService } from "./application/bulk-shipment.service.js";
 import { PickupScanEventHandler } from "./application/pickup-scan-event.handler.js";
+import { DocumentService } from "./application/document.service.js";
 import { LabelService } from "./application/label.service.js";
 import { ShipmentEventService } from "./application/shipment-event.service.js";
 import { ShipmentStatsService } from "./application/shipment-stats.service.js";
@@ -39,6 +40,7 @@ import { TrackingService } from "./application/tracking.service.js";
     TrackingService,
     ShipmentTraceabilityService,
     LabelService,
+    DocumentService,
     PickupScanEventHandler,
   ],
   exports: [ShipmentService, ShipmentEventService, TrackingService, PickupScanEventHandler],

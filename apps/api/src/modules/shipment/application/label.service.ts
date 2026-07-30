@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import QRCode from "qrcode";
 
+import { parcelQrDataUri, parcelQrPng } from "../domain/parcel-qr.js";
 import { ShipmentService } from "./shipment.service.js";
 
 /** A rendered parcel label. */
@@ -16,19 +16,6 @@ export interface ShipmentLabel {
 }
 
 /**
- * Error correction level.
- *
- * `M` (~15% recoverable) rather than the default `L`. A parcel label gets
- * scuffed, taped over, and rained on between the merchant's table and the
- * recipient's door; the extra redundancy costs a slightly denser code and buys
- * scans that would otherwise fail in the field.
- */
-const ERROR_CORRECTION = "M" as const;
-
-/** Printed at ~30mm on a thermal label; 8 px/module keeps it crisp at 203 dpi. */
-const MODULE_SCALE = 8;
-
-/**
  * Parcel label rendering (docs/01-mvp-scope.md §4.2 #2.15).
  *
  * The `trackingNumber` has existed since the first shipment migration and every
@@ -36,16 +23,9 @@ const MODULE_SCALE = 8;
  * take it as input. Nothing ever rendered it, which meant the scan-based custody
  * chain had no way to start: a driver cannot scan a parcel that carries no code.
  *
- * The payload is deliberately the **bare tracking number**, not a URL and not
- * JSON. Three reasons:
- *
- *  1. Every existing scan endpoint expects exactly that string, so a scanned
- *     label round-trips into custody with no parsing layer to disagree.
- *  2. It keeps the code sparse, which scans faster on a cheap handheld and
- *     survives more damage.
- *  3. A URL would leak the deployment's hostname onto every parcel and would
- *     break the moment the domain changes — while the tracking number is
- *     already the shipment's public identity (domain rule 10).
+ * The QR encoding decisions — bare tracking number, error-correction level M —
+ * live in `domain/parcel-qr.ts`, shared with the printed documents so a label and
+ * a bon de livraison always carry the same code.
  */
 @Injectable()
 export class LabelService {
@@ -61,15 +41,9 @@ export class LabelService {
   async render(shipmentId: string): Promise<ShipmentLabel> {
     const shipment = await this.shipments.getById(shipmentId);
 
-    const options = {
-      errorCorrectionLevel: ERROR_CORRECTION,
-      scale: MODULE_SCALE,
-      margin: 2,
-    } as const;
-
     const [qrPng, qrDataUri] = await Promise.all([
-      QRCode.toBuffer(shipment.trackingNumber, options),
-      QRCode.toDataURL(shipment.trackingNumber, options),
+      parcelQrPng(shipment.trackingNumber),
+      parcelQrDataUri(shipment.trackingNumber),
     ]);
 
     return {

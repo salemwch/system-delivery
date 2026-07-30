@@ -17,6 +17,7 @@ import { TrackingModule } from "./modules/tracking/index.js";
 import { AppConfigModule } from "./shared/config/config.module.js";
 import { AppConfigService } from "./shared/config/index.js";
 import { CryptoModule } from "./shared/crypto/crypto.module.js";
+import { MoneyModule } from "./shared/money/money.module.js";
 import { DatabaseModule } from "./shared/database/database.module.js";
 
 /**
@@ -31,6 +32,7 @@ import { DatabaseModule } from "./shared/database/database.module.js";
     AppConfigModule,
     CryptoModule,
     DatabaseModule,
+    MoneyModule,
     PlatformModule,
     IdentityModule,
     DirectoryModule,

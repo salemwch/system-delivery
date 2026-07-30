@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { CurrencyService } from "../src/modules/finance/application/currency.service.js";
+import { CurrencyService } from "../src/shared/money/index.js";
 import { LedgerService } from "../src/modules/finance/application/ledger.service.js";
 import type { AccountRef } from "../src/modules/finance/application/ledger.service.js";
 import { LedgerEventHandler } from "../src/modules/finance/application/ledger-event.handler.js";
@@ -11,7 +11,7 @@ import { RemittanceService } from "../src/modules/finance/application/remittance
 import { SettlementService } from "../src/modules/finance/application/settlement.service.js";
 import { ReconciliationService } from "../src/modules/finance/application/reconciliation.service.js";
 import { ledgerAccounts, ledgerEntries } from "../src/modules/finance/domain/schema.js";
-import { formatMinorUnits, parseMinorUnits } from "../src/modules/finance/domain/money.js";
+import { formatMinorUnits, parseMinorUnits } from "../src/shared/money/index.js";
 import { OutboxService } from "../src/modules/platform/index.js";
 import type { ConsumedEvent } from "../src/modules/platform/index.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
@@ -132,6 +132,36 @@ describe("finance", () => {
 
     it("rejects an unknown currency", async () => {
       await expect(currency.exponentOf("XYZ")).rejects.toThrow();
+    });
+
+    /**
+     * Currencies are immutable global reference data, so the exponent map is read
+     * once per process. This asserts the COALESCING, which is the part that only
+     * matters under load: a cold process serving a burst would otherwise issue one
+     * identical reference-data query per concurrent caller.
+     *
+     * A fresh instance, because the shared one is already warm.
+     */
+    it("issues ONE query for concurrent first-callers, not one each", async () => {
+      let queries = 0;
+      const counting = new CurrencyService({
+        withoutTenantScope: async (fn: Parameters<typeof db.withoutTenantScope>[0]) => {
+          queries += 1;
+          return db.withoutTenantScope(fn);
+        },
+      } as never);
+
+      const exponents = await Promise.all(
+        Array.from({ length: 25 }, () => counting.exponentOf("TND")),
+      );
+
+      expect(exponents.every((e) => e === 3)).toBe(true);
+      expect(queries).toBe(1);
+
+      // And still cached afterwards — the in-flight promise is cleared on settle,
+      // which must not discard the result it just loaded.
+      await counting.exponentOf("EUR");
+      expect(queries).toBe(1);
     });
   });
 

@@ -1,4 +1,4 @@
-import { BusinessRuleError } from "../../../shared/errors/index.js";
+import { BusinessRuleError } from "../errors/index.js";
 
 /**
  * Money is integer minor units + an ISO 4217 exponent read from the `currencies`
@@ -9,6 +9,13 @@ import { BusinessRuleError } from "../../../shared/errors/index.js";
  * These two functions are the exact, lossless round-trip between the stored
  * integer and its human decimal string. They are pure so they are trivially
  * property-testable — the P0 acceptance criterion for the ledger (§7.1, MVP6).
+ *
+ * ⚠️ In `shared/`, not in `finance/`. Minor units are a project-wide CONVENTION
+ * (CLAUDE.md "Non-negotiable conventions"), not a finance concern: a delivery note
+ * prints a COD amount, and `shipment` may not depend on `finance`. Living here,
+ * there is one implementation every module can reach — the alternative was a
+ * second copy in whichever module needed it next, and two copies of money
+ * formatting is how one of them ends up rounding differently.
  */
 
 /** Formats minor units as a plain decimal string, e.g. (12500, 3) → "12.500". */

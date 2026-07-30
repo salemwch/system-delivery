@@ -5,7 +5,6 @@ import {
   index,
   integer,
   pgTable,
-  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -18,17 +17,10 @@ import {
  * migration 0012_finance.sql; these give the query builder its types.
  */
 
-/**
- * Global ISO 4217 reference. NOT tenant-scoped (domain §1) — one row per currency,
- * holding the minor-unit exponent every money conversion reads. Seeded by the
- * migration; read-only to the app.
- */
-export const currencies = pgTable("currencies", {
-  code: text("code").primaryKey(),
-  exponent: smallint("exponent").notNull(),
-  name: text("name").notNull(),
-  symbol: text("symbol"),
-});
+// `currencies` is ISO 4217 REFERENCE data and lives in `shared/money` — it is a
+// property of the currency, not of the ledger, and `shipment` needs it to print a
+// COD amount on a delivery note. finance owns every table that records a MOVEMENT
+// of money; this one records none.
 
 /**
  * A named balance container per (tenant, type, owner, currency). `balanceMinor` is
@@ -141,7 +133,6 @@ export const codRemittances = pgTable(
   ],
 );
 
-export type Currency = typeof currencies.$inferSelect;
 export type LedgerAccount = typeof ledgerAccounts.$inferSelect;
 export type NewLedgerAccount = typeof ledgerAccounts.$inferInsert;
 export type LedgerEntry = typeof ledgerEntries.$inferSelect;

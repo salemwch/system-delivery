@@ -21,7 +21,7 @@ import {
   settlements,
 } from "../domain/schema.js";
 import type { Settlement } from "../domain/schema.js";
-import { CurrencyService } from "./currency.service.js";
+import { CurrencyService } from "../../../shared/money/index.js";
 import { LedgerService } from "./ledger.service.js";
 import type { PostingLine } from "./ledger.service.js";
 

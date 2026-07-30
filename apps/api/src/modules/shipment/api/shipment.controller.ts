@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+} from "@nestjs/common";
 import { z } from "zod";
 
 import { asTenantId } from "../../../shared/database/index.js";
@@ -9,6 +19,7 @@ import type { Principal } from "../../identity/index.js";
 import { FeatureService } from "../../platform/index.js";
 import { BulkShipmentService } from "../application/bulk-shipment.service.js";
 import type { BulkCreateResult } from "../application/bulk-shipment.service.js";
+import { DocumentService } from "../application/document.service.js";
 import { LabelService } from "../application/label.service.js";
 import { ShipmentStatsService } from "../application/shipment-stats.service.js";
 import type {
@@ -26,6 +37,7 @@ import type {
   JourneyView,
 } from "../application/traceability.service.js";
 import { TrackingService } from "../application/tracking.service.js";
+import { isDocumentType } from "../domain/document.js";
 import type { Shipment } from "../domain/schema.js";
 import {
   cancelShipmentSchema,
@@ -151,6 +163,11 @@ const bulkCreateSchema = z.strictObject({
     .max(100),
 });
 
+const documentQuerySchema = z.object({
+  /** ar | fr | en. Omitted → the tenant default, then French. */
+  locale: z.string().trim().min(2).max(5).optional(),
+});
+
 const statsQuerySchema = z.object({
   currency: z
     .string()
@@ -170,6 +187,7 @@ export class ShipmentController {
     private readonly traceability: ShipmentTraceabilityService,
     private readonly features: FeatureService,
     private readonly labels: LabelService,
+    private readonly documents: DocumentService,
   ) {}
 
   /**
@@ -195,6 +213,44 @@ export class ShipmentController {
       recipientName: label.recipientName,
       qrDataUri: label.qrDataUri,
     };
+  }
+
+  /**
+   * A printable delivery document (docs/01-mvp-scope.md §4.2 #2.14).
+   *
+   * `bon-de-livraison` · `bon-d-envoi` · `bon-de-retour` — paper documents are
+   * standard practice in Tunisian courier operations, so these are printed,
+   * signed and filed.
+   *
+   * Returns **HTML**, and the browser's own Print-to-PDF produces the PDF. That is
+   * not a shortcut: Arabic needs bidirectional layout and contextual glyph
+   * shaping, which browsers do natively and Node PDF libraries do not — through
+   * one of those, Arabic comes out as disconnected letters in the wrong order.
+   *
+   * `shipment:label` rather than a new permission: this is the same authority as
+   * printing the parcel's label, held by the same people, and a permission nobody
+   * can articulate the difference for is a permission that gets granted by
+   * accident.
+   */
+  @Get(":id/documents/:documentType")
+  @RequirePermissions("shipment:label")
+  @Header("content-type", "text/html; charset=utf-8")
+  // A document is a snapshot of a live shipment. Caching it means a driver prints
+  // yesterday's address after a correction — the exact failure the address
+  // -correction flow exists to prevent.
+  @Header("cache-control", "no-store")
+  async document(
+    @Param("id") id: string,
+    @Param("documentType") documentType: string,
+    @Query() query: unknown,
+  ): Promise<string> {
+    const { locale } = documentQuerySchema.parse(query);
+    const normalised = documentType.replace(/-/gu, "_").toUpperCase();
+    if (!isDocumentType(normalised)) {
+      throw new NotFoundError("Document type");
+    }
+    const rendered = await this.documents.render(id, normalised, locale);
+    return rendered.html;
   }
 
   @Get("dashboard")

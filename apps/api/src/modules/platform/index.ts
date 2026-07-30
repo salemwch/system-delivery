@@ -8,6 +8,7 @@ export { PlatformModule } from "./platform.module.js";
 export { OutboxService } from "./application/outbox.service.js";
 export { FeatureService } from "./application/feature.service.js";
 export { TenantService } from "./application/tenant.service.js";
+export type { TenantProfile } from "./application/tenant.service.js";
 export { AuditService, ensureAuditPartitions } from "./application/audit.service.js";
 export { OperatingConfigService } from "./application/operating-config.service.js";
 export { DeadLetterService } from "./application/dead-letter.service.js";
