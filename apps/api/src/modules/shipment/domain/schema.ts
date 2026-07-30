@@ -76,6 +76,12 @@ export const shipments = pgTable(
     codStatus: text("cod_status").notNull().default("NOT_APPLICABLE"),
     attemptCount: smallint("attempt_count").notNull().default(0),
     maxAttempts: smallint("max_attempts").notNull().default(3),
+    /**
+     * When the next delivery attempt may be made (migration 0026), computed from
+     * the tenant working calendar. NULL when no further attempt is due —
+     * delivered, returning, refused, or attempts exhausted.
+     */
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
     priority: smallint("priority").notNull().default(0),
     requiredSkills: text("required_skills")
       .array()

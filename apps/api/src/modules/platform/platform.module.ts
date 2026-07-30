@@ -5,6 +5,7 @@ import { ConfigBootstrapService } from "./application/config-bootstrap.service.j
 import { FeatureService } from "./application/feature.service.js";
 import { OutboxService } from "./application/outbox.service.js";
 import { AuditService } from "./application/audit.service.js";
+import { OperatingConfigService } from "./application/operating-config.service.js";
 import { TenantService } from "./application/tenant.service.js";
 import { NOTIFICATION_PROVIDER } from "./domain/notification-provider.js";
 import { ChannelRoutingProvider } from "./infrastructure/channel-routing.provider.js";
@@ -24,6 +25,7 @@ import { ConsoleNotificationProvider } from "./infrastructure/console-notificati
     TenantService,
     ConfigBootstrapService,
     AuditService,
+    OperatingConfigService,
     // The single binding of the outbound-message transport. Both `notification`
     // (business notifications) and `identity` (driver OTP) consume it, so it is
     // bound once here rather than in each.
@@ -34,6 +36,13 @@ import { ConsoleNotificationProvider } from "./infrastructure/console-notificati
     ConsoleNotificationProvider,
     { provide: NOTIFICATION_PROVIDER, useClass: ChannelRoutingProvider },
   ],
-  exports: [OutboxService, FeatureService, TenantService, AuditService, NOTIFICATION_PROVIDER],
+  exports: [
+    OutboxService,
+    FeatureService,
+    TenantService,
+    AuditService,
+    OperatingConfigService,
+    NOTIFICATION_PROVIDER,
+  ],
 })
 export class PlatformModule {}

@@ -25,6 +25,7 @@ import { RecipientService } from "../src/modules/directory/application/recipient
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
 import { HubService } from "../src/modules/network/application/hub.service.js";
 import { FeatureService } from "../src/modules/platform/application/feature.service.js";
+import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { ShipmentEventService } from "../src/modules/shipment/application/shipment-event.service.js";
 import { ShipmentService } from "../src/modules/shipment/application/shipment.service.js";
@@ -237,7 +238,16 @@ describe("custody", () => {
     const features = new FeatureService(db);
     hubsSvc = new HubService(db, outbox, addresses);
     const events = new ShipmentEventService(outbox);
-    shipmentsSvc = new ShipmentService(db, events, outbox, merchants, recipients, addresses);
+    const operatingConfig = new OperatingConfigService(db);
+    shipmentsSvc = new ShipmentService(
+      db,
+      events,
+      outbox,
+      merchants,
+      recipients,
+      addresses,
+      operatingConfig,
+    );
     manifestsSvc = new ManifestService(db, outbox, shipmentsSvc, hubsSvc, features);
     hubScans = new HubScanService(shipmentsSvc, hubsSvc, features);
   }, 240_000);

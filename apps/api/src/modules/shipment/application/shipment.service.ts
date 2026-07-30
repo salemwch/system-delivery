@@ -4,7 +4,7 @@ import { Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { AddressService, MerchantService, RecipientService } from "../../directory/index.js";
-import { OutboxService } from "../../platform/index.js";
+import { OperatingConfigService, OutboxService } from "../../platform/index.js";
 import {
   DatabaseService,
   TenantContext,
@@ -125,6 +125,7 @@ export class ShipmentService {
     private readonly merchants: MerchantService,
     private readonly recipients: RecipientService,
     private readonly addresses: AddressService,
+    private readonly operatingConfig: OperatingConfigService,
   ) {}
 
   // ── Create ─────────────────────────────────────────────────────────────────
@@ -162,6 +163,16 @@ export class ShipmentService {
       try {
         return await this.database.withTenant(async (tx) => {
           const tenantId = TenantContext.requireTenantId();
+
+          // The delivery promise, computed from the tenant's SLA template in
+          // WORKING hours. An explicit `promisedTo` from the caller wins — a
+          // merchant who has negotiated a specific date is not overridden by a
+          // default — but a shipment created without one is no longer left with
+          // no promise at all, which is what made on-time reporting impossible.
+          const promisedTo =
+            dto.promisedTo ??
+            (await this.operatingConfig.promisedBy(tx, dto.serviceLevel ?? "STANDARD", occurredAt));
+
           const shipment = requireRow(
             await tx
               .insert(shipments)
@@ -187,7 +198,7 @@ export class ShipmentService {
                   ? {}
                   : { recipientPhoneAlt: dto.recipientPhoneAlt }),
                 ...(dto.promisedFrom === undefined ? {} : { promisedFrom: dto.promisedFrom }),
-                ...(dto.promisedTo === undefined ? {} : { promisedTo: dto.promisedTo }),
+                ...(promisedTo === null ? {} : { promisedTo }),
                 ...(dto.weightGrams === undefined ? {} : { weightGrams: dto.weightGrams }),
                 ...(dto.volumeCm3 === undefined ? {} : { volumeCm3: dto.volumeCm3 }),
                 ...(dto.parcelCount === undefined ? {} : { parcelCount: dto.parcelCount }),
@@ -551,10 +562,33 @@ export class ShipmentService {
       });
       snap = advance(snap, failed);
 
-      // Rule 9: attempts exhausted → the shipment must go to RETURN_PENDING. At MVP
-      // this re-attempt policy runs inline and atomically; it moves to an event
-      // consumer when the dispatch context is built (event-storming P-series).
-      if (attemptNumber >= shipment.maxAttempts) {
+      // ⚠️ The REASON decides first, not just the attempt count.
+      //
+      // `allowsReattempt` existed in the old hardcoded taxonomy and was never
+      // consulted: a parcel the customer had explicitly REFUSED consumed its two
+      // remaining attempts before returning. Each was a driver making a trip to
+      // someone who had already said no, plus the return leg afterwards — the
+      // most expensive ordinary mistake in a COD market.
+      const decision = await this.operatingConfig.decideReattempt(tx, {
+        reasonCode: dto.reasonCode,
+        attemptNumber,
+        maxAttempts: shipment.maxAttempts,
+        serviceLevel: shipment.serviceLevel,
+        failedAt: occurredAt,
+      });
+
+      // Rule 9 and the reason policy converge here: either way the parcel goes to
+      // RETURN_PENDING. At MVP this runs inline and atomically; it moves to an
+      // event consumer when the dispatch context is built (event-storming
+      // P-series).
+      if (decision.allowed) {
+        // Scheduled on the tenant's own working calendar, so a Saturday-evening
+        // failure is due Monday at opening rather than Sunday at the same hour.
+        await tx
+          .update(shipments)
+          .set({ nextAttemptAt: decision.nextAttemptAt })
+          .where(eq(shipments.id, shipment.id));
+      } else {
         await this.events.applyTo(tx, snap, {
           eventType: "return_initiated",
           actor: { actorType: "SYSTEM" },
@@ -562,13 +596,25 @@ export class ShipmentService {
           occurredAt,
           outboxPayload: {
             shipmentId: shipment.id,
-            reason: "ATTEMPTS_EXHAUSTED",
+            // Distinguishes "we tried three times" from "they said no" — the
+            // merchant needs to know which, and a report that conflates them
+            // makes a refusal problem look like a delivery-performance one.
+            reason:
+              decision.reason === "REASON_FORBIDS"
+                ? `NOT_REATTEMPTABLE:${dto.reasonCode}`
+                : "ATTEMPTS_EXHAUSTED",
             finalAttemptCount: attemptNumber,
             returnToAddressId: shipment.originAddressId,
             codAmountMinor: shipment.codAmountMinor.toString(),
             occurredAt: occurredAt.toISOString(),
           },
         });
+
+        // No further attempt is due, so the column must not keep pointing at one.
+        await tx
+          .update(shipments)
+          .set({ nextAttemptAt: null })
+          .where(eq(shipments.id, shipment.id));
       }
     });
   }

@@ -11,6 +11,7 @@ import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure
 import { TokenService } from "../src/modules/identity/application/token.service.js";
 import type { Principal } from "../src/modules/identity/application/token.service.js";
 import { ROLES, permissionsForRoles } from "../src/modules/identity/domain/permissions.js";
+import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { AddressBookService } from "../src/modules/shipment/application/address-book.service.js";
 import { LabelService } from "../src/modules/shipment/application/label.service.js";
@@ -128,7 +129,16 @@ describe("merchant portal", () => {
     merchants = new MerchantService(db, outbox);
     const recipients = new RecipientService(db);
     const events = new ShipmentEventService(outbox);
-    shipments = new ShipmentService(db, events, outbox, merchants, recipients, addresses);
+    const operatingConfig = new OperatingConfigService(db);
+    shipments = new ShipmentService(
+      db,
+      events,
+      outbox,
+      merchants,
+      recipients,
+      addresses,
+      operatingConfig,
+    );
     labels = new LabelService(shipments);
     addressBook = new AddressBookService(db);
     tokens = new TokenService(tokenConfig());

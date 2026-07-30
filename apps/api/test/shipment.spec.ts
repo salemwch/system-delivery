@@ -9,6 +9,7 @@ import { MerchantService } from "../src/modules/directory/application/merchant.s
 import { RecipientService } from "../src/modules/directory/application/recipient.service.js";
 import { AddressService } from "../src/modules/directory/application/address.service.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
+import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
@@ -131,7 +132,16 @@ describe("shipment", () => {
     const recipients = new RecipientService(db);
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
     const events = new ShipmentEventService(outbox);
-    shipments = new ShipmentService(db, events, outbox, merchants, recipients, addresses);
+    const operatingConfig = new OperatingConfigService(db);
+    shipments = new ShipmentService(
+      db,
+      events,
+      outbox,
+      merchants,
+      recipients,
+      addresses,
+      operatingConfig,
+    );
   }, 240_000);
 
   afterEach(async () => {

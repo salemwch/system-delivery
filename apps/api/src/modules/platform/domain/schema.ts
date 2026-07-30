@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  date,
   index,
   inet,
   integer,
@@ -266,3 +267,77 @@ export const auditLog = pgTable(
 
 export type AuditEntry = typeof auditLog.$inferSelect;
 export type NewAuditEntry = typeof auditLog.$inferInsert;
+
+/**
+ * Per-tenant operating configuration (migration 0026).
+ *
+ * Config as DATA (docs/01 §4.1 #1.8) — these were TypeScript constants, which
+ * meant a courier could not change its own failure taxonomy or working week
+ * without a deploy.
+ */
+export const failureReasons = pgTable(
+  "failure_reasons",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    /** SCREAMING_SNAKE, stable — written to `shipment_events.reason_code`. */
+    code: text("code").notNull(),
+    /** Per-locale labels for the driver app's picker. */
+    labels: jsonb("labels")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    /** False → the parcel returns instead of consuming its remaining attempts. */
+    allowsReattempt: boolean("allows_reattempt").notNull().default(true),
+    /** RECIPIENT | COURIER | MERCHANT | EXTERNAL. */
+    fault: text("fault").notNull().default("RECIPIENT"),
+    displayOrder: smallint("display_order").notNull().default(100),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("failure_reasons_tenant_code_uq").on(table.tenantId, table.code)],
+);
+
+export const workingHours = pgTable("working_hours", {
+  tenantId: uuid("tenant_id").notNull(),
+  /** ISO-8601: 1 = Monday … 7 = Sunday. */
+  dayOfWeek: smallint("day_of_week").notNull(),
+  /** LOCAL wall-clock `HH:MM:SS` in the tenant's timezone, never UTC. */
+  opensAt: text("opens_at").notNull(),
+  closesAt: text("closes_at").notNull(),
+  isWorking: boolean("is_working").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const holidays = pgTable("holidays", {
+  tenantId: uuid("tenant_id").notNull(),
+  /** A local calendar date — a holiday is a day, not an instant. */
+  day: date("day").notNull(),
+  label: text("label").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const slaTemplates = pgTable(
+  "sla_templates",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    /** STANDARD | EXPRESS | SAME_DAY. */
+    serviceLevel: text("service_level").notNull(),
+    /** WORKING hours, not elapsed. */
+    deliveryHours: integer("delivery_hours").notNull(),
+    reattemptDelayHours: integer("reattempt_delay_hours").notNull().default(24),
+    maxAttempts: smallint("max_attempts").notNull().default(3),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("sla_templates_tenant_level_uq").on(table.tenantId, table.serviceLevel)],
+);
+
+export type FailureReasonRow = typeof failureReasons.$inferSelect;
+export type SlaTemplateRow = typeof slaTemplates.$inferSelect;

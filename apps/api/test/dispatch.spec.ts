@@ -17,6 +17,7 @@ import { DriverService } from "../src/modules/fleet/application/driver.service.j
 import { ShiftService } from "../src/modules/fleet/application/shift.service.js";
 import { HubService } from "../src/modules/network/application/hub.service.js";
 import { FeatureService } from "../src/modules/platform/application/feature.service.js";
+import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { FieldCipher } from "../src/shared/crypto/field-cipher.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
@@ -188,7 +189,16 @@ describe("dispatch", () => {
     drivers = new DriverService(db, outbox, hubs, cipher);
     shiftsSvc = new ShiftService(db, outbox);
     const events = new ShipmentEventService(outbox);
-    shipments = new ShipmentService(db, events, outbox, merchants, recipients, addresses);
+    const operatingConfig = new OperatingConfigService(db);
+    shipments = new ShipmentService(
+      db,
+      events,
+      outbox,
+      merchants,
+      recipients,
+      addresses,
+      operatingConfig,
+    );
     const optimizer = new HeuristicOptimizationProvider();
     routesSvc = new RouteService(
       db,

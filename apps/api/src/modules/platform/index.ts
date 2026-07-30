@@ -9,6 +9,19 @@ export { OutboxService } from "./application/outbox.service.js";
 export { FeatureService } from "./application/feature.service.js";
 export { TenantService } from "./application/tenant.service.js";
 export { AuditService, ensureAuditPartitions } from "./application/audit.service.js";
+export { OperatingConfigService } from "./application/operating-config.service.js";
+export type {
+  FailureReasonView,
+  ReattemptDecision,
+} from "./application/operating-config.service.js";
+export {
+  addWorkingHours,
+  nextWorkingInstant,
+  parseTimeToMinutes,
+  localPartsOf,
+  instantAtLocalTime,
+} from "./domain/working-calendar.js";
+export type { WorkingCalendar, WorkingDay, IsoWeekday } from "./domain/working-calendar.js";
 export type {
   AuditInput,
   AuditQuery,
@@ -65,6 +78,10 @@ export {
   processedEvents,
   deadLetterEvents,
   auditLog,
+  failureReasons,
+  workingHours,
+  holidays,
+  slaTemplates,
 } from "./domain/schema.js";
 export type {
   Tenant,
