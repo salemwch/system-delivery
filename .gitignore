@@ -47,3 +47,7 @@ pnpm-debug.log*
 
 # Editor-local settings (personal, not project config)
 .vscode/
+
+# Load-test fixture — holds live bearer tokens for seeded drivers. Never commit.
+load/fixture.json
+load/*.summary.json

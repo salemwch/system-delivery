@@ -29,7 +29,10 @@
     "docs:lint": "markdownlint-cli2 \"docs/**/*.md\" \"*.md\"",
     "knip": "knip",
     "verify": "pnpm format:check && pnpm lint:rules && pnpm lint && pnpm typecheck && pnpm docs:spell",
-    "sast": "bash tools/semgrep.sh"
+    "sast": "bash tools/semgrep.sh",
+    "load:telemetry": "k6 run load/telemetry-ingest.js",
+    "load:dispatch": "k6 run load/dispatch-optimize.js",
+    "load:realtime": "k6 run load/realtime-fanout.js"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

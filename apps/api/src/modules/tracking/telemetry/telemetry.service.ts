@@ -72,7 +72,7 @@ export class TelemetryService {
     this.maxAccuracyM = config.get("TELEMETRY_MAX_ACCURACY_M");
   }
 
-  async ingestBatch(input: unknown, ctx: { readonly driverId: string }): Promise<IngestResult> {
+  async ingestBatch(input: unknown, ctx: { readonly userId: string }): Promise<IngestResult> {
     const dto = parseWithZod(ingestTelemetrySchema, input);
     const tenantId = TenantContext.requireTenantId();
     const serverTime = new Date();
@@ -90,13 +90,19 @@ export class TelemetryService {
     // of what the app sends." Location tracking outside a shift is surveillance,
     // not operations, so this is checked here rather than trusted from the
     // client — a compromised or modified app must not be able to opt in.
-    const shiftOpen = await this.shifts.isWithinOpenShift(ctx.driverId, serverTime);
-    if (!shiftOpen) {
+    //
+    // ⚠️ Takes the authenticated USER id and resolves the driver from it. A user
+    // id and a driver id are different things: the caller only ever knows who is
+    // authenticated, and `driver_positions.driver_id` must hold a `drivers.id`.
+    // Accepting a driver id from the caller would also mean trusting it.
+    const shift = await this.shifts.openShiftForUser(ctx.userId, serverTime);
+    if (shift === null) {
       throw new BusinessRuleError(
         "TELEMETRY_OUTSIDE_SHIFT",
         "Telemetry is only accepted while the driver has an open shift",
       );
     }
+    const driverId = shift.driverId;
 
     // ── Quality gates ────────────────────────────────────────────────────────
     const rejections: Partial<Record<RejectionReason, number>> = {};
@@ -119,7 +125,7 @@ export class TelemetryService {
 
     // ── Buffer ───────────────────────────────────────────────────────────────
     const { shed } = this.writer.enqueue(
-      accepted.map((p) => toBuffered(tenantId, ctx.driverId, dto.routeId ?? null, p)),
+      accepted.map((p) => toBuffered(tenantId, driverId, dto.routeId ?? null, p)),
     );
     if (shed > 0) {
       rejections.SHED = shed;
@@ -133,7 +139,7 @@ export class TelemetryService {
       // immediately overwritten.
       const newest = accepted.reduce((a, b) => (b.t.getTime() > a.t.getTime() ? b : a));
       await this.presence.record(tenantId, {
-        driverId: ctx.driverId,
+        driverId: driverId,
         lat: newest.lat,
         lon: newest.lon,
         headingDeg: newest.hdg ?? null,
@@ -146,7 +152,7 @@ export class TelemetryService {
       // pub/sub so the socket a dispatcher happens to hold on another instance
       // still receives it — and so a realtime hiccup never fails an upload.
       this.realtime.publishPosition(tenantId, {
-        driverId: ctx.driverId,
+        driverId: driverId,
         lat: newest.lat,
         lon: newest.lon,
         headingDeg: newest.hdg ?? null,
@@ -157,9 +163,9 @@ export class TelemetryService {
 
       const entries = await this.geofences.evaluateTrack(
         tenantId,
-        ctx.driverId,
+        driverId,
         accepted.map((p) => ({ at: p.t, lat: p.lat, lon: p.lon })),
-        { routeId: dto.routeId ?? null, actorId: ctx.driverId },
+        { routeId: dto.routeId ?? null, actorId: driverId },
       );
       geofenceEntries = entries.length;
     }

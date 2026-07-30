@@ -15,7 +15,9 @@
     "lint": "eslint src test",
     "db:seed": "node --env-file=../../.env dist/scripts/seed.js",
     "start:worker": "node dist/worker.js",
-    "worker:dev": "nest start --entryFile worker --watch"
+    "worker:dev": "nest start --entryFile worker --watch",
+    "load:fixture": "node --env-file=../../.env dist/scripts/load-fixture.js",
+    "load:cleanup": "node --env-file=../../.env dist/scripts/load-cleanup.js"
   },
   "keywords": [],
   "author": "",

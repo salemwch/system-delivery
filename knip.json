@@ -16,5 +16,7 @@
         "@types/ws"
       ]
     }
-  }
+  },
+  "ignoreBinaries": ["k6"],
+  "ignore": ["load/**"]
 }

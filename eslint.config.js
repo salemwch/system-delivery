@@ -63,6 +63,19 @@ export default tseslint.config(
 
   js.configs.recommended,
 
+  // k6 load scripts.
+  //
+  // They run inside k6's own JS runtime, not Node: `open()`, `__VU` and `__ITER`
+  // are k6 globals, and the `k6/*` module specifiers resolve only there.
+  // Declaring the globals rather than ignoring the directory keeps every other
+  // rule — unused vars, equality, shadowing — enforced on them.
+  {
+    files: ["load/**/*.js"],
+    languageOptions: {
+      globals: { open: "readonly", __VU: "readonly", __ITER: "readonly" },
+    },
+  },
+
   // Type-aware linting is scoped to TypeScript sources only. Left unscoped, the
   // TS parser is applied to plain .mjs tooling files that belong to no tsconfig
   // project, which fails with "not found by the project service".

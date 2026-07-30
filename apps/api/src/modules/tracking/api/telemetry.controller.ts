@@ -54,7 +54,10 @@ export class TelemetryController {
     @Body(zodBody(ingestTelemetrySchema)) body: z.infer<typeof ingestTelemetrySchema>,
     @CurrentPrincipal() principal: Principal,
   ): Promise<IngestResponse> {
-    const result = await this.telemetry.ingestBatch(body, { driverId: principal.userId });
+    // The USER id. The service resolves the driver from it in the same query as
+    // the shift gate — a user id is not a driver id, and passing one where the
+    // other was expected made every real driver's upload fail.
+    const result = await this.telemetry.ingestBatch(body, { userId: principal.userId });
     return {
       accepted: result.accepted,
       rejected: result.rejected,

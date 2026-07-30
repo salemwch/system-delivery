@@ -94,8 +94,35 @@ describe("tracking", () => {
     return id;
   }
 
-  /** An ACTIVE driver on an open shift — the only state telemetry is accepted in. */
-  async function onShiftDriver(tenantId: string): Promise<string> {
+  /**
+   * An ACTIVE driver on an open shift — the only state telemetry is accepted in.
+   *
+   * ⚠️ Returns BOTH ids, and creates the `users` row that links them. A user id
+   * and a driver id are different things: ingest is called with the
+   * AUTHENTICATED USER's id (that is all a request knows) and resolves the driver
+   * from it, while `driver_positions.driver_id` holds the driver id.
+   *
+   * These tests used to pass a driver id straight into `ingestBatch`, which no
+   * real request can do — and that gap hid a bug where the controller passed a
+   * user id to a parameter expecting a driver id, so every upload from a real
+   * driver was refused. A fixture that cannot represent the mismatch cannot catch
+   * it.
+   */
+  async function onShiftDriver(tenantId: string): Promise<{ userId: string; driverId: string }> {
+    const userId = randomUUID();
+    // Tenant-scoped: `users` is FORCE RLS, and a pooled connection reused with
+    // no `app.current_tenant_id` leaves the GUC at the EMPTY STRING — which is a
+    // uuid cast error inside the policy, not a false predicate.
+    await withTenantContext(
+      database.migrator,
+      tenantId,
+      (tx) => tx`
+        insert into users (id, tenant_id, email, full_name, password_hash, status)
+        values (${userId}, ${tenantId}, ${`d-${userId.slice(0, 8)}@trk.test`},
+                'Ali Ben Salah', 'x', 'ACTIVE')
+      `,
+    );
+
     return asTenant(tenantId, async () => {
       const vehicle = await vehicles.create({
         plateNumber: `TUN-${Math.floor(Math.random() * 9000) + 1000}`,
@@ -109,24 +136,42 @@ describe("tracking", () => {
         fullName: "Ali Ben Salah",
         phone: `+2162${Math.floor(Math.random() * 9_000_000) + 1_000_000}`,
         employmentType: "EMPLOYEE",
+        userId,
       });
       await driversSvc.activate(driver.id);
       await shifts.start({ driverId: driver.id, vehicleId: vehicle.id });
-      return driver.id;
+      return { userId, driverId: driver.id };
     });
   }
 
-  /** A driver with no open shift. */
-  async function offShiftDriver(tenantId: string): Promise<string> {
+  /**
+   * A driver with no open shift — a real, logged-in driver who is simply off
+   * duty. Linked to a user for the same reason as {@link onShiftDriver}: the
+   * privacy gate is reached through an authenticated user id, so a fixture with
+   * no user cannot exercise it.
+   */
+  async function offShiftDriver(tenantId: string): Promise<{ userId: string; driverId: string }> {
+    const userId = randomUUID();
+    await withTenantContext(
+      database.migrator,
+      tenantId,
+      (tx) => tx`
+        insert into users (id, tenant_id, email, full_name, password_hash, status)
+        values (${userId}, ${tenantId}, ${`o-${userId.slice(0, 8)}@trk.test`},
+                'Sami Trabelsi', 'x', 'ACTIVE')
+      `,
+    );
+
     return asTenant(tenantId, async () => {
       const driver = await driversSvc.create({
         employeeCode: `D-${Math.random().toString(36).slice(2, 8)}`,
         fullName: "Sami Trabelsi",
         phone: `+2162${Math.floor(Math.random() * 9_000_000) + 1_000_000}`,
         employmentType: "EMPLOYEE",
+        userId,
       });
       await driversSvc.activate(driver.id);
-      return driver.id;
+      return { userId, driverId: driver.id };
     });
   }
 
@@ -312,7 +357,7 @@ describe("tracking", () => {
   describe("ingest", () => {
     it("accepts a batch and writes it through to the hypertable", async () => {
       const tenantId = await seedTenant("trk-ingest");
-      const driverId = await onShiftDriver(tenantId);
+      const { userId, driverId } = await onShiftDriver(tenantId);
 
       const result = await asTenant(tenantId, () =>
         telemetry.ingestBatch(
@@ -322,7 +367,7 @@ describe("tracking", () => {
               point(36.8012, 10.182, 10, { bat: 74 }),
             ],
           }),
-          { driverId },
+          { userId },
         ),
       );
 
@@ -341,13 +386,13 @@ describe("tracking", () => {
 
     it("preserves the device clock, not the arrival time", async () => {
       const tenantId = await seedTenant("trk-devicetime");
-      const driverId = await onShiftDriver(tenantId);
+      const { userId } = await onShiftDriver(tenantId);
       const deviceTime = new Date(Date.now() - 45 * 60_000);
 
       await asTenant(tenantId, () =>
         telemetry.ingestBatch(
           batch({ positions: [{ t: deviceTime.toISOString(), lat: 36.8, lon: 10.18, acc: 6 }] }),
-          { driverId },
+          { userId },
         ),
       );
       await writer.flush();
@@ -358,7 +403,7 @@ describe("tracking", () => {
 
     it("records every source kind", async () => {
       const tenantId = await seedTenant("trk-sources");
-      const driverId = await onShiftDriver(tenantId);
+      const { userId } = await onShiftDriver(tenantId);
 
       const result = await asTenant(tenantId, () =>
         telemetry.ingestBatch(
@@ -367,7 +412,7 @@ describe("tracking", () => {
               point(36.8 + i / 1000, 10.18, 30 - i, { src }),
             ),
           }),
-          { driverId },
+          { userId },
         ),
       );
       expect(result.accepted).toBe(POSITION_SOURCES.length);
@@ -375,10 +420,10 @@ describe("tracking", () => {
 
     it("rejects the whole batch outside an open shift — the privacy gate", async () => {
       const tenantId = await seedTenant("trk-offshift");
-      const driverId = await offShiftDriver(tenantId);
+      const { userId } = await offShiftDriver(tenantId);
 
       await expect(
-        asTenant(tenantId, () => telemetry.ingestBatch(batch(), { driverId })),
+        asTenant(tenantId, () => telemetry.ingestBatch(batch(), { userId })),
       ).rejects.toMatchObject({ code: "TELEMETRY_OUTSIDE_SHIFT" });
 
       await writer.flush();
@@ -387,7 +432,7 @@ describe("tracking", () => {
 
     it("rejects positions whose accuracy is worse than the threshold", async () => {
       const tenantId = await seedTenant("trk-accuracy");
-      const driverId = await onShiftDriver(tenantId);
+      const { userId } = await onShiftDriver(tenantId);
 
       const result = await asTenant(tenantId, () =>
         telemetry.ingestBatch(
@@ -398,7 +443,7 @@ describe("tracking", () => {
               point(36.8008, 10.1817, 10, { acc: 500 }),
             ],
           }),
-          { driverId },
+          { userId },
         ),
       );
 
@@ -409,7 +454,7 @@ describe("tracking", () => {
 
     it("rejects a position stamped far in the future", async () => {
       const tenantId = await seedTenant("trk-skew");
-      const driverId = await onShiftDriver(tenantId);
+      const { userId } = await onShiftDriver(tenantId);
 
       const result = await asTenant(tenantId, () =>
         telemetry.ingestBatch(
@@ -419,7 +464,7 @@ describe("tracking", () => {
               { t: new Date(Date.now() + 3 * 3600_000).toISOString(), lat: 36.8, lon: 10.18 },
             ],
           }),
-          { driverId },
+          { userId },
         ),
       );
 
@@ -429,13 +474,13 @@ describe("tracking", () => {
 
     it("is idempotent when the driver app replays a batch", async () => {
       const tenantId = await seedTenant("trk-replay");
-      const driverId = await onShiftDriver(tenantId);
+      const { userId } = await onShiftDriver(tenantId);
       const payload = batch({
         positions: [point(36.8, 10.18, 20), point(36.801, 10.181, 10)],
       });
 
-      const first = await asTenant(tenantId, () => telemetry.ingestBatch(payload, { driverId }));
-      const replay = await asTenant(tenantId, () => telemetry.ingestBatch(payload, { driverId }));
+      const first = await asTenant(tenantId, () => telemetry.ingestBatch(payload, { userId }));
+      const replay = await asTenant(tenantId, () => telemetry.ingestBatch(payload, { userId }));
       await writer.flush();
 
       expect(first.accepted).toBe(2);
@@ -446,7 +491,7 @@ describe("tracking", () => {
 
     it("rejects invalid coordinates and unknown fields", async () => {
       const tenantId = await seedTenant("trk-validation");
-      const driverId = await onShiftDriver(tenantId);
+      const { userId } = await onShiftDriver(tenantId);
 
       for (const positions of [
         [{ t: new Date().toISOString(), lat: 91, lon: 10 }],
@@ -456,23 +501,23 @@ describe("tracking", () => {
         [{ t: new Date().toISOString(), lat: 36.8, lon: 10.18, altitude: 12 }],
       ]) {
         await expect(
-          asTenant(tenantId, () => telemetry.ingestBatch(batch({ positions }), { driverId })),
+          asTenant(tenantId, () => telemetry.ingestBatch(batch({ positions }), { userId })),
         ).rejects.toThrow();
       }
     });
 
     it("rejects an empty batch and one over 1000 positions", async () => {
       const tenantId = await seedTenant("trk-bounds");
-      const driverId = await onShiftDriver(tenantId);
+      const { userId } = await onShiftDriver(tenantId);
 
       await expect(
-        asTenant(tenantId, () => telemetry.ingestBatch(batch({ positions: [] }), { driverId })),
+        asTenant(tenantId, () => telemetry.ingestBatch(batch({ positions: [] }), { userId })),
       ).rejects.toThrow();
       await expect(
         asTenant(tenantId, () =>
           telemetry.ingestBatch(
             batch({ positions: Array.from({ length: 1_001 }, () => point(36.8, 10.18)) }),
-            { driverId },
+            { userId },
           ),
         ),
       ).rejects.toThrow();
@@ -484,7 +529,7 @@ describe("tracking", () => {
   describe("batched writer", () => {
     it("flushes when the row threshold is reached, without waiting for the timer", async () => {
       const tenantId = await seedTenant("trk-flush-rows");
-      const driverId = await onShiftDriver(tenantId);
+      const { driverId } = await onShiftDriver(tenantId);
       const eager = new TelemetryWriter(
         telemetrySql,
         testConfig({ TELEMETRY_FLUSH_ROWS: 3, TELEMETRY_FLUSH_INTERVAL_MS: 600_000 }),
@@ -544,7 +589,7 @@ describe("tracking", () => {
 
     it("drains the buffer on shutdown rather than losing the last second", async () => {
       const tenantId = await seedTenant("trk-shutdown");
-      const driverId = await onShiftDriver(tenantId);
+      const { driverId } = await onShiftDriver(tenantId);
       const lazy = new TelemetryWriter(
         telemetrySql,
         testConfig({ TELEMETRY_FLUSH_ROWS: 1_000_000, TELEMETRY_FLUSH_INTERVAL_MS: 600_000 }),
@@ -575,7 +620,7 @@ describe("tracking", () => {
 
     it("flush() does not return while rows enqueued mid-flush are still buffered", async () => {
       const tenantId = await seedTenant("trk-midflush");
-      const driverId = await onShiftDriver(tenantId);
+      const { driverId } = await onShiftDriver(tenantId);
 
       const lazy = new TelemetryWriter(
         telemetrySql,
@@ -633,7 +678,7 @@ describe("tracking", () => {
      */
     it("flush() does not return while ANOTHER flush is still writing", async () => {
       const tenantId = await seedTenant("trk-concurrent-flush");
-      const driverId = await onShiftDriver(tenantId);
+      const { driverId } = await onShiftDriver(tenantId);
 
       const lazy = new TelemetryWriter(
         telemetrySql,
@@ -676,8 +721,8 @@ describe("tracking", () => {
     it("writes each tenant's rows under its own tenant, never mixed", async () => {
       const tenantA = await seedTenant("trk-mix-a");
       const tenantB = await seedTenant("trk-mix-b");
-      const driverA = await onShiftDriver(tenantA);
-      const driverB = await onShiftDriver(tenantB);
+      const { driverId: driverA } = await onShiftDriver(tenantA);
+      const { driverId: driverB } = await onShiftDriver(tenantB);
 
       // The buffer is process-wide and holds many tenants at once. This is the
       // one structure in the codebase where that is true, so it is tested.
@@ -728,7 +773,7 @@ describe("tracking", () => {
 
     it("contains a failing tenant's batch without losing another tenant's rows", async () => {
       const good = await seedTenant("trk-isolate-good");
-      const driverId = await onShiftDriver(good);
+      const { driverId } = await onShiftDriver(good);
       const isolated = new TelemetryWriter(
         telemetrySql,
         testConfig({ TELEMETRY_FLUSH_ROWS: 1_000_000, TELEMETRY_FLUSH_INTERVAL_MS: 600_000 }),
@@ -795,7 +840,7 @@ describe("tracking", () => {
   describe("presence", () => {
     it("records and reads a driver's last-known position", async () => {
       const tenantId = await seedTenant("trk-presence");
-      const driverId = await onShiftDriver(tenantId);
+      const { driverId } = await onShiftDriver(tenantId);
       const at = new Date();
 
       await presence.record(tenantId, {
@@ -817,8 +862,8 @@ describe("tracking", () => {
 
     it("lists online drivers without scanning the keyspace", async () => {
       const tenantId = await seedTenant("trk-online");
-      const first = await onShiftDriver(tenantId);
-      const second = await onShiftDriver(tenantId);
+      const { driverId: first } = await onShiftDriver(tenantId);
+      const { driverId: second } = await onShiftDriver(tenantId);
 
       for (const driverId of [first, second]) {
         await presence.record(tenantId, {
@@ -838,7 +883,7 @@ describe("tracking", () => {
 
     it("treats a driver last seen beyond the TTL as offline", async () => {
       const tenantId = await seedTenant("trk-stale");
-      const driverId = await onShiftDriver(tenantId);
+      const { driverId } = await onShiftDriver(tenantId);
 
       await presence.record(tenantId, {
         driverId,
@@ -856,7 +901,9 @@ describe("tracking", () => {
 
     it("reads many positions in one round trip", async () => {
       const tenantId = await seedTenant("trk-mget");
-      const drivers = [await onShiftDriver(tenantId), await onShiftDriver(tenantId)];
+      const drivers = (await Promise.all([onShiftDriver(tenantId), onShiftDriver(tenantId)])).map(
+        (d) => d.driverId,
+      );
       for (const driverId of drivers) {
         await presence.record(tenantId, {
           driverId,
@@ -886,7 +933,7 @@ describe("tracking", () => {
 
     it("clears presence when a shift ends", async () => {
       const tenantId = await seedTenant("trk-clear");
-      const driverId = await onShiftDriver(tenantId);
+      const { driverId } = await onShiftDriver(tenantId);
       await presence.record(tenantId, {
         driverId,
         lat: 36.8,
@@ -905,7 +952,7 @@ describe("tracking", () => {
     it("keeps one tenant's presence invisible to another", async () => {
       const tenantA = await seedTenant("trk-pres-iso-a");
       const tenantB = await seedTenant("trk-pres-iso-b");
-      const driverId = await onShiftDriver(tenantA);
+      const { driverId } = await onShiftDriver(tenantA);
 
       await presence.record(tenantA, {
         driverId,
@@ -927,7 +974,7 @@ describe("tracking", () => {
   describe("plane separation", () => {
     it("publishes NO business event for ordinary positions", async () => {
       const tenantId = await seedTenant("trk-noevents");
-      const driverId = await onShiftDriver(tenantId);
+      const { userId } = await onShiftDriver(tenantId);
 
       // ⚠️ Drain first. The writer is SHARED across this file and its buffer is
       // bounded — rows left by an earlier test count towards the high-water mark,
@@ -943,7 +990,7 @@ describe("tracking", () => {
       for (let i = 0; i < 20; i += 1) {
         await asTenant(tenantId, () =>
           telemetry.ingestBatch(batch({ positions: [point(36.8 + i / 10_000, 10.18, 60 - i)] }), {
-            driverId,
+            userId,
           }),
         );
       }
@@ -972,11 +1019,11 @@ describe("tracking", () => {
     it("hides one tenant's positions from another", async () => {
       const tenantA = await seedTenant("trk-iso-a");
       const tenantB = await seedTenant("trk-iso-b");
-      const driverA = await onShiftDriver(tenantA);
+      const { userId: userA } = await onShiftDriver(tenantA);
 
       await asTenant(tenantA, () =>
         telemetry.ingestBatch(batch({ positions: [point(36.8, 10.18, 5)] }), {
-          driverId: driverA,
+          userId: userA,
         }),
       );
       await writer.flush();
@@ -993,9 +1040,9 @@ describe("tracking", () => {
 
     it("refuses an update or delete even from the application role", async () => {
       const tenantId = await seedTenant("trk-append-only");
-      const driverId = await onShiftDriver(tenantId);
+      const { userId } = await onShiftDriver(tenantId);
       await asTenant(tenantId, () =>
-        telemetry.ingestBatch(batch({ positions: [point(36.8, 10.18, 5)] }), { driverId }),
+        telemetry.ingestBatch(batch({ positions: [point(36.8, 10.18, 5)] }), { userId }),
       );
       await writer.flush();
 

@@ -145,6 +145,49 @@ export class ShiftService {
     });
   }
 
+  /**
+   * The privacy gate for an authenticated USER, resolving their driver identity
+   * in the same query.
+   *
+   * ⚠️ A user id and a driver id are DIFFERENT things, and conflating them is
+   * how GPS ingest was broken end-to-end: the telemetry controller passed
+   * `principal.userId` where `isWithinOpenShift` expects `drivers.id`, so every
+   * request from a real driver was refused with `TELEMETRY_OUTSIDE_SHIFT` and
+   * any row that had been written would have carried a user id in
+   * `driver_positions.driver_id`. The unit tests missed it by calling the
+   * service directly with a driver id, bypassing the controller.
+   *
+   * ONE query, not two. This is the hottest path in the system (~40 req/s at
+   * MVP, 10k positions/sec at Tier 3) and it already paid for a shift lookup;
+   * resolving the driver through a separate `SELECT` would have doubled the
+   * per-request database cost of the endpoint most sensitive to it. The join is
+   * covered by `drivers.user_id` and the shift index.
+   *
+   * Returns null when the user is not a driver, or has no shift covering `at` —
+   * both are "do not accept this location", and telling them apart would leak
+   * whether a given account is a driver.
+   */
+  async openShiftForUser(
+    userId: string,
+    at: Date = new Date(),
+  ): Promise<{ readonly driverId: string; readonly shiftId: string } | null> {
+    return this.database.withTenant(async (tx) => {
+      const rows = await tx
+        .select({ driverId: drivers.id, shiftId: shifts.id })
+        .from(shifts)
+        .innerJoin(drivers, eq(drivers.id, shifts.driverId))
+        .where(
+          and(
+            eq(drivers.userId, userId),
+            lte(shifts.startedAt, at),
+            or(isNull(shifts.endedAt), gte(shifts.endedAt, at)),
+          ),
+        )
+        .limit(1);
+      return rows[0] ?? null;
+    });
+  }
+
   async getById(id: string): Promise<Shift> {
     return this.database.withTenant(async (tx) => {
       const rows = await tx.select().from(shifts).where(eq(shifts.id, id)).limit(1);
