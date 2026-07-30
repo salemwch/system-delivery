@@ -872,6 +872,15 @@ describe("tracking", () => {
       const tenantId = await seedTenant("trk-noevents");
       const driverId = await onShiftDriver(tenantId);
 
+      // ⚠️ Drain first. The writer is SHARED across this file and its buffer is
+      // bounded — rows left by an earlier test count towards the high-water mark,
+      // and past it `enqueue` sheds the OLDEST, which under load meant one of
+      // this test's own positions. That is correct writer behaviour and a broken
+      // test: the coupling is what has to go, not the shedding.
+      await writer.flush();
+      const droppedBefore = writer.stats().dropped;
+      const failedBefore = writer.stats().failedFlushes;
+
       // docs/03 §2.4: a GPS ping is not a business event. Raw telemetry must
       // never reach the outbox — it would swamp every consumer.
       for (let i = 0; i < 20; i += 1) {
@@ -881,15 +890,15 @@ describe("tracking", () => {
           }),
         );
       }
-      const failedBefore = writer.stats().failedFlushes;
       await writer.flush();
 
-      // Asserted FIRST, and it is not decoration. `write()` deliberately drops a
-      // group whose insert failed rather than re-buffering it ("loud, counted,
-      // and dropped") — so a contended telemetry pool can legitimately store 19
-      // of 20. Checking the counter here means a flush failure reports itself as
-      // a flush failure, instead of surfacing as an inexplicable off-by-one.
+      // Both counters asserted BEFORE the row count, and neither is decoration.
+      // The writer legitimately loses rows two ways — a failed insert is dropped
+      // rather than re-buffered, and a full buffer sheds the oldest — so an
+      // off-by-one here has two possible causes. Checking them first means each
+      // reports itself by name instead of as an inexplicable 19-of-20.
       expect(writer.stats().failedFlushes).toBe(failedBefore);
+      expect(writer.stats().dropped).toBe(droppedBefore);
       expect(await storedPositions(tenantId)).toHaveLength(20);
 
       // The actual subject of this test: raw telemetry must never reach the

@@ -5,6 +5,7 @@ import { ConfigBootstrapService } from "./application/config-bootstrap.service.j
 import { FeatureService } from "./application/feature.service.js";
 import { OutboxService } from "./application/outbox.service.js";
 import { AuditService } from "./application/audit.service.js";
+import { DeadLetterService } from "./application/dead-letter.service.js";
 import { OperatingConfigService } from "./application/operating-config.service.js";
 import { TenantService } from "./application/tenant.service.js";
 import { NOTIFICATION_PROVIDER } from "./domain/notification-provider.js";
@@ -26,6 +27,7 @@ import { ConsoleNotificationProvider } from "./infrastructure/console-notificati
     ConfigBootstrapService,
     AuditService,
     OperatingConfigService,
+    DeadLetterService,
     // The single binding of the outbound-message transport. Both `notification`
     // (business notifications) and `identity` (driver OTP) consume it, so it is
     // bound once here rather than in each.
@@ -42,6 +44,7 @@ import { ConsoleNotificationProvider } from "./infrastructure/console-notificati
     TenantService,
     AuditService,
     OperatingConfigService,
+    DeadLetterService,
     NOTIFICATION_PROVIDER,
   ],
 })

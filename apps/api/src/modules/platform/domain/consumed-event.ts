@@ -51,3 +51,17 @@ export interface EventHandler {
 
 /** DI token for the {@link EventHandler} an {@link EventStreamConsumer} drives. */
 export const EVENT_HANDLER = Symbol("EVENT_HANDLER");
+
+/**
+ * Handlers the DEAD-LETTER admin path may replay through.
+ *
+ * ⚠️ A separate token from {@link EVENT_HANDLER}, deliberately. That one is
+ * single-valued and bound only in the worker composition root, where the stream
+ * consumer runs; this one is a LIST, is optional, and is bound in the API where
+ * the admin surface lives. Overloading the single token would either break the
+ * API's dependency graph or change what the consumer receives.
+ *
+ * Unbound means replay reports that no handler is registered in this process,
+ * rather than failing to start.
+ */
+export const REPLAY_HANDLERS = Symbol("REPLAY_HANDLERS");

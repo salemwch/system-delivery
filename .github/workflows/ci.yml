@@ -178,12 +178,48 @@ jobs:
       - name: Semgrep
         run: semgrep --config=p/typescript --config=p/security-audit --config=.semgrep.yml --error --skip-unknown-extensions .
 
+  terraform:
+    name: Terraform format and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.9.8
+          # The wrapper rewrites stdout, which breaks the exit codes below.
+          terraform_wrapper: false
+
+      - name: Format check
+        run: terraform fmt -check -recursive infra/terraform
+
+      # -backend=false: validation must not need cloud credentials or touch
+      # remote state. It checks syntax, types and module wiring, which is what
+      # actually catches a broken variable reference before an apply does.
+      - name: Validate modules
+        run: |
+          for dir in infra/terraform/modules/*/; do
+            echo "== $dir"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
+
+      - name: Validate environments
+        run: |
+          for dir in infra/terraform/environments/*/; do
+            echo "== $dir"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
   # Single required status check, so branch protection needs one entry rather
   # than being updated every time a job is added or renamed.
   ci-passed:
     name: CI passed
     runs-on: ubuntu-latest
-    needs: [static-analysis, test, secret-scan, dependency-audit, sast]
+    needs: [static-analysis, test, secret-scan, dependency-audit, sast, terraform]
     if: always()
     steps:
       - name: Fail if any required job did not succeed

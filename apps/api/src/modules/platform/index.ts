@@ -10,6 +10,8 @@ export { FeatureService } from "./application/feature.service.js";
 export { TenantService } from "./application/tenant.service.js";
 export { AuditService, ensureAuditPartitions } from "./application/audit.service.js";
 export { OperatingConfigService } from "./application/operating-config.service.js";
+export { DeadLetterService } from "./application/dead-letter.service.js";
+export type { DeadLetterPage, ReplayOutcome } from "./application/dead-letter.service.js";
 export type {
   FailureReasonView,
   ReattemptDecision,
@@ -68,7 +70,7 @@ export type {
 } from "./domain/notification-provider.js";
 export { ConsoleNotificationProvider } from "./infrastructure/console-notification.provider.js";
 
-export { EVENT_HANDLER } from "./domain/consumed-event.js";
+export { EVENT_HANDLER, REPLAY_HANDLERS } from "./domain/consumed-event.js";
 export type { ConsumedEvent, EventHandler } from "./domain/consumed-event.js";
 
 export {

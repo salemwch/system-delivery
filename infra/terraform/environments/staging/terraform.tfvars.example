@@ -1,0 +1,28 @@
+# Copy to terraform.tfvars and fill in. That file is git-ignored.
+#
+# ⚠️ The three credentials below are NOT set here in CI — they arrive as
+# TF_VAR_do_token, TF_VAR_spaces_access_id and TF_VAR_spaces_secret_key from the
+# secret store. A tfvars file holding production credentials on a laptop is the
+# thing this arrangement exists to avoid.
+
+# do_token          = "dop_v1_..."
+# spaces_access_id  = "..."
+# spaces_secret_key = "..."
+
+# Frankfurt: closest DO region to Tunisia, and keeps data in the EU.
+region = "fra1"
+
+# Upload the certificate to DigitalOcean first, then name it here.
+certificate_name = "delivery-platform-staging"
+
+# Staging permits SSH from the office range — reproducing an issue here is how
+# it gets diagnosed without touching production.
+ssh_key_fingerprints = []
+ssh_source_addresses = []
+
+# Origins allowed to upload POD media directly via a pre-signed URL.
+# Never "*": a wildcard lets any page a driver visits replay their URL.
+allowed_origins = [
+  "https://staging.example.tn",
+  "https://driver-staging.example.tn",
+]

@@ -5,14 +5,14 @@ import { ComplaintModule } from "./modules/complaint/index.js";
 import { CustodyModule } from "./modules/custody/index.js";
 import { DirectoryModule } from "./modules/directory/index.js";
 import { DispatchModule } from "./modules/dispatch/index.js";
-import { FinanceModule } from "./modules/finance/index.js";
+import { FinanceModule, LedgerEventHandler } from "./modules/finance/index.js";
 import { FleetModule } from "./modules/fleet/index.js";
 import { IdentityModule } from "./modules/identity/index.js";
 import { NetworkModule } from "./modules/network/index.js";
-import { NotificationModule } from "./modules/notification/index.js";
+import { NotificationEventHandler, NotificationModule } from "./modules/notification/index.js";
 import { PickupModule } from "./modules/pickup/index.js";
-import { PlatformModule } from "./modules/platform/index.js";
-import { ShipmentModule } from "./modules/shipment/index.js";
+import { PlatformModule, REPLAY_HANDLERS } from "./modules/platform/index.js";
+import { PickupScanEventHandler, ShipmentModule } from "./modules/shipment/index.js";
 import { TrackingModule } from "./modules/tracking/index.js";
 import { AppConfigModule } from "./shared/config/config.module.js";
 import { AppConfigService } from "./shared/config/index.js";
@@ -92,6 +92,30 @@ import { DatabaseModule } from "./shared/database/database.module.js";
         },
       }),
     }),
+  ],
+  providers: [
+    /**
+     * The handlers the dead-letter admin path may replay through.
+     *
+     * ⚠️ Bound HERE rather than in each module, and deliberately separate from
+     * `EVENT_HANDLER` — that token is single-valued and belongs to the worker's
+     * stream consumer. This one is a list, and it exists so an operator can
+     * replay a poison event from the API where the admin surface lives.
+     *
+     * The API does NOT consume the stream; these handlers only ever run when
+     * someone explicitly presses replay. Adding a consumer means adding it to
+     * this list, or replay will report that no handler is registered — which is
+     * an honest failure rather than a silent one.
+     */
+    {
+      provide: REPLAY_HANDLERS,
+      inject: [NotificationEventHandler, PickupScanEventHandler, LedgerEventHandler],
+      useFactory: (
+        notification: NotificationEventHandler,
+        pickupScan: PickupScanEventHandler,
+        ledger: LedgerEventHandler,
+      ) => [notification, pickupScan, ledger],
+    },
   ],
 })
 export class AppModule {}

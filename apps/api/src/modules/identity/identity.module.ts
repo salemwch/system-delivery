@@ -11,6 +11,7 @@ import { MfaService } from "./application/mfa.service.js";
 import { OtpService } from "./application/otp.service.js";
 import { UserService } from "./application/user.service.js";
 import { AuditController } from "./api/audit.controller.js";
+import { DeadLetterController } from "./api/dead-letter.controller.js";
 import { MfaController } from "./api/mfa.controller.js";
 import { AuthController } from "./api/auth.controller.js";
 import { UserController } from "./api/user.controller.js";
@@ -31,7 +32,13 @@ import { TenantContextInterceptor } from "./api/tenant-context.interceptor.js";
  */
 @Module({
   imports: [PlatformModule],
-  controllers: [AuthController, UserController, AuditController, MfaController],
+  controllers: [
+    AuthController,
+    UserController,
+    AuditController,
+    MfaController,
+    DeadLetterController,
+  ],
   providers: [
     PasswordService,
     TokenService,
