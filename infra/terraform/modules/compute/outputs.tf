@@ -9,6 +9,6 @@ output "app_private_ips" {
 }
 
 output "compute_private_ips" {
-  description = "OSRM host(s). Becomes OSRM_BASE_URL."
+  description = "Geospatial host(s) — OSRM (:5000) and Nominatim (:8080). Becomes OSRM_URL and NOMINATIM_URL."
   value       = digitalocean_droplet.compute[*].ipv4_address_private
 }

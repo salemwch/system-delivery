@@ -16,7 +16,7 @@ output "app_private_ips" {
 }
 
 output "osrm_private_ips" {
-  description = "Becomes OSRM_BASE_URL once the Maghreb extract is loaded."
+  description = "Geospatial host(s). Becomes OSRM_URL (:5000) and NOMINATIM_URL (:8080) once the OSM extract is loaded."
   value       = module.compute.compute_private_ips
 }
 

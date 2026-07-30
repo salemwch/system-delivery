@@ -158,7 +158,17 @@ AddressService.serviceTimeMedian(addressId)      // SQL aggregate, not a model
 MerchantService.getById(id)
 ```
 
-**Notes.** `AddressService.resolve()` encapsulates normalisation → geocoding → confidence scoring → caching. **Low confidence blocks auto-dispatch.** Isolating the geocoding provider here means Mapbox can be swapped without touching any other module.
+**Notes.** `AddressService.resolve()` encapsulates normalisation → geocoding → confidence scoring → caching. **Low confidence blocks auto-dispatch.** Isolating the geocoding provider here means the geocoder can be swapped without touching any other module.
+
+**Bound implementation.** `GEOCODER=nominatim` selects a chain: a **self-hosted Nominatim** first — on the same OpenStreetMap extract OSRM uses, so there is one dataset to keep current — then a commercial provider for what it cannot place. Three properties of that ordering are deliberate:
+
+- **A customer's home address does not leave the deployment** for the common case. Every geocode is personal data about someone who never agreed to a foreign provider's terms.
+- **No per-request cost** on the common case, so a bulk CSV import is not a bill.
+- **The chain falls through on LOW CONFIDENCE, not only on `null`.** A geocoder returning a governorate centroid for a street address has "succeeded" and produced a coordinate that sends a driver into the middle of a city. Below `AUTO_DISPATCH_CONFIDENCE_FLOOR` the next provider is tried; the best answer is still returned, and its confidence is what blocks auto-dispatch.
+
+Confidence is derived from **match granularity** (building / house number > street > boundary), never from Nominatim's `importance`, which is a prominence score — a famous city ranks high on a vague query, which is exactly the wrong signal. Every request is constrained by `countrycodes`; without it "Ariana" matches a town in Iran and returns a perfectly plausible coordinate.
+
+`GEOCODER=manual` remains the default, and a geocoder outage degrades to an unlocated address rather than failing shipment creation.
 
 ---
 

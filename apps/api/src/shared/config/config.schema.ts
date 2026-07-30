@@ -173,6 +173,23 @@ export const configSchema = z
       .default("true")
       .transform((value) => value === "true"),
 
+    // ── Geocoding ────────────────────────────────────────────────────────────
+    /**
+     * Which geocoder resolves addresses.
+     *
+     * `manual` by DEFAULT — the same fail-safe direction as the notification
+     * channels: a box without a Nominatim instance stores addresses unlocated
+     * (which correctly blocks auto-dispatch) rather than failing to accept a
+     * shipment at all.
+     */
+    GEOCODER: z.enum(["manual", "nominatim"]).default("manual"),
+    /**
+     * ⚠️ YOUR OWN instance. The public nominatim.openstreetmap.org permits ~1
+     * request/second and forbids bulk use, and pointing at it would also ship
+     * every customer address to a third party.
+     */
+    NOMINATIM_URL: z.string().default(""),
+
     // ── Routing ──────────────────────────────────────────────────────────────
     OSRM_URL: z.url(),
     /**

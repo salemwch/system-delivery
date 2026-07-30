@@ -30,7 +30,11 @@ export interface GeocodeResult {
   readonly location: Coordinates;
   /** 0–1. The provider's own confidence in the match. */
   readonly confidence: number;
-  readonly source: "mapbox" | "google";
+  /**
+   * Which provider produced this. Recorded on the row: a systematic geocoding
+   * failure is diagnosed by provenance, not guessed at.
+   */
+  readonly source: "nominatim" | "mapbox" | "google";
 }
 
 export interface GeocodingProvider {

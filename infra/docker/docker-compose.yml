@@ -113,7 +113,50 @@ services:
       retries: 10
       start_period: 40s
 
+  # Nominatim — address geocoding from the SAME OpenStreetMap extract OSRM uses.
+  #
+  # Self-hosted rather than a commercial API: no per-request cost on bulk import,
+  # and a customer's home address never leaves the deployment (the posture INPDP
+  # expects for personal data). Coverage of informal Tunisian addressing is the
+  # trade-off, which is why a commercial provider chains in behind it.
+  #
+  # Disabled by default. It imports the PBF on first boot — minutes for Tunisia,
+  # once — into the named volume below:
+  #   pnpm osrm:prepare        (downloads tunisia-latest.osm.pbf, shared)
+  #   pnpm geocoder:up
+  # then set GEOCODER=nominatim.
+  nominatim:
+    image: mediagis/nominatim:5.1@sha256:e07824605225985e74433e5b3d5e07b077e3aec868e48af18a7ee79025475db7
+    container_name: dp-nominatim
+    profiles: ["geocoding"]
+    restart: unless-stopped
+    environment:
+      # Reuses the extract prepared for OSRM — one dataset to keep current, not two.
+      PBF_PATH: /data/tunisia-latest.osm.pbf
+      NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:-nominatim_dev}
+      # Import threads. Tunisia is small; this keeps the one-time import brief
+      # without starving the rest of the local stack.
+      THREADS: 4
+    ports:
+      - "${NOMINATIM_PORT:-8080}:8080"
+    volumes:
+      # The OSRM data directory, READ-ONLY: Nominatim only reads the PBF, and a
+      # geocoder must not be able to corrupt the routing extract.
+      - ./osrm-data:/data:ro
+      # The imported database is large and slow to rebuild, so it outlives the
+      # container.
+      - nominatim-data:/var/lib/postgresql/16/main
+    shm_size: 1gb
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:8080/status' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      # The first boot imports the extract; do not report unhealthy while it runs.
+      start_period: 15m
+
 volumes:
   postgres-data:
+  nominatim-data:
   valkey-data:
   minio-data:

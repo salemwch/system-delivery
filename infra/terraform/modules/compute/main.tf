@@ -47,12 +47,15 @@ resource "digitalocean_droplet" "app" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Compute droplet — OSRM only.
+# Compute droplet — the geospatial services: OSRM and Nominatim.
 #
-# Isolated from the API path because OSRM's memory footprint is large and its
-# graph load is bursty; a route optimisation must never make a dispatcher's
-# board slow. docs/09 §4.1 also placed the solver and ML service here, but
-# ADR-005 defers both, so at MVP this box runs one thing.
+# Isolated from the API path because both have large memory footprints and
+# bursty load; a route optimisation or a bulk geocode must never make a
+# dispatcher's board slow. They share a box because they share the same
+# OpenStreetMap extract — one dataset to keep current, not two.
+#
+# docs/09 §4.1 also placed the solver and ML service here, but ADR-005 defers
+# both.
 # ─────────────────────────────────────────────────────────────────────────────
 resource "digitalocean_droplet" "compute" {
   count = var.compute_droplet_count
@@ -75,9 +78,11 @@ resource "digitalocean_droplet" "compute" {
 # ─────────────────────────────────────────────────────────────────────────────
 # The compute droplet is reachable from the app droplets only.
 #
-# OSRM has no authentication of its own. Anything that can reach the port can
-# ask it to route, which at worst is a free routing service on your bill and at
-# best is an unauthenticated dependency in the middle of the network.
+# ⚠️ NEITHER SERVICE AUTHENTICATES. Anything that can reach OSRM's port can ask
+# it to route — at worst a free routing service on your bill. Nominatim is more
+# serious: an exposed geocoder is an open query interface, and its access log
+# would accumulate the addresses this platform is trusted with. Both are
+# VPC-only, and that is what makes running them unauthenticated acceptable.
 # ─────────────────────────────────────────────────────────────────────────────
 resource "digitalocean_firewall" "compute" {
   count = var.compute_droplet_count > 0 ? 1 : 0
@@ -85,9 +90,17 @@ resource "digitalocean_firewall" "compute" {
   name = "${var.project}-${var.environment}-compute"
   tags = [var.compute_droplet_tag]
 
+  # OSRM.
   inbound_rule {
     protocol         = "tcp"
     port_range       = "5000"
+    source_addresses = [var.vpc_cidr]
+  }
+
+  # Nominatim.
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "8080"
     source_addresses = [var.vpc_cidr]
   }
 

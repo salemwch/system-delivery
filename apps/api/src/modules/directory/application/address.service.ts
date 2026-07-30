@@ -47,7 +47,7 @@ export interface AddressView {
 interface Located {
   readonly coordinates: Coordinates | null;
   readonly confidence: number;
-  readonly source: "manual" | "driver_corrected" | "mapbox" | "google" | "none";
+  readonly source: "manual" | "driver_corrected" | "nominatim" | "mapbox" | "google" | "none";
 }
 
 /**
