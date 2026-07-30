@@ -47,7 +47,10 @@ const ROUTES: Readonly<Record<string, Route>> = {
     recipientField: "recipientPhone",
     params: ["trackingNumber", "recipientName", "reason"],
   },
-  "shipment.return_pending": {
+  // ⚠️ `shipment.return_initiated`, not `shipment.return_pending`. RETURN_PENDING
+  // is the STATUS; the event carries the fact. Keyed on the status name this
+  // route matched nothing and the message was never sent.
+  "shipment.return_initiated": {
     channel: "SMS",
     recipientField: "recipientPhone",
     params: ["trackingNumber"],
@@ -68,6 +71,11 @@ const ROUTES: Readonly<Record<string, Route>> = {
     channel: "SMS",
     recipientField: "merchantPhone",
     params: ["reference", "amount"],
+  },
+  "shipment.returned": {
+    channel: "SMS",
+    recipientField: "merchantPhone",
+    params: ["trackingNumber"],
   },
 
   // ── Driver (PUSH) ──────────────────────────────────────────────────────────

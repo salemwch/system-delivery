@@ -4,6 +4,11 @@ import process from "node:process";
 import postgres from "postgres";
 import type { Sql, TransactionSql } from "postgres";
 
+import {
+  DEFAULT_FAILURE_REASONS,
+  DEFAULT_SLA_TEMPLATES,
+  DEFAULT_WORKING_WEEK,
+} from "../src/modules/platform/domain/operating-defaults.js";
 import { runMigrations } from "../src/shared/database/migrator.js";
 
 /**
@@ -139,19 +144,73 @@ export async function withTenantContext<T>(
   }) as Promise<T>;
 }
 
-/** Creates an isolated tenant with a unique slug, returning its id. */
+/**
+ * Creates an isolated tenant with a unique slug, returning its id.
+ *
+ * ⚠️ Seeds the operating-config defaults, because `TenantService.provision`
+ * does. A test tenant without them behaves like no tenant production will ever
+ * have — `decideReattempt` finds no `CUSTOMER_REFUSED` row, fails open, and a
+ * test asserting the refusal policy passes against the wrong behaviour. The
+ * defaults come from the same constants provisioning uses, so the two cannot
+ * drift.
+ *
+ * ⚠️ ONE TRANSACTION, and that is not tidiness. Inserting the tenant and then
+ * seeding it separately means a failed seed leaves a tenant row the caller never
+ * received an id for — so `createdTenants.push(...)` never runs and `afterEach`
+ * cannot clean it. Tests run against the DEV database, so those rows accumulate
+ * there for real. Diagnosed by exactly that: 24 orphans after one broken run.
+ *
+ * The `set_config` is what makes the seed possible at all: the four
+ * operating-config tables are FORCE RLS and `dp_migrator` owns them, and FORCE
+ * binds the owner too — without a tenant context every INSERT fails its
+ * WITH CHECK. It must come AFTER the tenant row exists, which is also why the
+ * whole thing is one transaction rather than a scoped helper.
+ */
 export async function createTenant(migrator: Sql, label: string): Promise<string> {
   const suffix = Math.random().toString(36).slice(2, 10);
-  const rows = await migrator<{ id: string }[]>`
-    insert into tenants (name, slug, status, country_code, default_currency, default_timezone)
-    values (${`Test ${label}`}, ${`test-${label}-${suffix}`}, 'ACTIVE', 'TN', 'TND', 'Africa/Tunis')
-    returning id
-  `;
-  const row = rows[0];
-  if (row === undefined) {
-    throw new Error("failed to create test tenant");
+  return migrator.begin(async (tx) => {
+    const rows = await tx<{ id: string }[]>`
+      insert into tenants (name, slug, status, country_code, default_currency, default_timezone)
+      values (${`Test ${label}`}, ${`test-${label}-${suffix}`}, 'ACTIVE', 'TN', 'TND', 'Africa/Tunis')
+      returning id
+    `;
+    const row = rows[0];
+    if (row === undefined) {
+      throw new Error("failed to create test tenant");
+    }
+    await tx`select set_config('app.current_tenant_id', ${row.id}, true)`;
+    await insertOperatingDefaults(tx, row.id);
+    return row.id;
+  });
+}
+
+async function insertOperatingDefaults(migrator: TransactionSql, tenantId: string): Promise<void> {
+  for (const reason of DEFAULT_FAILURE_REASONS) {
+    await migrator`
+      insert into failure_reasons
+        (tenant_id, code, labels, allows_reattempt, fault, display_order, active)
+      values (${tenantId}, ${reason.code}, ${migrator.json(reason.labels)},
+              ${reason.allowsReattempt}, ${reason.fault}, ${reason.displayOrder}, true)
+      on conflict (tenant_id, code) do nothing
+    `;
   }
-  return row.id;
+  for (const day of DEFAULT_WORKING_WEEK) {
+    await migrator`
+      insert into working_hours (tenant_id, day_of_week, opens_at, closes_at, is_working)
+      values (${tenantId}, ${day.dayOfWeek}, ${day.opensAt}::time, ${day.closesAt}::time,
+              ${day.isWorking})
+      on conflict (tenant_id, day_of_week) do nothing
+    `;
+  }
+  for (const template of DEFAULT_SLA_TEMPLATES) {
+    await migrator`
+      insert into sla_templates
+        (tenant_id, service_level, delivery_hours, reattempt_delay_hours, max_attempts)
+      values (${tenantId}, ${template.serviceLevel}, ${template.deliveryHours},
+              ${template.reattemptDelayHours}, ${template.maxAttempts})
+      on conflict (tenant_id, service_level) do nothing
+    `;
+  }
 }
 
 /**

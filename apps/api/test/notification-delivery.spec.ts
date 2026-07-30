@@ -10,6 +10,7 @@ import { FeatureService } from "../src/modules/platform/application/feature.serv
 import { ChannelRoutingProvider } from "../src/modules/platform/infrastructure/channel-routing.provider.js";
 import { ConsoleNotificationProvider } from "../src/modules/platform/infrastructure/console-notification.provider.js";
 import { HttpSmsProvider } from "../src/modules/platform/infrastructure/http-sms.provider.js";
+import { outboxEventName } from "../src/modules/shipment/index.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
 import { ValidationError } from "../src/shared/errors/index.js";
@@ -290,13 +291,22 @@ describe("notification delivery", () => {
       };
     }
 
+    // ⚠️ The shipment names are DERIVED, never spelled out.
+    //
+    // A route was keyed `shipment.return_pending` — the STATUS name — while the
+    // publisher emits `shipment.return_initiated`. Nothing matched, so a customer
+    // was never told their parcel was going back, and a hardcoded list in this
+    // test agreed with the handler because both were wrong in the same way.
+    // Asking the shipment module for the name it actually publishes is the only
+    // version of this assertion that can fail.
     it("handles the customer, merchant and driver events", () => {
       for (const type of [
-        "shipment.out_for_delivery",
-        "shipment.delivered",
-        "delivery.failed",
-        "shipment.return_pending",
-        "shipment.cancelled",
+        outboxEventName("out_for_delivery"),
+        outboxEventName("delivered"),
+        outboxEventName("delivery_failed"),
+        outboxEventName("return_initiated"),
+        outboxEventName("returned"),
+        outboxEventName("cancelled"),
         "pickup.completed",
         "settlement.paid",
         "route.published",

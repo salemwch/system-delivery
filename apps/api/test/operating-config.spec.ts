@@ -21,12 +21,7 @@ import { ShipmentService } from "../src/modules/shipment/application/shipment.se
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
 import { ValidationError } from "../src/shared/errors/index.js";
-import {
-  createTenant,
-  createTestDatabase,
-  deleteTenants,
-  withTenantContext,
-} from "./database.harness.js";
+import { createTenant, createTestDatabase, deleteTenants } from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
 
 /**
@@ -65,58 +60,18 @@ describe("operating config", () => {
     return asStaff(tenantId, () => db.withTenant(fn, asTenantId(tenantId)));
   }
 
+  /**
+   * A tenant with the operating configuration provisioning gives it.
+   *
+   * The defaults used to be re-typed here, which is why this suite kept asserting
+   * against a `SAME_DAY` SLA level no shipment can ever have. `createTenant` now
+   * seeds from the same constants `TenantService.provision` uses, so a default
+   * these tests rely on cannot differ from the one a real courier gets.
+   */
   async function seedTenant(label: string): Promise<string> {
     const id = await createTenant(database.migrator, label);
     createdTenants.push(id);
-    // 0026 seeds only tenants that existed when it ran, so a tenant created
-    // afterwards needs the same defaults. Mirrors what provisioning will do.
-    await seedDefaults(id);
     return id;
-  }
-
-  /** The defaults migration 0026 applies, for tenants created after it ran. */
-  async function seedDefaults(tenantId: string): Promise<void> {
-    await withTenantContext(
-      database.migrator,
-      tenantId,
-      (tx) => tx`
-        insert into failure_reasons (tenant_id, code, labels, allows_reattempt, fault, display_order)
-        values
-          (${tenantId}, 'CUSTOMER_UNAVAILABLE', '{"fr":"Client absent"}'::jsonb, true,  'RECIPIENT', 10),
-          (${tenantId}, 'INSUFFICIENT_CASH',    '{"fr":"Fonds insuffisants"}'::jsonb, true, 'RECIPIENT', 30),
-          (${tenantId}, 'CUSTOMER_REFUSED',     '{"fr":"Refus du client"}'::jsonb, false, 'RECIPIENT', 60),
-          (${tenantId}, 'DAMAGED_PACKAGE',      '{"fr":"Colis endommagé"}'::jsonb, false, 'COURIER',   70)
-        on conflict do nothing
-      `,
-    );
-    await withTenantContext(
-      database.migrator,
-      tenantId,
-      (tx) => tx`
-        insert into working_hours (tenant_id, day_of_week, opens_at, closes_at, is_working)
-        values
-          (${tenantId}, 1, '08:00', '18:00', true),
-          (${tenantId}, 2, '08:00', '18:00', true),
-          (${tenantId}, 3, '08:00', '18:00', true),
-          (${tenantId}, 4, '08:00', '18:00', true),
-          (${tenantId}, 5, '08:00', '18:00', true),
-          (${tenantId}, 6, '08:00', '13:00', true),
-          (${tenantId}, 7, '08:00', '18:00', false)
-        on conflict do nothing
-      `,
-    );
-    await withTenantContext(
-      database.migrator,
-      tenantId,
-      (tx) => tx`
-        insert into sla_templates (tenant_id, service_level, delivery_hours, reattempt_delay_hours, max_attempts)
-        values
-          (${tenantId}, 'STANDARD', 48, 24, 3),
-          (${tenantId}, 'EXPRESS',  24, 12, 3),
-          (${tenantId}, 'SAME_DAY',  8,  4, 2)
-        on conflict do nothing
-      `,
-    );
   }
 
   beforeAll(async () => {
@@ -491,9 +446,13 @@ describe("operating config", () => {
     it("stores the taxonomy and calendar per tenant", async () => {
       const tenantId = await seedTenant("opcfg");
       const templates = await asStaff(tenantId, () => config.listSlaTemplates());
+      // ⚠️ Exactly the three `shipments.service_level` allows. It used to read
+      // SAME_DAY, which no shipment can ever be — so those rows could never
+      // apply, while a SCHEDULED shipment had no template at all and silently
+      // fell back to a hardcoded re-attempt delay instead of its tenant's own.
       expect(templates.map((t) => t.serviceLevel).sort()).toEqual([
         "EXPRESS",
-        "SAME_DAY",
+        "SCHEDULED",
         "STANDARD",
       ]);
       expect(await createShipment(tenantId)).toBeDefined();

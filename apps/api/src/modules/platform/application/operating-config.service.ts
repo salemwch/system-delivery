@@ -12,6 +12,11 @@ import {
   parseTimeToMinutes,
 } from "../domain/working-calendar.js";
 import type { IsoWeekday, WorkingCalendar } from "../domain/working-calendar.js";
+import {
+  DEFAULT_FAILURE_REASONS,
+  DEFAULT_SLA_TEMPLATES,
+  DEFAULT_WORKING_WEEK,
+} from "../domain/operating-defaults.js";
 import { failureReasons, holidays, slaTemplates, tenants, workingHours } from "../domain/schema.js";
 import type { FailureReasonRow, SlaTemplateRow } from "../domain/schema.js";
 
@@ -75,7 +80,9 @@ const setWorkingHoursSchema = z.strictObject({
 });
 
 const setSlaTemplateSchema = z.strictObject({
-  serviceLevel: z.enum(["STANDARD", "EXPRESS", "SAME_DAY"]),
+  // Exactly `shipments_service_level_chk`. It used to read SAME_DAY, which no
+  // shipment can ever be, while SCHEDULED shipments had no template at all.
+  serviceLevel: z.enum(["STANDARD", "EXPRESS", "SCHEDULED"]),
   deliveryHours: z.coerce.number().int().min(1).max(8760),
   reattemptDelayHours: z.coerce.number().int().min(0).max(720),
   maxAttempts: z.coerce.number().int().min(1).max(10),
@@ -106,6 +113,43 @@ const holidaySchema = z.strictObject({
 @Injectable()
 export class OperatingConfigService {
   constructor(private readonly database: DatabaseService) {}
+
+  /**
+   * Gives a brand-new tenant the configuration every code path assumes it has.
+   *
+   * ⚠️ Runs in the CALLER'S transaction, which must already be scoped to the new
+   * tenant — a half-provisioned courier with features but no failure taxonomy is
+   * worse than one that failed to provision at all, because nothing errors.
+   *
+   * Idempotent on every table, so re-running provisioning (or back-filling a
+   * tenant created before this existed) is safe.
+   */
+  async seedDefaults(tx: TenantTransaction, tenantId: string): Promise<void> {
+    await tx
+      .insert(failureReasons)
+      .values(
+        DEFAULT_FAILURE_REASONS.map((reason) => ({
+          tenantId,
+          code: reason.code,
+          labels: reason.labels,
+          allowsReattempt: reason.allowsReattempt,
+          fault: reason.fault,
+          displayOrder: reason.displayOrder,
+          active: true,
+        })),
+      )
+      .onConflictDoNothing({ target: [failureReasons.tenantId, failureReasons.code] });
+
+    await tx
+      .insert(workingHours)
+      .values(DEFAULT_WORKING_WEEK.map((day) => ({ tenantId, ...day })))
+      .onConflictDoNothing({ target: [workingHours.tenantId, workingHours.dayOfWeek] });
+
+    await tx
+      .insert(slaTemplates)
+      .values(DEFAULT_SLA_TEMPLATES.map((template) => ({ tenantId, ...template })))
+      .onConflictDoNothing({ target: [slaTemplates.tenantId, slaTemplates.serviceLevel] });
+  }
 
   // ── Failure reasons (#7.7) ────────────────────────────────────────────────
 

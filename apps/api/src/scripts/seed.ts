@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import { DatabaseService } from "../shared/database/database.service.js";
+import { OperatingConfigService } from "../modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../modules/platform/application/outbox.service.js";
 import { TenantService } from "../modules/platform/application/tenant.service.js";
 import { PasswordService } from "../modules/identity/application/password.service.js";
@@ -53,7 +54,7 @@ async function main(): Promise<void> {
 
     const outbox = new OutboxService();
     const database = new DatabaseService(sql as never);
-    const tenantService = new TenantService(database, outbox);
+    const tenantService = new TenantService(database, outbox, new OperatingConfigService(database));
     const passwords = new PasswordService();
     const provisioning = new ProvisioningService(tenantService, passwords);
 

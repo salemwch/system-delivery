@@ -29,6 +29,7 @@ import { TrackingService } from "../application/tracking.service.js";
 import type { Shipment } from "../domain/schema.js";
 import {
   cancelShipmentSchema,
+  completeReturnSchema,
   confirmDeliverySchema,
   createShipmentSchema,
   initiateReturnSchema,
@@ -371,6 +372,26 @@ export class ShipmentController {
     @CurrentPrincipal() principal: Principal,
   ): Promise<ShipmentResponse> {
     const shipment = await this.shipments.initiateReturn(id, body, ctxOf(principal));
+    return toResponse(shipment);
+  }
+
+  /**
+   * Closes the RTO lifecycle — the parcel is physically back with the merchant.
+   *
+   * `shipment:deliver` rather than `shipment:update`: handing a parcel back is a
+   * custody transfer performed by the driver who carried it, and it is the same
+   * authority as completing a delivery. A dispatcher who can edit a shipment
+   * should not be able to assert that a parcel arrived somewhere.
+   */
+  @Post(":id/return/complete")
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions("shipment:deliver")
+  async completeReturn(
+    @Param("id") id: string,
+    @Body(zodBody(completeReturnSchema)) body: z.infer<typeof completeReturnSchema>,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<ShipmentResponse> {
+    const shipment = await this.shipments.completeReturn(id, body, ctxOf(principal));
     return toResponse(shipment);
   }
 

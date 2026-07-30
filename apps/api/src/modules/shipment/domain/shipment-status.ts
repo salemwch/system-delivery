@@ -74,7 +74,14 @@ export type ActorType = "DRIVER" | "DISPATCHER" | "HUB_OPERATOR" | "SYSTEM" | "A
 export type CustodyType = "MERCHANT" | "DRIVER" | "HUB";
 
 /** COD lifecycle (docs/02-domain-model.md §5.2). */
-export type CodStatus = "NOT_APPLICABLE" | "PENDING" | "COLLECTED" | "REMITTED" | "SETTLED";
+/**
+ * `NOT_APPLICABLE` means there never was a COD (I6 ties it to a zero amount).
+ * `CANCELLED` means there was one and it will never be collected — the parcel
+ * came back or was cancelled. The two are not interchangeable: only the second
+ * keeps the amount, and only the first can hold a zero one.
+ */
+export type CodStatus =
+  "NOT_APPLICABLE" | "PENDING" | "COLLECTED" | "REMITTED" | "SETTLED" | "CANCELLED";
 
 /** The actor that produced an event — from the authenticated context, never the body. */
 export interface EventActor {

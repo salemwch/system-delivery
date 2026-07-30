@@ -347,7 +347,7 @@ PROVISIONING → ACTIVE ⇄ SUSPENDED → CLOSED
 | `parcelCount` | int | Default 1 |
 | `declaredValueMinor?` / `currency` | bigint / string(3) | |
 | **`codAmountMinor`** | bigint | `0` when not COD. **Never a boolean** |
-| `codStatus` | enum | `NOT_APPLICABLE` · `PENDING` · `COLLECTED` · `REMITTED` · `SETTLED` |
+| `codStatus` | enum | `NOT_APPLICABLE` · `PENDING` · `COLLECTED` · `REMITTED` · `SETTLED` · `CANCELLED` (see §5.2) |
 | `attemptCount` | int | Denormalised for dispatcher filtering |
 | `maxAttempts` | int | Per-tenant default, e.g. 3 |
 | `priority` | int | Solver input |
@@ -375,7 +375,7 @@ PROVISIONING → ACTIVE ⇄ SUSPENDED → CLOSED
 3. **A shipment is never deleted.** It may be `CANCELLED`, which is itself an event. Physical custody history is a legal record.
 4. **`recipientPhone` is mandatory and E.164-validated.** In Tunisia and the wider MENA region, the phone is the real addressing mechanism — drivers call before arrival as standard procedure. A shipment without a reachable phone is undeliverable in practice.
 5. **`codAmountMinor` is immutable once `status` has passed `PICKED_UP`.** Changing the amount owed after the courier takes custody is a fraud vector.
-6. `codAmountMinor > 0` requires `codStatus != NOT_APPLICABLE`, and vice versa. Enforced as a check constraint.
+6. `codAmountMinor > 0` requires `codStatus != NOT_APPLICABLE`, and vice versa. Enforced as a check constraint. **This is why a returned parcel's COD becomes `CANCELLED` and not `NOT_APPLICABLE`** — see §5.2.
 7. A shipment cannot be marked `DELIVERED` without an associated `POD`.
 8. A COD shipment cannot be marked `DELIVERED` without a corresponding `CODCollected` event **in the same transaction**.
 9. `attemptCount >= maxAttempts` blocks further attempts; the shipment must go to `RETURN_PENDING`.
@@ -1118,11 +1118,16 @@ stateDiagram-v2
     PENDING --> COLLECTED: driver takes cash
     COLLECTED --> REMITTED: handed to hub
     REMITTED --> SETTLED: merchant paid
-    PENDING --> NOT_APPLICABLE: shipment returned
+    PENDING --> CANCELLED: shipment returned or cancelled
     SETTLED --> [*]
+    CANCELLED --> [*]
 ```
 
 Each transition writes a ledger transaction. `codStatus` is a **projection of the ledger**, exactly as `shipment.status` is a projection of events — it is never the source of truth.
+
+**⚠️ `CANCELLED`, not `NOT_APPLICABLE`, is the return/cancellation terminus — a correction to this diagram made during implementation (migration 0027).** As first drawn, `PENDING → NOT_APPLICABLE` contradicted invariant 6 above: that invariant ties `NOT_APPLICABLE` to a **zero amount**, and a returned parcel's `codAmountMinor` does not change, so the transition could not be made without violating the check constraint. Zeroing the amount instead is worse than the bug — it erases what the parcel was worth, which is the one number a merchant dispute is argued over months later. The two values now mean different things and are not interchangeable: `NOT_APPLICABLE` means there never was a COD; `CANCELLED` means there was one and it will never be collected.
+
+Neither may be left as `PENDING`. `PENDING` is what cash-in-field (01-mvp-scope §4.5 #5.5) sums, and that is the figure a courier reconciles its drivers' satchels against — so a returned COD parcel left pending over-reports the money owed by its full value, permanently, in the direction that reads as "the driver is short".
 
 ---
 

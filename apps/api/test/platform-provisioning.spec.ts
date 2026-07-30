@@ -1,13 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { drizzle } from "drizzle-orm/postgres-js";
 
+import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { TenantService } from "../src/modules/platform/application/tenant.service.js";
 import { FeatureService } from "../src/modules/platform/application/feature.service.js";
 import { PasswordService } from "../src/modules/identity/application/password.service.js";
 import { ProvisioningService } from "../src/modules/identity/application/provisioning.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
-import { asTenantId } from "../src/shared/database/tenant-context.js";
+import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
 import type { TenantId, TenantTransaction } from "../src/shared/database/index.js";
 import { createTestDatabase, withTenantContext } from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
@@ -23,6 +24,7 @@ describe("platform provisioning", () => {
   let database: TestDatabase;
   let features: FeatureService;
   let provisioning: ProvisioningService;
+  let operatingConfig: OperatingConfigService;
   const createdTenants: string[] = [];
 
   const uniqueSlug = (label: string): string =>
@@ -57,7 +59,8 @@ describe("platform provisioning", () => {
     database = await createTestDatabase();
     const dbService = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    const tenantService = new TenantService(dbService, outbox);
+    operatingConfig = new OperatingConfigService(dbService);
+    const tenantService = new TenantService(dbService, outbox, operatingConfig);
     features = new FeatureService(dbService);
     provisioning = new ProvisioningService(tenantService, new PasswordService());
   });
@@ -110,6 +113,52 @@ describe("platform provisioning", () => {
       expect(userRows.map((r) => r.role)).toEqual(["OWNER"]);
       expect(Number(featureRows[0]?.count)).toBe(14);
       expect(outboxRows.map((r) => r.event_type)).toEqual(["tenant.provisioned"]);
+    });
+
+    /**
+     * ⚠️ The bug this test exists for.
+     *
+     * Failure reasons, working hours and SLA templates were seeded by migration
+     * 0026 with a `CROSS JOIN tenants` — which reaches only the tenants that
+     * exist when the migration runs. Every courier onboarded after that deploy
+     * started with an EMPTY failure taxonomy, so `decideReattempt` found no row
+     * for `CUSTOMER_REFUSED`, failed open by design, and sent a driver back to a
+     * customer who had already said no — twice — before returning the parcel.
+     * The most expensive ordinary mistake in a COD market, and nothing errored.
+     *
+     * Asserting a specific reason rather than a count: this must fail if the
+     * defaults are seeded but the non-re-attemptable ones are missing.
+     */
+    it("gives the new tenant the operating configuration every code path assumes", async () => {
+      const tenantId = await provisionTenant(uniqueSlug("opcfg"));
+
+      const [reasons, templates, calendar] = await TenantContext.run(
+        { tenantId, actorType: "system" },
+        async () =>
+          Promise.all([
+            operatingConfig.listFailureReasons(),
+            operatingConfig.listSlaTemplates(),
+            withTenantContext(
+              database.migrator,
+              tenantId,
+              (tx) =>
+                tx<{ count: string }[]>`
+                select count(*)::text from working_hours where tenant_id = ${tenantId}
+              `,
+            ),
+          ]),
+      );
+
+      expect(reasons.find((r) => r.code === "CUSTOMER_REFUSED")?.allowsReattempt).toBe(false);
+      expect(reasons.find((r) => r.code === "CUSTOMER_UNAVAILABLE")?.allowsReattempt).toBe(true);
+      // One per `shipments.service_level`. A level with no template gets no
+      // promised-by date and silently falls back to a hardcoded delay.
+      expect(templates.map((t) => t.serviceLevel).sort()).toEqual([
+        "EXPRESS",
+        "SCHEDULED",
+        "STANDARD",
+      ]);
+      expect(Number(calendar[0]?.count)).toBe(7);
     });
 
     it("writes the provisioned event unpublished, for the relay to pick up", async () => {

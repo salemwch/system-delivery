@@ -404,7 +404,29 @@ Filterable/sortable fields are **allow-listed per resource** — an open filter 
 
 **Notes.** `reasonCode` must come from the tenant's taxonomy (`GET /v1/config/failure-reasons`) — free text cannot drive automation. `dwellTimeSeconds` feeds the `NO_ATTEMPT_TRACE` fraud rule.
 
-**Emits.** `delivery.attempted`, `delivery.failed`, and `shipment.return_initiated` when attempts are exhausted.
+**Emits.** `delivery.attempted`, `delivery.failed`, and `shipment.return_initiated` when the attempt is not re-attemptable — which is decided by the REASON first and only then by the attempt count. A `CUSTOMER_REFUSED` returns on attempt 1; `CUSTOMER_UNAVAILABLE` returns when the cap is reached. Either way the RETURN leg is planned in the same transaction.
+
+---
+
+### `POST /v1/shipments/{id}/return` · `POST /v1/shipments/{id}/return/complete`
+
+The two halves of the RTO lifecycle (01-mvp-scope §4.2 #2.8).
+
+`return` takes `{ "reason": "...", "returnToAddressId"?, "returnHubId"? }` → `200` with status `RETURN_PENDING`. It plans the RETURN leg (domain §3.7 rule 6) and clears `nextAttemptAt`. A dispatcher decides this when the automatic policy has not already.
+
+`return/complete` records the parcel physically back with the merchant:
+
+```json
+{ "receivedByName": "Ines (Boutique)", "driverId": "018f7c33-...", "occurredAt": "2026-07-25T09:12:00Z" }
+```
+
+→ `200` with status `RETURNED`. Permission is **`shipment:deliver`**, not `shipment:update`: handing a parcel back is a custody transfer performed by the driver who carried it, and asserting that a parcel arrived somewhere is not an edit.
+
+**Notes.** Completing the return sets `codStatus` to `CANCELLED` — the cash was never collected and never will be, so leaving it `PENDING` would over-report cash-in-field forever (domain §5.2). `receivedByName` is optional because a return handed back at a hub counter often has no signature, but it is the only record when a merchant later disputes that the parcel came back.
+
+**Emits.** `shipment.return_initiated`, then `shipment.returned` (carrying `codCollected: false` for the merchant SMS).
+
+**Errors.** `409 SHIPMENT_INVALID_TRANSITION` — only `RETURN_PENDING` may be completed, so a parcel still `OUT_FOR_DELIVERY` cannot be declared returned.
 
 ---
 

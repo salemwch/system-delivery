@@ -327,7 +327,7 @@ export const slaTemplates = pgTable(
       .primaryKey()
       .default(sql`uuidv7()`),
     tenantId: uuid("tenant_id").notNull(),
-    /** STANDARD | EXPRESS | SAME_DAY. */
+    /** STANDARD | EXPRESS | SCHEDULED — the same set as `shipments.service_level`. */
     serviceLevel: text("service_level").notNull(),
     /** WORKING hours, not elapsed. */
     deliveryHours: integer("delivery_hours").notNull(),

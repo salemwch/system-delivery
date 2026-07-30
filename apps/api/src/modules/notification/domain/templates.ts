@@ -40,7 +40,7 @@ export const DEFAULT_TEMPLATES: Readonly<Record<string, Readonly<Record<Locale, 
   },
   // The parcel is going back. The recipient is told because the most common cause
   // is that they were unreachable, and they may still want to intervene.
-  "shipment.return_pending": {
+  "shipment.return_initiated": {
     fr: "Votre colis {{trackingNumber}} va être retourné à l'expéditeur.",
     ar: "سيتم إرجاع طردك {{trackingNumber}} إلى المرسل.",
     en: "Your parcel {{trackingNumber}} is being returned to the sender.",
@@ -64,6 +64,13 @@ export const DEFAULT_TEMPLATES: Readonly<Record<string, Readonly<Record<Locale, 
     fr: "Règlement {{reference}} payé : {{amount}}.",
     ar: "تم دفع التسوية {{reference}}: {{amount}}.",
     en: "Settlement {{reference}} paid: {{amount}}.",
+  },
+  // The parcel is physically back. The merchant needs this to close their own
+  // order, and it is the moment they stop expecting the COD.
+  "shipment.returned": {
+    fr: "Colis {{trackingNumber}} retourné. Aucun paiement encaissé.",
+    ar: "تم إرجاع الطرد {{trackingNumber}}. لم يتم تحصيل أي مبلغ.",
+    en: "Parcel {{trackingNumber}} returned. No payment was collected.",
   },
 
   // ── Driver-facing (PUSH, not SMS) ──────────────────────────────────────────

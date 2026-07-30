@@ -7,6 +7,7 @@ import { NotFoundError } from "../../../shared/errors/index.js";
 import { DEFAULT_FEATURES } from "../domain/feature-keys.js";
 import type { FeatureKey } from "../domain/feature-keys.js";
 import { tenantFeatures, tenants } from "../domain/schema.js";
+import { OperatingConfigService } from "./operating-config.service.js";
 import { OutboxService } from "./outbox.service.js";
 
 /** Everything needed to stand up a new courier company. */
@@ -28,6 +29,7 @@ export class TenantService {
   constructor(
     private readonly database: DatabaseService,
     private readonly outbox: OutboxService,
+    private readonly operatingConfig: OperatingConfigService,
   ) {}
 
   /**
@@ -77,6 +79,14 @@ export class TenantService {
       }),
     );
     await tx.insert(tenantFeatures).values(featureRows);
+
+    // ⚠️ Failure reasons, working hours and SLA templates, in the SAME
+    // transaction. Migration 0026 seeded these with a `CROSS JOIN tenants`,
+    // which only ever reached the tenants that existed when it ran — so every
+    // courier onboarded afterwards had an empty failure taxonomy, and
+    // `decideReattempt` failed open on `CUSTOMER_REFUSED` and sent a driver back
+    // to someone who had already said no.
+    await this.operatingConfig.seedDefaults(tx, tenantId);
 
     // Ambient context lets OutboxService enforce the tenant on the envelope.
     // The transaction config above is what RLS reads; this is what the service

@@ -15,6 +15,7 @@ import { BusinessRuleError, ConflictError, NotFoundError } from "../../../shared
 import { parseWithZod } from "../../../shared/http/index.js";
 import {
   cancelShipmentSchema,
+  completeReturnSchema,
   confirmDeliverySchema,
   createShipmentSchema,
   initiateReturnSchema,
@@ -605,10 +606,23 @@ export class ShipmentService {
                 : "ATTEMPTS_EXHAUSTED",
             finalAttemptCount: attemptNumber,
             returnToAddressId: shipment.originAddressId,
+            returnHubId: null,
             codAmountMinor: shipment.codAmountMinor.toString(),
+            // Self-contained for the notification consumer (event-storming §2.2).
+            // The automatic path is the COMMON one — most returns are decided by
+            // the reason policy, not by a dispatcher — so omitting these here made
+            // the customer message unreachable for the majority of returns.
+            trackingNumber: shipment.trackingNumber,
+            recipientPhone: shipment.recipientPhone,
+            merchantId: shipment.merchantId,
             occurredAt: occurredAt.toISOString(),
           },
         });
+
+        // §3.7 rule 6 applies whoever decided the return. Reached automatically
+        // the parcel would otherwise sit in RETURN_PENDING with nothing planned
+        // to carry it back.
+        await this.spawnReturnLeg(tx, shipment, shipment.originAddressId, null);
 
         // No further attempt is due, so the column must not keep pointing at one.
         await tx
@@ -624,6 +638,8 @@ export class ShipmentService {
     const occurredAt = dto.occurredAt ?? new Date();
 
     return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+      const returnToAddressId = dto.returnToAddressId ?? shipment.originAddressId;
+
       await this.events.applyTo(tx, snapshotOf(shipment), {
         eventType: "return_initiated",
         actor: ctx.actor,
@@ -633,13 +649,169 @@ export class ShipmentService {
           shipmentId: shipment.id,
           reason: dto.reason,
           finalAttemptCount: shipment.attemptCount,
-          returnToAddressId: dto.returnToAddressId ?? shipment.originAddressId,
+          returnToAddressId,
           returnHubId: dto.returnHubId ?? null,
           codAmountMinor: shipment.codAmountMinor.toString(),
+          // Self-contained for the notification consumer (event-storming §2.2) —
+          // the recipient is told the parcel is going back, because the usual
+          // cause is that they were unreachable and they may still intervene.
+          trackingNumber: shipment.trackingNumber,
+          recipientPhone: shipment.recipientPhone,
+          merchantId: shipment.merchantId,
           occurredAt: occurredAt.toISOString(),
         },
       });
+
+      // §3.7 rule 6: a FAILED last-mile leg spawns either a re-attempt leg or a
+      // RETURN leg — "never leaves the shipment legless". Without this the
+      // parcel is in RETURN_PENDING with nothing planned to move it, so it
+      // cannot be put on a route and sits in a hub until someone notices.
+      await this.spawnReturnLeg(tx, shipment, returnToAddressId, dto.returnHubId ?? null);
+
+      // No further delivery attempt is due.
+      await tx.update(shipments).set({ nextAttemptAt: null }).where(eq(shipments.id, shipment.id));
     });
+  }
+
+  /**
+   * Records the parcel back with the merchant — the end of the RTO lifecycle.
+   *
+   * ⚠️ This command did not exist. `RETURN_PENDING` was reachable and `RETURNED`
+   * was in the state machine, but nothing could make the transition: a returning
+   * parcel had no way to be closed out, so the merchant's own view of it stayed
+   * "coming back" forever and the COD never resolved.
+   */
+  async completeReturn(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
+    const dto = parseWithZod(completeReturnSchema, input);
+    const occurredAt = dto.occurredAt ?? new Date();
+
+    return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+      const legId = await this.openReturnLegId(tx, shipment.id);
+
+      await this.events.applyTo(tx, snapshotOf(shipment), {
+        eventType: "returned",
+        actor: ctx.actor,
+        idempotencyKey: dto.idempotencyKey,
+        occurredAt,
+        ...(legId === undefined ? {} : { legId }),
+        ...(dto.driverId === undefined ? {} : { driverId: dto.driverId }),
+        outboxPayload: {
+          shipmentId: shipment.id,
+          trackingNumber: shipment.trackingNumber,
+          merchantId: shipment.merchantId,
+          receivedByName: dto.receivedByName ?? null,
+          returnedToAddressId: shipment.originAddressId,
+          // What the merchant is owed, and is not: the parcel came back, so the
+          // COD was never collected and never will be for this shipment.
+          codAmountMinor: shipment.codAmountMinor.toString(),
+          codCollected: false,
+          occurredAt: occurredAt.toISOString(),
+        },
+      });
+
+      if (legId !== undefined) {
+        await tx
+          .update(shipmentLegs)
+          .set({ status: "COMPLETED", actualEndAt: occurredAt, updatedAt: sql`now()` })
+          .where(eq(shipmentLegs.id, legId));
+      }
+
+      await this.closeUncollectedCod(tx, shipment);
+    });
+  }
+
+  /**
+   * Closes a COD that will never be collected — the parcel is back, or gone.
+   *
+   * ⚠️ Left at PENDING this money stays in cash-in-field (docs/01 §4.5 #5.5)
+   * forever. That figure is what a courier reconciles its drivers' satchels
+   * against at end of day, so every returned or cancelled COD parcel inflates it
+   * by its full value, permanently, in the direction that reads as "the driver
+   * is short". With normal COD return rates the daily reconciliation is simply
+   * wrong.
+   *
+   * CANCELLED, not NOT_APPLICABLE: I6 (`shipments_cod_consistency_chk`) ties
+   * NOT_APPLICABLE to a zero amount, and zeroing the amount would erase what was
+   * at stake — the one number a merchant dispute turns on. The amount stays; the
+   * status says the cash is closed. See migration 0027.
+   */
+  private async closeUncollectedCod(tx: TenantTransaction, shipment: Shipment): Promise<void> {
+    if (shipment.codStatus !== "PENDING") {
+      return;
+    }
+    await tx
+      .update(shipments)
+      .set({ codStatus: "CANCELLED" satisfies CodStatus })
+      .where(eq(shipments.id, shipment.id));
+  }
+
+  /**
+   * Plans the leg that carries the parcel back to its origin.
+   *
+   * Numbered after the last existing leg rather than reusing the failed one —
+   * DM4's recommendation, which preserves plan-vs-actual per attempt. Reusing
+   * the leg would overwrite the timings of the delivery that failed, and those
+   * are what the failure report is built from.
+   */
+  private async spawnReturnLeg(
+    tx: TenantTransaction,
+    shipment: Shipment,
+    returnToAddressId: string,
+    returnHubId: string | null,
+  ): Promise<void> {
+    const existing = await tx
+      .select({ legNumber: shipmentLegs.legNumber })
+      .from(shipmentLegs)
+      .where(eq(shipmentLegs.shipmentId, shipment.id))
+      .orderBy(desc(shipmentLegs.legNumber))
+      .limit(1);
+
+    // Idempotent: a re-initiated return must not stack a second return leg on a
+    // parcel that already has one planned.
+    const alreadyReturning = await tx
+      .select({ id: shipmentLegs.id })
+      .from(shipmentLegs)
+      .where(and(eq(shipmentLegs.shipmentId, shipment.id), eq(shipmentLegs.legType, "RETURN")))
+      .limit(1);
+
+    if (alreadyReturning.length > 0) {
+      return;
+    }
+
+    await tx.insert(shipmentLegs).values({
+      tenantId: shipment.tenantId,
+      shipmentId: shipment.id,
+      legNumber: (existing[0]?.legNumber ?? 0) + 1,
+      legType: "RETURN",
+      status: "PLANNED",
+      fromType: returnHubId === null ? "ADDRESS" : "HUB",
+      toType: "ADDRESS",
+      ...(returnHubId === null
+        ? { fromAddressId: shipment.destinationAddressId }
+        : { fromHubId: returnHubId }),
+      toAddressId: returnToAddressId,
+    });
+  }
+
+  /** The planned or in-progress RETURN leg, if one exists. */
+  private async openReturnLegId(
+    tx: TenantTransaction,
+    shipmentId: string,
+  ): Promise<string | undefined> {
+    const rows = await tx
+      .select({ id: shipmentLegs.id })
+      .from(shipmentLegs)
+      .where(
+        and(
+          eq(shipmentLegs.shipmentId, shipmentId),
+          eq(shipmentLegs.legType, "RETURN"),
+          inArray(shipmentLegs.status, ["PLANNED", "IN_PROGRESS"]),
+        ),
+      )
+      .orderBy(desc(shipmentLegs.legNumber))
+      .limit(1);
+
+    return rows[0]?.id;
   }
 
   async cancel(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
@@ -665,6 +837,9 @@ export class ShipmentService {
           occurredAt: occurredAt.toISOString(),
         },
       });
+
+      // A cancelled parcel's cash is never coming in either.
+      await this.closeUncollectedCod(tx, shipment);
     });
   }
 

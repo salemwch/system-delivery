@@ -162,6 +162,21 @@ export const initiateReturnSchema = z.strictObject({
 });
 export type InitiateReturnInput = z.infer<typeof initiateReturnSchema>;
 
+/**
+ * Closes the RTO lifecycle: the parcel is physically back with the merchant.
+ *
+ * `receivedByName` is who signed for it at the merchant's end. Optional, because
+ * a return handed back at a hub counter often has no signature — but recorded
+ * when it exists, since a merchant disputing that a parcel came back is the one
+ * moment this record is read.
+ */
+export const completeReturnSchema = z.strictObject({
+  idempotencyKey,
+  receivedByName: z.string().trim().min(1).max(200).optional(),
+  driverId: z.uuid().optional(),
+  occurredAt: z.coerce.date().optional(),
+});
+
 export const cancelShipmentSchema = z.strictObject({
   idempotencyKey,
   reason: nonEmpty("reason"),
