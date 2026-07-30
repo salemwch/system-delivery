@@ -175,6 +175,17 @@ export const configSchema = z
 
     // ── Routing ──────────────────────────────────────────────────────────────
     OSRM_URL: z.url(),
+    /**
+     * Which optimiser sequences route stops.
+     *
+     * `haversine` by DEFAULT, for the same fail-safe reason the notification
+     * channels default to `console`: OSRM needs a preprocessed Maghreb extract
+     * (`pnpm dev:infra --profile routing`), and a box without one must degrade to
+     * the always-available deterministic sequencer rather than fail to plan a
+     * route. `osrm` opts in to real road distances; it still falls back per
+     * request if OSRM is unreachable (domain §3.9 rule 8).
+     */
+    ROUTING_OPTIMIZER: z.enum(["haversine", "osrm"]).default("haversine"),
 
     // ── Auth ─────────────────────────────────────────────────────────────────
     JWT_ACCESS_SECRET: secretSchema,

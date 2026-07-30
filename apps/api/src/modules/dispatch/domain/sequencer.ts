@@ -21,11 +21,34 @@ export interface SequenceablePoint {
   readonly location: LatLng;
 }
 
+/**
+ * The travel cost between two points, indexed exactly as the sequencer indexes
+ * them: `0…n-1` are the points in input order and **`-1` is the start anchor**.
+ *
+ * Exists so the SAME nearest-neighbour + 2-opt algorithm runs over great-circle
+ * distances or over an OSRM road-network matrix, chosen by the caller. Duplicating
+ * the sequencer per cost source is how the two silently diverge — and the road
+ * version is the one nobody re-reads, because it only runs in production.
+ *
+ * Distances are metres and durations seconds (project convention). A matrix
+ * implementation is a pure lookup, which is why this is synchronous: the network
+ * call happens once, before sequencing, never inside the 2-opt loops.
+ */
+export interface TravelCost {
+  distanceM(fromIdx: number, toIdx: number): number;
+  durationS(fromIdx: number, toIdx: number): number;
+}
+
 export interface SequenceOptions {
   /** Where the driver begins (the start hub). Anchors the open path. */
   readonly start?: LatLng;
   /** Average travel speed for the duration estimate. Default 30 km/h (urban). */
   readonly averageSpeedMps?: number;
+  /**
+   * Real road-network costs. Omitted → great-circle distance and a flat average
+   * speed, which is the always-available fallback (ADR-003).
+   */
+  readonly cost?: TravelCost;
 }
 
 export interface SequenceResult {
@@ -68,10 +91,15 @@ export function sequenceStops(
     return c;
   };
 
+  const cost = options.cost;
+
   /** Edge length; a leading edge from a non-existent start is free (open path). */
   const edge = (fromIdx: number, toIdx: number): number => {
     if (fromIdx < 0 && start === undefined) {
       return 0;
+    }
+    if (cost !== undefined) {
+      return cost.distanceM(fromIdx, toIdx);
     }
     return haversineMetres(coordAt(fromIdx), coordAt(toIdx));
   };
@@ -79,7 +107,7 @@ export function sequenceStops(
   // ── Nearest-neighbour construction, seeded from a fixed anchor. ──────────────
   const visited = new Array<boolean>(n).fill(false);
   const tour: number[] = [];
-  let current = seedIndex(coords, start);
+  let current = seedIndex(coords, start, cost);
   visited[current] = true;
   tour.push(current);
   for (let step = 1; step < n; step++) {
@@ -89,7 +117,10 @@ export function sequenceStops(
       if (visited[j] === true) {
         continue;
       }
-      const d = haversineMetres(coordAt(current), coordAt(j));
+      // Through `edge`, so nearest-neighbour construction and 2-opt improvement
+      // agree about what "nearer" means. Mixing great-circle construction with
+      // road-network improvement produces a tour that is optimal for neither.
+      const d = edge(current, j);
       if (d < bestDist) {
         bestDist = d;
         best = j;
@@ -131,20 +162,37 @@ export function sequenceStops(
     }
   }
 
-  // ── Total travel distance of the anchored open path. ────────────────────────
+  // ── Totals for the anchored open path. ──────────────────────────────────────
   let distanceM = 0;
+  let durationS = 0;
   for (let k = 0; k < tour.length; k++) {
     const from = k === 0 ? -1 : indexAt(tour, k - 1);
-    distanceM += edge(from, indexAt(tour, k));
+    const to = indexAt(tour, k);
+    distanceM += edge(from, to);
+    if (cost !== undefined && !(from < 0 && start === undefined)) {
+      durationS += cost.durationS(from, to);
+    }
   }
 
   const order = tour.map((idx) => pointAt(points, idx).id);
   const rounded = Math.round(distanceM);
-  return { order, distanceM: rounded, durationS: Math.round(rounded / speed) };
+  return {
+    order,
+    distanceM: rounded,
+    // ⚠️ With a road-network matrix the duration is SUMMED, not derived from
+    // distance. A flat average speed over real road distance is the worst of
+    // both: it looks precise and still cannot tell a motorway from a medina
+    // alley, which is the whole reason for calling OSRM.
+    durationS: cost === undefined ? Math.round(rounded / speed) : Math.round(durationS),
+  };
 }
 
 /** The nearest point to the anchor, or index 0 when there is no anchor. */
-function seedIndex(coords: readonly LatLng[], start: LatLng | undefined): number {
+function seedIndex(
+  coords: readonly LatLng[],
+  start: LatLng | undefined,
+  cost: TravelCost | undefined,
+): number {
   if (start === undefined) {
     return 0;
   }
@@ -155,7 +203,9 @@ function seedIndex(coords: readonly LatLng[], start: LatLng | undefined): number
     if (c === undefined) {
       continue;
     }
-    const d = haversineMetres(start, c);
+    // Same cost source as the rest of the run, so the anchor the tour is seeded
+    // from is the genuinely nearest stop by road when a matrix is supplied.
+    const d = cost === undefined ? haversineMetres(start, c) : cost.distanceM(-1, i);
     if (d < bestDist) {
       bestDist = d;
       best = i;

@@ -63,9 +63,14 @@ rules:
           - pattern: $AMOUNT / 100
           - pattern: $AMOUNT * 1000
           - pattern: $AMOUNT / 1000
+      # ⚠️ `cod(?!e)`, not a bare `cod`. Case-insensitively, `cod` is a substring
+      # of CODE, encoded, decoded, codec — so `CODE_TTL_SECONDS * 1000`, an
+      # ordinary seconds-to-milliseconds conversion, was reported as a currency
+      # scale error. A money rule that fires on time arithmetic is a rule people
+      # learn to scroll past, which costs more than the rule was ever worth.
       - metavariable-regex:
           metavariable: $AMOUNT
-          regex: "(?i).*(amount|price|cod|total|balance|fee|payable|minor|cash).*"
+          regex: "(?i).*(amount|price|cod(?!e)|total|balance|fee|payable|minor|cash).*"
 
   - id: no-float-money-arithmetic
     languages: [typescript, javascript]

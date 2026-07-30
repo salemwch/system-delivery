@@ -17,9 +17,10 @@ import { notificationTemplates } from "../domain/schema.js";
  * The tokens a template may reference.
  *
  * Derived from the built-in defaults, so a tenant cannot introduce a placeholder
- * no event will ever populate. Without this an operator writes
- * `{{customerName}}`, it renders empty forever, and nobody notices until a
- * customer asks why the message begins with a comma.
+ * no event will ever populate. Without this an operator writes `{{clientName}}`
+ * — the word a Francophone operator reaches for first — it renders empty
+ * forever, and nobody notices until the person receiving the parcel asks why the
+ * message begins with a comma.
  */
 const KNOWN_TOKENS: ReadonlySet<string> = new Set(
   Object.values(DEFAULT_TEMPLATES)

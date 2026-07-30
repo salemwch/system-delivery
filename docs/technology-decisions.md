@@ -243,7 +243,7 @@ Versions verified against official sources on **2026-07-22**. Anything marked *"
 | React Native | **0.86** | Via Expo SDK 57 |
 | Kubernetes (V2) | **1.35 or 1.36** | 1.36.2 current (2026-06-09); 1.34 EOL 2026-10-27. Target N-1 for stability |
 | Docker Engine | pin at kickoff | — |
-| OSRM | pin at kickoff (latest tagged release) | — |
+| OSRM | **`osrm-backend` pinned by digest** `sha256:a7091038…` | Pinned in `infra/docker/docker-compose.yml` AND `tools/osrm-prepare.sh`. **The two must match:** the `.osrm` graph format is version-specific, so preprocessing with one version and serving with another fails at startup |
 | VROOM | pin at kickoff (latest tagged release) | C++20 |
 
 **Policy:** no floating tags anywhere — no `latest`, no `^`/`~` ranges in production manifests, no unpinned base images. Lockfiles committed. Renovate/Dependabot proposes upgrades as reviewable PRs with CI gates; upgrades are never automatic in production.

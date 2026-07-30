@@ -132,8 +132,21 @@ export class TelemetryWriter implements OnApplicationShutdown {
    * second of every driver's trail and silently discarding it, which is the
    * exact guarantee this class exists to provide.
    *
-   * Terminates: `drain()` empties the buffer and `write()` contains its own
-   * failures, so each pass strictly consumes what was there. Only new arrivals
+   * ⚠️ AND AN EMPTY BUFFER IS NOT ENOUGH EITHER — this is the second half of the
+   * same bug, and it survived the first fix.
+   *
+   * With two flushers running (the interval timer plus a caller, which is the
+   * ordinary case), both resume from the same settled promise in one microtask
+   * batch. The timer's loop goes first, synchronously takes the whole buffer for
+   * its next write, and suspends. The caller then resumes, sees an EMPTY buffer,
+   * and returns — while those rows are still in flight and unwritten.
+   *
+   * So the exit condition is "no flush in flight AND nothing buffered", never
+   * either one alone. An early return on an empty buffer is a report of success
+   * for rows still sitting in another flush's hands.
+   *
+   * Terminates: each pass either awaits one finite in-flight write or consumes a
+   * non-empty buffer, and `write()` contains its own failures. Only new arrivals
    * extend the loop, and each one is written rather than spun on.
    */
   async flush(): Promise<void> {
@@ -141,9 +154,9 @@ export class TelemetryWriter implements OnApplicationShutdown {
       const inFlight = this.flushing;
       if (inFlight !== null) {
         await inFlight;
-        if (this.buffer.length === 0) {
-          return;
-        }
+        // Deliberately NO early return here: re-enter the loop and re-read
+        // `this.flushing`, because another flusher may have started a write in
+        // the meantime, and its rows are ours to wait for too.
         continue;
       }
 

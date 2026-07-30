@@ -12,6 +12,8 @@
     "dev:infra:down": "docker compose -f infra/docker/docker-compose.yml down",
     "dev:infra:reset": "docker compose -f infra/docker/docker-compose.yml down -v && pnpm dev:infra",
     "dev:infra:logs": "docker compose -f infra/docker/docker-compose.yml logs -f",
+    "osrm:prepare": "bash tools/osrm-prepare.sh",
+    "osrm:up": "docker compose -f infra/docker/docker-compose.yml --profile routing up -d",
     "dev": "turbo run start:dev",
     "build": "turbo run build",
     "test": "turbo run test",

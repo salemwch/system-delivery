@@ -616,6 +616,63 @@ describe("tracking", () => {
       expect(await storedPositions(tenantId)).toHaveLength(2);
     });
 
+    /**
+     * ⚠️ The other half of the same bug, and awaiting BOTH flushes above hides it.
+     *
+     * Two flushers is the ordinary case: the interval timer plus a caller. When
+     * the first one's write settles, both loops resume in the same microtask
+     * batch. The timer's goes first, synchronously takes the whole buffer for its
+     * next write and suspends — so when the CALLER's loop resumes it sees an empty
+     * buffer and, before the fix, returned. Those rows were still in flight.
+     *
+     * This asserts on the second flush ALONE, which is what a caller actually
+     * relies on. `onApplicationShutdown` awaits exactly this promise and then the
+     * process exits, so returning early discards the last positions of every
+     * driver's trail — the precise failure this class exists to prevent, and it
+     * survived the first attempt at fixing it.
+     */
+    it("flush() does not return while ANOTHER flush is still writing", async () => {
+      const tenantId = await seedTenant("trk-concurrent-flush");
+      const driverId = await onShiftDriver(tenantId);
+
+      const lazy = new TelemetryWriter(
+        telemetrySql,
+        testConfig({ TELEMETRY_FLUSH_ROWS: 1_000_000, TELEMETRY_FLUSH_INTERVAL_MS: 600_000 }),
+        testLogger(),
+      );
+
+      const position = (lat: number) => ({
+        tenantId,
+        driverId,
+        routeId: null,
+        time: new Date(),
+        lat,
+        lon: 10.18,
+        speedMps: null,
+        headingDeg: null,
+        accuracyM: null,
+        batteryPct: null,
+        isMoving: null,
+        source: null,
+      });
+
+      lazy.enqueue([position(36.8)]);
+      // Flusher one — stands in for the interval timer, deliberately not awaited.
+      const timerFlush = lazy.flush();
+      lazy.enqueue([position(36.81)]);
+
+      // The caller. Awaiting ONLY this is the whole point: a caller has no handle
+      // on the timer's promise, so this one must be sufficient on its own.
+      await lazy.flush();
+
+      expect(lazy.stats().buffered).toBe(0);
+      expect(lazy.stats().written).toBe(2);
+      expect(await storedPositions(tenantId)).toHaveLength(2);
+
+      // Settled afterwards purely so the run has no dangling promise.
+      await timerFlush;
+    });
+
     it("writes each tenant's rows under its own tenant, never mixed", async () => {
       const tenantA = await seedTenant("trk-mix-a");
       const tenantB = await seedTenant("trk-mix-b");
