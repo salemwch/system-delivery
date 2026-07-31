@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | **Dispatcher Dashboard** | Dispatchers, Owner | Next.js 16, React 19 | Client-heavy SPA | **P0 — largest build** |
 | **Admin Console** | Owner, Finance, Hub Op | Next.js 16 (same app, role-routed) | SSR + client | P0 |
-| **Customer Tracking** | Public, unauthenticated | Next.js 16 | **Server-rendered** | P0 |
+| **Customer Tracking** | Public, unauthenticated | Next.js 16 (route handler, **no React**) | **Server-rendered HTML, 0 KB JS** | P0 |
 | **Driver App** | Drivers | React Native / Expo SDK 57, Android | Native, offline-first | **P0 — highest risk** |
 
 **Dispatcher and Admin are one Next.js application** with role-based routing, not two deployments. They share auth, layout, design system, and API client; splitting them would double the build for no benefit at this scale.
@@ -450,8 +450,8 @@ flowchart TB
 | Dispatcher | Assignment perceived latency | <300 ms (optimistic) |
 | Dispatcher | Shipment list, 10,000 rows | Virtualised, <100 ms filter |
 | Dispatcher | WebSocket → marker move | <2 s p99 |
-| Tracking page | LCP on 3G | **<2.5 s** |
-| Tracking page | JS bundle | **<100 KB gzipped** |
+| Tracking page | LCP on 3G | **<2.5 s** — measured: one 2.1 KB request, no subresources |
+| Tracking page | JS bundle | **<100 KB gzipped** — measured: **0 KB** |
 | Driver app | Cold start | <3 s |
 | Driver app | Stop list scroll | 60 fps |
 | Driver app | Delivery confirm (offline) | **<200 ms to local commit** |
@@ -459,6 +459,12 @@ flowchart TB
 | Driver app | APK size | <40 MB |
 
 The tracking page budget is strict because it loads on whatever phone and connection a recipient happens to have, once, and a slow load means a support call.
+
+**How the JS budget is met: the tracking page is a Next ROUTE HANDLER, not a React page.** Built as a server component it still shipped 136 KB of gzipped client runtime — React and the App Router hydration, sent to hydrate a document with no interactivity at all. Returning a `Response` of rendered HTML skips React entirely: the whole page, CSS inlined, is 2.1 KB gzipped in a single request with no scripts, no stylesheet link and no font.
+
+Next still earns its place — routing, the security headers, and a separate deployable with its own CSP and rate limits. It simply is not asked to hydrate a page that has nothing to hydrate. The other three apps are genuinely interactive and keep React.
+
+The same reasoning as the printed delivery documents (docs/01 §4.2 #2.14): server-rendered HTML is the right medium for a document, and the CSS is inlined because a linked stylesheet is a second round-trip before the page can paint.
 
 ---
 

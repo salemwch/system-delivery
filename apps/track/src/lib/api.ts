@@ -10,7 +10,7 @@ import { apiBaseUrl } from "./config";
  */
 
 /** One visible step in the parcel's history. */
-export interface TimelineEntry {
+interface TimelineEntry {
   readonly type: string;
   readonly occurredAt: string;
 }
