@@ -24,7 +24,15 @@ const locale = z.enum(["ar", "fr", "en"]);
 
 /** A non-negative integer amount in minor units, carried as bigint. */
 const amountMinor = z
-  .union([z.number().int().nonnegative(), z.string().regex(/^\d+$/u, "must be a whole amount")])
+  .union([
+    z.number().int().nonnegative(),
+    z.string().regex(/^\d+$/u, "must be a whole amount"),
+    // Idempotent under a second parse — see the note in shipment/domain/dtos.ts.
+    // The controller pipe and the service both apply these schemas, and a
+    // type-changing transform that cannot re-accept its own output breaks the
+    // endpoint outright.
+    z.bigint().nonnegative(),
+  ])
   .transform((value) => BigInt(value));
 
 // ── Vehicles ─────────────────────────────────────────────────────────────────

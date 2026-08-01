@@ -141,8 +141,26 @@ export class ShipmentService {
       return prior;
     }
 
-    if (dto.merchantId !== undefined) {
-      const merchant = await this.merchants.getById(dto.merchantId);
+    /**
+     * ⚠️ A MERCHANT's own scope wins over anything in the body.
+     *
+     * `MERCHANT` is the only role scoped BELOW the tenant (invariant I23/I24),
+     * and RLS on `shipments` requires `merchant_id` to equal
+     * `app.current_merchant_id`. Taking the id from the body left it NULL for a
+     * merchant who did not send one — so the INSERT was refused by the policy
+     * and **a merchant could not create a parcel at all**, despite holding
+     * `shipment:create`.
+     *
+     * Deriving it from the token also closes the other half: a merchant cannot
+     * create a parcel attributed to a RIVAL by passing someone else's id. Staff
+     * roles carry no merchant scope and may still name one explicitly, which is
+     * how a dispatcher files a parcel on a merchant's behalf.
+     */
+    const scopedMerchantId = TenantContext.current()?.merchantId;
+    const merchantId = scopedMerchantId ?? dto.merchantId;
+
+    if (merchantId !== undefined) {
+      const merchant = await this.merchants.getById(merchantId);
       if (merchant.status !== "ACTIVE") {
         throw new BusinessRuleError(
           "MERCHANT_SUSPENDED",
@@ -190,7 +208,7 @@ export class ShipmentService {
                 currency: dto.currency,
                 codAmountMinor: codAmount,
                 codStatus,
-                ...(dto.merchantId === undefined ? {} : { merchantId: dto.merchantId }),
+                ...(merchantId === undefined ? {} : { merchantId }),
                 ...(dto.externalReference === undefined
                   ? {}
                   : { externalReference: dto.externalReference }),

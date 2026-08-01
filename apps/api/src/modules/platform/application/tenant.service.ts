@@ -119,6 +119,17 @@ export class TenantService {
   }
 
   /**
+   * The profile of a NAMED tenant, for callers that have just resolved one and
+   * hold no ambient context — the public slug lookup being the only such caller.
+   *
+   * Runs inside a context scoped to that id, so RLS applies exactly as it would
+   * for a logged-in member: this reads one tenant's own row, never a scan.
+   */
+  async profileOf(tenantId: TenantId): Promise<TenantProfile> {
+    return TenantContext.run({ tenantId, actorType: "system" }, () => this.profile());
+  }
+
+  /**
    * The current tenant's own name, timezone and default language.
    *
    * Exists for anything that renders on the tenant's behalf — printed paperwork

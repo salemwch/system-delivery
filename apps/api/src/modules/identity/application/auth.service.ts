@@ -46,9 +46,9 @@ export type AuthResult =
       readonly ok: false;
       readonly reason: AuthFailureReason;
       /**
-       * Present only for `MFA_REQUIRED`. Short-lived, single-purpose, and
-       * carries no permissions — it proves the password step was passed and
-       * nothing more.
+       * Present for `MFA_REQUIRED` and `MFA_ENROLMENT_REQUIRED`. Short-lived,
+       * single-purpose, and carries no permissions — it proves the password
+       * step was passed and nothing more.
        */
       readonly challenge?: string;
     };

@@ -13,6 +13,7 @@ import { UserService } from "./application/user.service.js";
 import { AuditController } from "./api/audit.controller.js";
 import { DeadLetterController } from "./api/dead-letter.controller.js";
 import { MfaController } from "./api/mfa.controller.js";
+import { TenantLookupController } from "./api/tenant-lookup.controller.js";
 import { AuthController } from "./api/auth.controller.js";
 import { UserController } from "./api/user.controller.js";
 import { AuthGuard } from "./api/auth.guard.js";
@@ -34,6 +35,7 @@ import { TenantContextInterceptor } from "./api/tenant-context.interceptor.js";
   imports: [PlatformModule],
   controllers: [
     AuthController,
+    TenantLookupController,
     UserController,
     AuditController,
     MfaController,

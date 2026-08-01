@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from "@nestj
 import { z } from "zod";
 
 import { AppConfigService } from "../../../shared/config/index.js";
+import { TenantContext, asTenantId } from "../../../shared/database/index.js";
 import { UnauthenticatedError } from "../../../shared/errors/index.js";
 import { zodBody } from "../../../shared/http/index.js";
 import { AuthService } from "../application/auth.service.js";
@@ -149,7 +150,40 @@ export class MfaController {
     if (verified === null) {
       throw new UnauthenticatedError();
     }
-    return this.mfa.beginEnrolment(verified.userId, this.config.get("MFA_ISSUER"));
+    return this.runAsChallenger(verified, () =>
+      this.mfa.beginEnrolment(verified.userId, this.config.get("MFA_ISSUER")),
+    );
+  }
+
+  /**
+   * Runs a bootstrap handler inside the tenant context its challenge names.
+   *
+   * ⚠️ Without this the bootstrap routes answer **500**, and they are the only
+   * way a freshly provisioned OWNER can ever obtain a session.
+   *
+   * `@Public()` means `AuthGuard` does not run, so `TenantContextInterceptor`
+   * has no principal and binds nothing — every `withTenant` call underneath
+   * then hits `requireTenantId()` and throws. Establishing the context HERE,
+   * rather than passing a tenant id down through each service, is what makes
+   * the audit trail and the session issue work too: they read the same ambient
+   * context every authenticated request gives them, so nothing downstream needs
+   * a second code path for this one caller.
+   *
+   * Safe because both values come from the token's verified payload — the
+   * signature is the authentication — and never from the request body.
+   */
+  private runAsChallenger<T>(
+    verified: { userId: string; tenantId: string },
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return TenantContext.run(
+      {
+        tenantId: asTenantId(verified.tenantId),
+        actorId: verified.userId,
+        actorType: "user",
+      },
+      fn,
+    );
   }
 
   /**
@@ -174,11 +208,12 @@ export class MfaController {
       throw new UnauthenticatedError();
     }
 
-    const enrolment = await this.mfa.completeEnrolment(verified.userId, body.code);
-
-    // A fresh code for the session: `completeEnrolment` consumed this step, and
-    // the replay guard would rightly refuse the same one again.
-    const session = await this.auth.issueSessionAfterEnrolment(verified.tenantId, verified.userId);
+    const { enrolment, session } = await this.runAsChallenger(verified, async () => ({
+      enrolment: await this.mfa.completeEnrolment(verified.userId, body.code),
+      // A fresh code for the session: `completeEnrolment` consumed this step,
+      // and the replay guard would rightly refuse the same one again.
+      session: await this.auth.issueSessionAfterEnrolment(verified.tenantId, verified.userId),
+    }));
 
     return {
       recoveryCodes: enrolment.recoveryCodes,

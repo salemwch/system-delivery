@@ -3,14 +3,13 @@ import "./instrumentation.js";
 import "reflect-metadata";
 
 import { NestFactory } from "@nestjs/core";
-import { FastifyAdapter } from "@nestjs/platform-fastify";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Logger } from "nestjs-pino";
 
 import { AppModule } from "./app.module.js";
 import { RealtimeGateway, registerRealtime } from "./modules/tracking/index.js";
 import { AppConfigService } from "./shared/config/index.js";
-import { ProblemDetailsFilter } from "./shared/http/index.js";
+import { ProblemDetailsFilter, createFastifyAdapter } from "./shared/http/index.js";
 
 /**
  * Process entry point.
@@ -22,12 +21,7 @@ import { ProblemDetailsFilter } from "./shared/http/index.js";
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({
-      // Reject oversized payloads at the transport layer rather than after
-      // parsing (docs/07-security-architecture.md §7).
-      bodyLimit: 1_048_576,
-      trustProxy: true,
-    }),
+    createFastifyAdapter(),
     { bufferLogs: true },
   );
 

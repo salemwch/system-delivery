@@ -72,15 +72,18 @@ import { DatabaseModule } from "./shared/database/database.module.js";
                   options: { singleLine: true, translateTime: "HH:MM:ss.l" },
                 },
               }),
-          // Correlation id for every request. Asynchronous event fan-out is
-          // undebuggable without it (docs/09-infrastructure.md §7).
-          genReqId: (req, res) => {
-            const existing = req.headers["x-request-id"];
-            const id =
-              typeof existing === "string" && existing.length > 0 ? existing : crypto.randomUUID();
-            res.setHeader("x-request-id", id);
-            return id;
-          },
+          /**
+           * Correlation id for every request. Asynchronous event fan-out is
+           * undebuggable without it (docs/09-infrastructure.md §7).
+           *
+           * ⚠️ Minted by Fastify's own `genReqId` in `createFastifyAdapter`, and
+           * only observed here. A `genReqId` at this layer returning something
+           * different is SILENTLY IGNORED on Fastify — the adapter has already
+           * assigned `request.id` and pino logs whatever it finds. That is how
+           * `req-7` reached a UUID column and 500'd every audited endpoint while
+           * a perfectly good UUID generator sat here doing nothing.
+           */
+          genReqId: (req) => (typeof req.id === "string" ? req.id : crypto.randomUUID()),
           // PII must never reach the logs (docs/07-security-architecture.md §6.3).
           redact: {
             paths: [

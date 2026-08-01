@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+/**
+ * ⚠️ LOGICAL PROPERTIES ONLY (CLAUDE.md, docs/08 §3).
+ *
+ * `ms-*`/`me-*`, never `ml-*`/`mr-*`; `text-start`, never `text-left`. One
+ * stylesheet has to mirror for Arabic, and a directional utility is how a screen
+ * ends up with its padding on the wrong side in RTL — invisible to whoever wrote
+ * it and obvious to a third of the users.
+ */
+
+@theme {
+  --color-brand: oklch(0.55 0.16 250);
+  --color-brand-dark: oklch(0.47 0.16 250);
+  --color-brand-soft: oklch(0.96 0.02 250);
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  /* System stack: no webfont. A merchant opens this on a mid-range Android over
+     mobile data, and a font file is the largest thing that would block paint.
+     The OS Arabic font also shapes correctly everywhere. */
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "Noto Sans Arabic",
+    Roboto,
+    sans-serif;
+}
+
+/**
+ * Tracking numbers, phone numbers and money stay LTR inside an Arabic page.
+ * Mirrored, a phone number gets dialled wrong and a tracking number gets read
+ * back to a call centre wrong.
+ */
+.ltr-isolate {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/**
+ * Visible focus, always.
+ *
+ * Merchants use this portal at speed and many keyboard-navigate the create form.
+ * The browser default is removed by Tailwind's reset, so it has to be put back
+ * deliberately (WCAG 2.2 AA).
+ */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}

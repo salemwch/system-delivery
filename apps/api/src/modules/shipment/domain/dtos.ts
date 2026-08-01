@@ -30,9 +30,35 @@ const currency = z
   .length(3, "must be a 3-letter ISO 4217 currency code")
   .transform((value) => value.toUpperCase());
 
-/** A non-negative integer amount in minor units, carried as bigint end-to-end. */
+/**
+ * A non-negative integer amount in minor units, carried as bigint end-to-end.
+ *
+ * ⚠️ ACCEPTS A BIGINT TOO, and that is not redundancy — it is what makes the
+ * schema IDEMPOTENT, which this codebase requires because the same schema is
+ * applied twice on every HTTP request:
+ *
+ *   1. `@Body(zodBody(createShipmentSchema))` in the controller, and
+ *   2. `parseWithZod(createShipmentSchema, input)` inside the service, which
+ *      takes `unknown` because it is also called from tests, from bulk import,
+ *      and from other services.
+ *
+ * The first parse turns `12500` into `12500n`. Without a bigint branch the
+ * second parse sees a bigint, matches neither the number nor the string arm, and
+ * fails with INVALID_UNION — so **creating a COD shipment over HTTP always
+ * failed**, while every test passed because tests call the service directly and
+ * parse exactly once. COD is the P0 feature of this market; it was unreachable
+ * through the API.
+ *
+ * Every other field survives a second parse unchanged; only a type-CHANGING
+ * transform does not. JSON cannot carry a bigint, so the extra branch is
+ * unreachable from a real client and costs nothing.
+ */
 const amountMinor = z
-  .union([z.number().int().nonnegative(), z.string().regex(/^\d+$/u, "must be a whole amount")])
+  .union([
+    z.number().int().nonnegative(),
+    z.string().regex(/^\d+$/u, "must be a whole amount"),
+    z.bigint().nonnegative(),
+  ])
   .transform((value) => BigInt(value));
 
 const nonEmpty = (label: string) => z.string().trim().min(1, `${label} is required`);

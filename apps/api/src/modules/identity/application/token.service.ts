@@ -56,7 +56,13 @@ const KNOWN_ROLES: ReadonlySet<string> = new Set<string>(ROLES);
 
 /** Marks a token as an MFA challenge, so it can never be used as a session. */
 const MFA_CHALLENGE_TYPE = "mfa";
-const MFA_CHALLENGE_TTL_SECONDS = 300;
+
+/**
+ * How long a challenge stays usable. Exported so the login response can tell a
+ * client how long it has, rather than the client hardcoding a second copy of
+ * this number that drifts the moment the token is shortened.
+ */
+export const MFA_CHALLENGE_TTL_SECONDS = 300;
 
 /** A generated refresh token and the digest to persist for it. */
 export interface RefreshTokenPair {
