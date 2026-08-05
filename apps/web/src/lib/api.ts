@@ -1,0 +1,328 @@
+import { apiBaseUrl, tenantSlug } from "./config";
+import { readSession, writeSession } from "./session";
+import type { Session } from "./session";
+
+/**
+ * The server-side API client.
+ *
+ * Runs ONLY on the server. The browser never holds a bearer token and never
+ * learns the API's address.
+ */
+
+const REQUEST_TIMEOUT_MS = 10_000;
+const REFRESH_SKEW_MS = 60_000;
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly fieldErrors: Readonly<Record<string, string>> = {},
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+class NotAuthenticatedError extends Error {
+  constructor() {
+    super("not authenticated");
+    this.name = "NotAuthenticatedError";
+  }
+}
+
+interface RequestOptions {
+  readonly method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+  readonly body?: unknown;
+  readonly idempotencyKey?: string;
+  /** Override the default timeout for long-running operations. */
+  readonly timeoutMs?: number;
+}
+
+let cachedTenant: string | null = null;
+let resolving: Promise<string> | null = null;
+
+async function resolveTenantId(): Promise<string> {
+  if (cachedTenant !== null) {
+    return cachedTenant;
+  }
+  resolving ??= resolveTenant().finally(() => {
+    resolving = null;
+  });
+  return resolving;
+}
+
+async function resolveTenant(): Promise<string> {
+  const response = await fetch(`${apiBaseUrl()}/v1/tenants/by-slug/${encodeURIComponent(tenantSlug())}`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`cannot resolve tenant "${tenantSlug()}": ${String(response.status)}`);
+  }
+  const body: unknown = await response.json();
+  const id = typeof body === "object" && body !== null ? (body as { id?: unknown }).id : undefined;
+  if (typeof id !== "string") {
+    throw new Error("tenant lookup returned no id");
+  }
+  cachedTenant = id;
+  return id;
+}
+
+export async function courierName(): Promise<string> {
+  const response = await fetch(`${apiBaseUrl()}/v1/tenants/by-slug/${encodeURIComponent(tenantSlug())}`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    next: { revalidate: 3_600 },
+  });
+  if (!response.ok) {
+    return "";
+  }
+  const body: unknown = await response.json();
+  const name = typeof body === "object" && body !== null ? (body as { name?: unknown }).name : "";
+  return typeof name === "string" ? name : "";
+}
+
+export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const session = await currentSession();
+  return callWith<T>(session.accessToken, path, options);
+}
+
+async function currentSession(): Promise<Session> {
+  const session = await readSession();
+  if (session === null) {
+    throw new NotAuthenticatedError();
+  }
+  if (session.expiresAt - REFRESH_SKEW_MS > Date.now()) {
+    return session;
+  }
+
+  const refreshed = await refresh(session);
+  if (refreshed === null) {
+    throw new NotAuthenticatedError();
+  }
+  await writeSession(refreshed);
+  return refreshed;
+}
+
+async function refresh(session: Session): Promise<Session | null> {
+  try {
+    const response = await fetch(`${apiBaseUrl()}/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        tenantId: session.tenantId,
+        refreshToken: session.refreshToken,
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return toSession(await response.json());
+  } catch {
+    return null;
+  }
+}
+
+async function callWith<T>(
+  accessToken: string,
+  path: string,
+  options: RequestOptions,
+): Promise<T> {
+  const method = options.method ?? "GET";
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    authorization: `Bearer ${accessToken}`,
+  };
+  if (options.body !== undefined) {
+    headers["content-type"] = "application/json";
+  }
+  if (options.idempotencyKey !== undefined) {
+    headers["idempotency-key"] = options.idempotencyKey;
+  }
+
+  const response = await fetch(`${apiBaseUrl()}${path}`, {
+    method,
+    headers,
+    ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+    signal: AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS),
+    cache: "no-store",
+  });
+
+  if (response.status === 401) {
+    throw new NotAuthenticatedError();
+  }
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  return (await response.json()) as T;
+}
+
+async function toApiError(response: Response): Promise<ApiError> {
+  let code = "UNKNOWN";
+  let detail = `Request failed with status ${String(response.status)}`;
+  const fieldErrors: Record<string, string> = {};
+
+  try {
+    const body: unknown = await response.json();
+    if (typeof body === "object" && body !== null) {
+      const problem = body as { code?: unknown; detail?: unknown; errors?: unknown };
+      if (typeof problem.code === "string") code = problem.code;
+      if (typeof problem.detail === "string") detail = problem.detail;
+      if (Array.isArray(problem.errors)) {
+        for (const entry of problem.errors) {
+          if (typeof entry === "object" && entry !== null) {
+            const { field, detail: message } = entry as { field?: unknown; detail?: unknown };
+            if (typeof field === "string" && typeof message === "string") {
+              fieldErrors[field] = message;
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    // Not a problem document.
+  }
+  return new ApiError(response.status, code, detail, fieldErrors);
+}
+
+export async function login(email: string, password: string, mfaCode?: string): Promise<LoginResult> {
+  const id = await resolveTenantId();
+  const response = await fetch(`${apiBaseUrl()}/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      tenantId: id,
+      email,
+      password,
+      ...(mfaCode !== undefined ? { mfaCode } : {}),
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+  const body: unknown = await response.json();
+  if (typeof body !== "object" || body === null) {
+    throw new Error("malformed login response");
+  }
+  const status = (body as { status?: unknown }).status;
+
+  if (status === "MFA_REQUIRED" || status === "MFA_ENROLMENT_REQUIRED") {
+    const challenge = (body as { challenge?: unknown }).challenge;
+    const expiresIn = (body as { expiresIn?: unknown }).expiresIn;
+    if (typeof challenge !== "string") {
+      throw new Error("malformed MFA response: missing challenge");
+    }
+    return {
+      kind: "mfa",
+      status,
+      challenge,
+      expiresIn: typeof expiresIn === "number" ? expiresIn : 300,
+    };
+  }
+
+  return { kind: "session", session: toSession(body) };
+}
+
+/** Verify MFA challenge and get a session. */
+export async function verifyMfa(challenge: string, code: string): Promise<Session> {
+  const response = await fetch(`${apiBaseUrl()}/v1/auth/mfa/challenge`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ challenge, code }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+  return toSession(await response.json());
+}
+
+/** Bootstrap MFA enrolment for a never-enrolled privileged user. */
+export async function bootstrapMfaEnrol(challenge: string): Promise<{ uri: string; secret: string }> {
+  const response = await fetch(`${apiBaseUrl()}/v1/auth/mfa/bootstrap/enrol`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      authorization: `Bearer ${challenge}`,
+    },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+  const body: unknown = await response.json();
+  const b = body as { uri?: unknown; secret?: unknown };
+  if (typeof b.uri !== "string" || typeof b.secret !== "string") {
+    throw new Error("malformed enrolment response");
+  }
+  return { uri: b.uri, secret: b.secret };
+}
+
+/** Confirm bootstrap MFA enrolment and get a session. */
+export async function bootstrapMfaConfirm(challenge: string, code: string): Promise<Session> {
+  const response = await fetch(`${apiBaseUrl()}/v1/auth/mfa/bootstrap/confirm`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      authorization: `Bearer ${challenge}`,
+    },
+    body: JSON.stringify({ code }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+  return toSession(await response.json());
+}
+
+export type LoginResult =
+  | { kind: "session"; session: Session }
+  | { kind: "mfa"; status: "MFA_REQUIRED" | "MFA_ENROLMENT_REQUIRED"; challenge: string; expiresIn: number };
+
+function toSession(body: unknown): Session {
+  if (typeof body !== "object" || body === null) {
+    throw new Error("malformed session response");
+  }
+  const b = body as {
+    accessToken?: unknown;
+    refreshToken?: unknown;
+    expiresIn?: unknown;
+    user?: { id?: unknown; tenantId?: unknown; roles?: unknown; permissions?: unknown };
+  };
+  if (
+    typeof b.accessToken !== "string" ||
+    typeof b.refreshToken !== "string" ||
+    typeof b.expiresIn !== "number" ||
+    typeof b.user?.id !== "string" ||
+    typeof b.user.tenantId !== "string"
+  ) {
+    throw new Error("malformed session response");
+  }
+  return {
+    accessToken: b.accessToken,
+    refreshToken: b.refreshToken,
+    tenantId: b.user.tenantId,
+    userId: b.user.id,
+    roles: Array.isArray(b.user.roles) ? b.user.roles.filter(isString) : [],
+    permissions: Array.isArray(b.user.permissions) ? b.user.permissions.filter(isString) : [],
+    expiresAt: Date.now() + b.expiresIn * 1_000,
+  };
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}

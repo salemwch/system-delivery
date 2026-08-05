@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: oklch(0.55 0.16 250);
+  --color-brand-dark: oklch(0.47 0.16 250);
+  --color-brand-soft: oklch(0.96 0.02 250);
+  --color-sidebar: oklch(0.2 0.02 250);
+  --color-sidebar-hover: oklch(0.26 0.02 250);
+  --color-sidebar-active: oklch(0.3 0.04 250);
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "Noto Sans Arabic",
+    Roboto,
+    sans-serif;
+}
+
+.ltr-isolate {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: oklch(0.6 0 0 / 0.3);
+  border-radius: 2px;
+}
