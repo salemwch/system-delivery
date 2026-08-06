@@ -89,6 +89,7 @@ interface Messages {
   readonly pickupAddress: string;
   readonly pickupAddressHint: string;
   readonly city: string;
+  readonly phoneHint: string;
 }
 
 export const MESSAGES: Readonly<Record<Locale, Messages>> = {
@@ -166,6 +167,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pickupAddress: "عنوان الاستلام",
     pickupAddressHint: "بدونه لا يمكن طلب استلام لهذا التاجر",
     city: "المدينة",
+    phoneHint: "24 201 314 أو 216 24 201 314+",
   },
   fr: {
     title: "Tableau de bord",
@@ -242,6 +244,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pickupAddress: "Adresse de ramassage",
     pickupAddressHint: "Sans elle, aucun ramassage ne peut être demandé pour ce commerçant",
     city: "Ville",
+    phoneHint: "24 201 314 ou +216 24 201 314",
   },
   en: {
     title: "Dashboard",
@@ -317,6 +320,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pickupAddress: "Pickup address",
     pickupAddressHint: "Without it, no pickup can be requested for this merchant",
     city: "City",
+    phoneHint: "24 201 314 or +216 24 201 314",
   },
 };
 

@@ -51,7 +51,7 @@ export function MerchantForm({ locale }: { locale: Locale }) {
       <Field
         label={messages.contactPhone}
         name="contactPhone"
-        hint="+216…"
+        hint={messages.phoneHint}
         error={state.fieldErrors["contactPhone"]}
       >
         <input

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { ApiError, apiFetch, login as apiLogin } from "./api";
 import { parseMoney } from "./format";
 import { toLocale } from "./i18n";
+import { toE164 } from "./phone";
 import { clearSession, writeSession } from "./session";
 import type { FormState } from "./form-state";
 
@@ -67,16 +68,22 @@ export async function signOut(locale: string): Promise<void> {
  * The create-shipment form.
  *
  * Validated here as well as by the API — not instead of it. The API's schema is
- * the authority; this exists so a merchant sees "phone must start with +216"
- * beside the field rather than a generic failure after a round trip.
+ * the authority; this exists so a merchant sees the problem beside the field
+ * rather than a generic failure after a round trip.
  */
 const createSchema = z.object({
   recipientName: z.string().trim().min(1, "required").max(200),
+  /**
+   * Normalised, not merely validated. A merchant in Sousse types `24201314`;
+   * requiring `+21624201314` rejected every naturally-typed number and the
+   * shipment simply failed to create. `toE164` handles the national form, the
+   * `00` prefix and any separators. The API still stores E.164 only.
+   */
   recipientPhone: z
     .string()
     .trim()
-    .transform((value) => value.replace(/[\s-]/gu, ""))
-    .pipe(z.string().regex(/^\+[1-9]\d{6,14}$/u, "format")),
+    .transform(toE164)
+    .refine((value) => value !== null, "format"),
   addressLine: z.string().trim().min(1, "required").max(500),
   city: z.string().trim().max(120).optional(),
   codAmount: z.string().trim().max(30).optional(),

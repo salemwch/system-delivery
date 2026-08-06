@@ -77,7 +77,7 @@ export function PortalLoginForm({
         />
       </Field>
 
-      <Field label={messages.phone} name="phone" hint="+216…" error={state.fieldErrors["phone"]}>
+      <Field label={messages.phone} name="phone" hint={messages.phoneHint} error={state.fieldErrors["phone"]}>
         <input
           id="phone"
           name="phone"

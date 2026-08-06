@@ -24,7 +24,18 @@ export function Sidebar({
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-dvh w-56 flex-col bg-sidebar text-white">
+    /*
+     * `sticky top-0` with `h-dvh`, and both halves matter.
+     *
+     * `h-dvh` alone pins the panel to exactly one viewport but lets it scroll
+     * away with the page: on any screen taller than the fold the dark panel
+     * ended mid-page with white below it, and the nav's top items — Dashboard,
+     * Shipments — scrolled out of sight while the user was still on the page.
+     *
+     * `shrink-0` because a flex child with long content otherwise gets squeezed
+     * narrower than its `w-56`.
+     */
+    <aside className="sticky top-0 flex h-dvh w-56 shrink-0 flex-col bg-sidebar text-white">
       <div className="border-b border-white/10 px-4 py-4">
         <p className="truncate text-sm font-bold text-brand-soft">{courier}</p>
       </div>

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { apiBaseUrl, tenantSlug } from "./config";
 import { LOCALE_HEADER, PATHNAME_HEADER } from "./session-cookie";
-import { readSession } from "./session";
+import { readSession, writeSession } from "./session";
 import type { Session } from "./session";
 
 /**
@@ -131,9 +131,42 @@ async function currentSession(): Promise<Session> {
   if (session.expiresAt - REFRESH_SKEW_MS > Date.now()) {
     return session;
   }
-  // Expired. Hand off to the route handler, which refreshes, stores the
-  // rotated token, and returns the visitor to exactly where they were.
+
+  // Expired. A Server Action MAY write cookies, so it can rotate in place and
+  // carry on — which matters: redirecting out of an action throws away whatever
+  // the user just submitted. A form filled in for two minutes came back blank
+  // with no error, looking to the user like the button did nothing.
+  //
+  // A render cannot write cookies, so it hands off to the route handler.
+  if (await canPersistCookies(session)) {
+    const refreshed = await refresh(session);
+    if (refreshed === null) {
+      return redirectToLogin();
+    }
+    await writeSession(refreshed);
+    return refreshed;
+  }
   return redirectToRefresh();
+}
+
+/**
+ * Whether this context may write cookies — true in a Server Action or Route
+ * Handler, false during a render.
+ *
+ * Probed by re-writing the session that is ALREADY there. Deliberately a no-op
+ * write: the alternative is to refresh first and discover on failure that the
+ * rotated token cannot be stored, which is precisely the sequence that burns a
+ * single-use token and gets the whole family revoked.
+ *
+ * Next exposes no flag for this, and there is no way to ask without trying.
+ */
+async function canPersistCookies(session: Session): Promise<boolean> {
+  try {
+    await writeSession(session);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** The locale and path the proxy recorded for this request. */

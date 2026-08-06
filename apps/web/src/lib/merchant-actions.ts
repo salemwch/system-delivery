@@ -10,6 +10,7 @@ import { ApiError, apiFetch } from "./api";
 import { fieldErrorsFrom } from "./form-state";
 import type { CredentialState, FormState } from "./form-state";
 import { toLocale } from "./i18n";
+import { toE164 } from "./phone";
 
 /**
  * The write surface a commercial needs: sign an *expéditeur* up, give them
@@ -26,10 +27,16 @@ const createMerchantSchema = z.object({
   name: z.string().trim().min(1, "required").max(200),
   code: z.string().trim().max(50).optional(),
   contactName: z.string().trim().max(200).optional(),
+  /**
+   * Accepted as typed and normalised to E.164 — `24201314` becomes
+   * `+21624201314`. Rejecting the local form is what made this whole
+   * registration fail silently.
+   */
   contactPhone: z
     .string()
     .trim()
-    .regex(/^\+[1-9]\d{6,14}$/u, "e164")
+    .transform(toE164)
+    .refine((value) => value !== null, "phone")
     .optional(),
   contactEmail: z.email("format").optional(),
   /**
@@ -113,7 +120,8 @@ const portalLoginSchema = z.object({
   phone: z
     .string()
     .trim()
-    .regex(/^\+[1-9]\d{6,14}$/u, "e164")
+    .transform(toE164)
+    .refine((value) => value !== null, "phone")
     .optional(),
 });
 

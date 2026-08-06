@@ -20,7 +20,7 @@ Authorized 2026-07-22. Build within these limits:
 
 ## Current state (updated 2026-08-05)
 
-**Everything green:** `pnpm build` → ok · `pnpm test` → 980/980 (896 api + 30 track + 17 merchant + 37 web) · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (308 targets, `apps/web` now tracked and covered).
+**Everything green:** `pnpm build` → ok · `pnpm test` → 994/994 (896 api + 30 track + 24 merchant + 44 web) · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (308 targets, `apps/web` now tracked and covered).
 
 ⚠️ `pnpm sast` scans **git-tracked files only** — an untracked app is silently invisible to it. Never pipe it to `tail`: the pipeline's exit status is the last command's, which hid a `RuleParseError` behind a green tick.
 
@@ -76,6 +76,9 @@ Most critical rules (the ones that cause silent data corruption or total feature
 - **Migration + FORCE RLS:** seed BEFORE enabling FORCE; back-fill via `NO FORCE` … `FORCE` (DML filtered, constraint validation not)
 - **Never pipe `pnpm sast` to `tail`** — pipeline exit status is last command's
 - **Each Next app needs its own `apps/<app>/.env.local`** — Next loads env from the app dir, not the repo root. Nest's `envFilePath` resolves against CWD for the same reason: `[".env", "../../.env"]`
+- **A Server Action refreshes in place; only a render redirects.** Redirecting out of an action throws away the user's submission — a filled form returned blank with no error. `canPersistCookies()` probes with a no-op cookie write
+- **Sidebar needs `sticky top-0` alongside `h-dvh`** — `h-dvh` alone scrolls the panel away on a tall page, which reads as "the menu items vanished"
+- **Normalise phone input in the UI, don't just validate it.** Tunisians type `24201314`, not `+21624201314`. `toE164()` in `apps/web/src/lib/phone.ts`; the API stays strict
 - **Never rotate a refresh token during a render.** `cookies().set()` throws in a Server Component, and the API revokes the whole family on reuse — a render spends the token, cannot store the replacement, and the next request is locked out permanently. Rotation belongs in a Route Handler (`session/refresh`); `currentSession()` only redirects there
 - **A layout `redirect()` does not protect its pages.** Layout and page render concurrently, so the page throws first and returns 500. Guard routes in **`src/proxy.ts`** — Next 16 renamed `middleware.ts` and warns on the old name; the handler is the DEFAULT export. It checks cookie PRESENCE only, never validity
 - **Never cast a GUC to uuid without `NULLIF(setting, '')`.** `CASE` guarantees ordered evaluation of *scalar* branches only — an `EXISTS` inside a branch becomes a SubPlan the executor may run regardless, so the cast hits `''` and raises 22P02 on every non-scoped request. Cost one migration (0031) to learn
