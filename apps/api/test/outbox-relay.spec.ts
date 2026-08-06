@@ -187,6 +187,28 @@ describe("outbox relay", () => {
   }, 240_000);
 
   beforeEach(async () => {
+    // ⚠️ Drain BEFORE flushing, and before every test.
+    //
+    // The relay is cross-tenant by design — that is the whole point of the
+    // `dp_relay` role — so `drainOnce()` claims every pending row in the
+    // database, not just the ones this test seeded. Tests run against the
+    // shared dev database, so one manual API call in another terminal leaves
+    // rows behind and the next `expect(summary).toEqual({ claimed: 1, ... })`
+    // fails with `claimed: 3`. Diagnosed exactly that way.
+    //
+    // A bounded loop rather than a single call: the backlog can exceed one
+    // batch (OUTBOX_RELAY_BATCH_SIZE). The cap stops a publisher that is
+    // failing every row from spinning here forever.
+    const drainer = makeRelay(realPublisher);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const summary = await drainer.drainOnce();
+      if (summary.claimed === 0) {
+        break;
+      }
+    }
+
+    // Only now: the drain above wrote the leftovers into the stream, and
+    // `readStream()` must see this test's entries alone.
     await valkey.client.flushall();
     createdTenants = [];
   });

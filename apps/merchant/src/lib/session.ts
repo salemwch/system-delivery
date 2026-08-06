@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:
 import { cookies } from "next/headers";
 
 import { isProduction, sessionSecret } from "./config";
+import { SESSION_COOKIE_NAME } from "./session-cookie";
 
 /**
  * The merchant's session, held in an ENCRYPTED, httpOnly cookie.
@@ -24,7 +25,7 @@ import { isProduction, sessionSecret } from "./config";
  * attacker-chosen.
  */
 
-const COOKIE_NAME = "merchant_session";
+const COOKIE_NAME = SESSION_COOKIE_NAME;
 
 /** Matches the refresh-token lifetime, so a session outlives its access token. */
 const COOKIE_MAX_AGE_S = 30 * 24 * 60 * 60;

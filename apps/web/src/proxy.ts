@@ -6,6 +6,10 @@ import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 /**
  * Turns "not signed in" into a redirect, before anything renders.
  *
+ * ⚠️ `proxy.ts`, NOT `middleware.ts`. Next 16 renamed the convention and warns
+ * on the old filename; `PROXY_FILENAME` in next/dist/lib/constants is now
+ * `'proxy'`. Shipping both files is an error, not a fallback.
+ *
  * ─────────────────────────────────────────────────────────────────────────────
  * WHY THIS EXISTS AND THE LAYOUT CHECK IS NOT ENOUGH
  *
@@ -15,7 +19,7 @@ import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
  * `NotAuthenticatedError` before the layout's `redirect()` could take effect.
  * The visitor got a 500 stack trace instead of a login form.
  *
- * Middleware runs BEFORE rendering starts, so there is no race to lose. The
+ * The proxy runs BEFORE rendering starts, so there is no race to lose. The
  * layout check stays as defence in depth — this file only inspects a cookie's
  * presence and must never be the only thing standing between a stranger and
  * the data.
@@ -30,7 +34,7 @@ import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 const LOCALES = new Set(["ar", "fr", "en"]);
 const DEFAULT_LOCALE = "fr";
 
-export function middleware(request: NextRequest): NextResponse {
+export default function proxy(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
 
   const segments = pathname.split("/").filter((s) => s !== "");
