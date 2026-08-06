@@ -80,6 +80,12 @@ export const merchants = pgTable(
     contactPhone: text("contact_phone"),
     contactEmail: text("contact_email"),
     defaultPickupAddressId: uuid("default_pickup_address_id"),
+    /**
+     * The COMMERCIAL who owns this account (invariant I25, migration 0030).
+     * NULL = house-managed. RLS narrows a commercial login to rows where this
+     * is their own user id.
+     */
+    accountManagerId: uuid("account_manager_id"),
     /** ACTIVE | SUSPENDED. Suspended blocks new pickups (domain §3.18). */
     status: text("status").notNull().default("ACTIVE"),
     blockReason: text("block_reason"),
@@ -94,6 +100,9 @@ export const merchants = pgTable(
       .on(table.tenantId, table.code)
       .where(sql`code IS NOT NULL`),
     index("merchants_tenant_status_idx").on(table.tenantId, table.status),
+    index("merchants_tenant_account_manager_idx")
+      .on(table.tenantId, table.accountManagerId)
+      .where(sql`account_manager_id IS NOT NULL`),
   ],
 );
 

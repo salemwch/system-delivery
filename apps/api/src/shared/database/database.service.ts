@@ -75,23 +75,26 @@ export class DatabaseService implements OnModuleDestroy {
       { kind: SpanKind.CLIENT, attributes: { "db.system": "postgresql", scoped: true } },
       () =>
         this.db.transaction(async (tx) => {
-          await tx.execute(
-            sql`select set_config('app.current_tenant_id', ${scopedTenantId}, true)`,
-          );
+          const state = TenantContext.current();
 
-          // Merchant narrowing (invariant I24). Set transaction-locally for the
-          // same reason as the tenant id: with PgBouncer the connection returns
-          // to the pool after every transaction, so a session-scoped value would
-          // be inherited by the NEXT request — here that would mean silently
-          // showing one merchant another merchant's parcels.
+          // The two sub-tenant narrowings: one merchant (I24), or the portfolio
+          // of merchants a commercial manages (I25). Never both — but both are
+          // ALWAYS written, never conditionally, because leaving one unset would
+          // let a value from an earlier transaction on this pooled connection
+          // survive into this one. The empty string means "no narrowing", which
+          // is what the RLS predicates test for.
           //
-          // Always set, never conditionally: leaving it unset would let a value
-          // from an earlier transaction on this connection survive. The empty
-          // string means "no merchant scope", which the RLS predicate treats as
-          // no narrowing.
-          const merchantScope = TenantContext.current()?.merchantId ?? "";
+          // All three go in ONE statement: it is a single round trip instead of
+          // three on the hot path of every request, and the settings cannot end
+          // up half-applied.
+          const merchantScope = state?.merchantId ?? "";
+          const accountManagerScope = state?.accountManagerId ?? "";
+
           await tx.execute(
-            sql`select set_config('app.current_merchant_id', ${merchantScope}, true)`,
+            sql`select
+                  set_config('app.current_tenant_id', ${scopedTenantId}, true),
+                  set_config('app.current_merchant_id', ${merchantScope}, true),
+                  set_config('app.current_account_manager_id', ${accountManagerScope}, true)`,
           );
 
           return fn(tx);

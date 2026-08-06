@@ -17,6 +17,7 @@ import { parseWithZod } from "../../../shared/http/index.js";
 import { MFA_REQUIRED_ROLES, isRole } from "../domain/permissions.js";
 import type { Role } from "../domain/permissions.js";
 import {
+  createMerchantLoginSchema,
   createUserSchema,
   listUsersQuerySchema,
   resetPasswordSchema,
@@ -66,6 +67,27 @@ export interface AdminUserPage {
   readonly nextCursor: string | null;
 }
 
+/**
+ * A validated new login, whichever DTO it was parsed from.
+ *
+ * The union of what `createUserSchema` and `createMerchantLoginSchema` produce,
+ * so {@link UserService.insertUser} has one shape to write and neither endpoint
+ * can reach it with unvalidated input.
+ */
+interface NewUserInput {
+  readonly email: string;
+  readonly fullName: string;
+  // `| undefined` on every optional, not just `?`: under
+  // `exactOptionalPropertyTypes` a Zod-inferred `phone?: string | undefined`
+  // will not fit a plain `phone?: string`, and the DTOs are the only callers.
+  readonly phone?: string | undefined;
+  readonly locale?: "ar" | "fr" | "en" | undefined;
+  readonly password?: string | undefined;
+  readonly roles: readonly Role[];
+  readonly merchantId?: string | undefined;
+  readonly hubScope?: readonly string[] | undefined;
+}
+
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 
@@ -101,8 +123,31 @@ export class UserService {
   ) {}
 
   async create(input: unknown): Promise<CreatedUser> {
-    const dto = parseWithZod(createUserSchema, input);
+    return this.insertUser(parseWithZod(createUserSchema, input));
+  }
 
+  /**
+   * Mints the *expéditeur*'s own portal login (`merchant:onboard`).
+   *
+   * The role is fixed here rather than taken from the caller, which is what
+   * makes this safe to hand to a COMMERCIAL: the endpoint can produce a
+   * merchant login and nothing else. Which merchant is enforced by the
+   * database — a commercial may only onboard merchants in their own portfolio
+   * (migration 0030, invariant I25).
+   */
+  async createMerchantLogin(input: unknown): Promise<CreatedUser> {
+    const dto = parseWithZod(createMerchantLoginSchema, input);
+    return this.insertUser({ ...dto, roles: ["MERCHANT"] });
+  }
+
+  /**
+   * The single write path for a new login, shared by both entry points above.
+   *
+   * One place that hashes a password, one place that grants roles, one place
+   * that audits the grant. A second copy of this would be a second place for
+   * the audit record to be forgotten.
+   */
+  private async insertUser(dto: NewUserInput): Promise<CreatedUser> {
     const generated = dto.password === undefined ? generatePassword() : null;
     const plaintext = dto.password ?? generated;
     if (plaintext === null) {
@@ -510,16 +555,22 @@ async function assertNotLastActiveOwner(tx: TenantTransaction, excludingId: stri
  *
  * `merchant_id` is validated by the database, not by this module: `merchants`
  * belongs to `directory`, which sits a layer above `identity` and cannot be
- * imported from here. Two rejections are possible and mean the same thing to a
- * caller:
+ * imported from here. Three rejections are possible and all mean the same thing
+ * to a caller:
  *
  *   - 23503 on `users_merchant_id_fkey` — no merchant with that id exists.
  *   - 23514 from `users_assert_merchant_tenant` — it exists in another tenant.
+ *   - 23514 from `users_assert_merchant_in_portfolio` — it exists in this
+ *     tenant, but not in the calling commercial's portfolio (invariant I25).
  *
- * Constraint triggers raise without a constraint name, so the second is matched
- * on SQLSTATE alone. Every other check constraint on `users` (status, locale,
- * email shape) and the I23 triggers are already excluded by `createUserSchema`,
- * so a 23514 reaching here is the tenant mismatch.
+ * Collapsing all three to 404 is deliberate, not lazy. Distinguishing them
+ * would turn this endpoint into an oracle: a commercial could enumerate which
+ * merchant ids their colleagues manage by reading the error text.
+ *
+ * Constraint triggers raise without a constraint name, so the last two are
+ * matched on SQLSTATE alone. Every other check constraint on `users` (status,
+ * locale, email shape) and the I23 triggers are already excluded by the DTOs,
+ * so a 23514 reaching here is one of those two.
  */
 function translateUserWriteError(error: unknown, email: string): unknown {
   if (isUniqueViolation(error, "users_tenant_email_uq")) {

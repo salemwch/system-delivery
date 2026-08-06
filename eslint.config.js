@@ -98,6 +98,7 @@ export default tseslint.config(
           "./apps/api/tsconfig.test.json",
           "./apps/track/tsconfig.json",
           "./apps/merchant/tsconfig.json",
+          "./apps/web/tsconfig.json",
         ],
         tsconfigRootDir: import.meta.dirname,
       },
@@ -286,6 +287,7 @@ export default tseslint.config(
       // config schema: read here, validated here, nowhere else.
       "apps/track/src/lib/config.ts",
       "apps/merchant/src/lib/config.ts",
+      "apps/web/src/lib/config.ts",
     ],
     rules: {
       "no-restricted-properties": "off",

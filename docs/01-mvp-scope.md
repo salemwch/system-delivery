@@ -236,7 +236,7 @@ Cheap now, cross-cutting migrations later. Each is explicitly justified:
 
 ## 6. MVP User Roles
 
-Seven roles, fixed. Custom role definition is deferred.
+Eight roles, fixed. Custom role definition is deferred.
 
 | Role | Who | Core capability |
 |---|---|---|
@@ -247,34 +247,55 @@ Seven roles, fixed. Custom role definition is deferred.
 | **Finance** | Accounting staff | Ledger, COD reconciliation, settlements, financial reports. **Read-only on operations** |
 | **Driver** | Field courier | Own route only, own shipments only, POD, COD collection, own metrics |
 | **Merchant** | The *expéditeur* — the shipper handing parcels to the courier | **Own merchant only.** Create and track own parcels, print own labels, see own COD owed and settlements. No route, driver, fleet, or other-merchant visibility whatsoever |
+| **Commercial** | The field salesperson who calls on the *expéditeur* (added 2026-08-05) | **Own portfolio only.** Sign merchants up, mint their portal login, request and physically collect their parcels, and follow those accounts' volume and COD. No routes, drivers, hubs, manifests, ledger, address book, or other commercials' accounts |
 
 *Customers hold no account* — access is via an unguessable, expiring, single-shipment tracking token.
 
-> **Merchant is the first role scoped BELOW the tenant.** Every other role sees the whole tenant, so RLS alone is sufficient isolation for them. A merchant must see only their own rows *within* a tenant that also holds their competitors' parcels, which means `users.merchant_id` scoping in addition to RLS — enforced in the data layer, not by remembering to add a `WHERE` clause. Getting this wrong leaks one merchant's volume, customers, and revenue to another.
+> **Two roles are scoped BELOW the tenant, and they are scoped differently.** Every other role sees the whole tenant, so RLS on `tenant_id` alone isolates them.
+>
+> - A **Merchant** must see only their own rows inside a tenant that also holds their competitors' parcels — carried as `users.merchant_id`, matched against each row's `merchant_id` (invariant I24).
+> - A **Commercial** must see only the merchants they manage — a *set*, not one, resolved through `merchants.account_manager_id` rather than carried in the token (invariant I25).
+>
+> Both are enforced in Row-Level Security, not by remembering to add a `WHERE` clause. Getting either wrong leaks one merchant's volume, customers, and revenue to someone with no business seeing them.
+>
+> **A commercial deliberately cannot read `recipients`.** The address book is tenant-scoped by design (RM-R1) and carries no merchant, so RLS cannot narrow it — granting the read would hand the courier's entire customer list to the one role most likely to leave for a competitor.
 
 ### Permission matrix (abbreviated)
 
-| Capability | Owner | Dispatcher | Hub Op | Finance | Driver | Merchant |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|
-| Create/edit shipment | ✅ | ✅ | ➖ | ❌ | ❌ | ➖ own only |
-| Print parcel label / QR | ✅ | ✅ | ✅ | ❌ | ❌ | ➖ own only |
-| Assign shipment to driver | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| View live driver location | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| View driver location **history** | ✅ | ➖ audited | ❌ | ❌ | own only | ❌ |
-| Scan at hub / manage manifest | ✅ | ➖ | ✅ | ❌ | ❌ | ❌ |
-| Capture POD | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Record COD collection | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Accept cash remittance | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| View COD amounts / ledger | ✅ | ❌ | ➖ own hub | ✅ | own only | ➖ own owed |
-| Request pickup | ✅ | ✅ | ➖ | ❌ | ❌ | ➖ own only |
-| Post ledger adjustment | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| Manage users & roles | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Override shipment status | ✅ | ➖ audited | ❌ | ❌ | ❌ | ❌ |
-| Export customer PII | ✅ | ❌ | ❌ | ➖ audited | ❌ | ➖ own only |
+| Capability | Owner | Dispatcher | Hub Op | Finance | Driver | Merchant | Commercial |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| Create/edit shipment | ✅ | ✅ | ➖ | ❌ | ❌ | ➖ own only | ❌ |
+| Print parcel label / QR | ✅ | ✅ | ✅ | ❌ | ❌ | ➖ own only | ➖ portfolio |
+| Assign shipment to driver | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| View live driver location | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| View driver location **history** | ✅ | ➖ audited | ❌ | ❌ | own only | ❌ | ❌ |
+| Scan at hub / manage manifest | ✅ | ➖ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Capture POD | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Record COD collection | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Accept cash remittance | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| View COD amounts / ledger | ✅ | ❌ | ➖ own hub | ✅ | own only | ➖ own owed | ➖ portfolio COD |
+| Request pickup | ✅ | ✅ | ➖ | ❌ | ❌ | ➖ own only | ➖ portfolio |
+| **Collect parcels at the merchant** | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ✅ |
+| Assign a pickup **to someone else** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Claim a pickup for themselves** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ➖ portfolio |
+| **Register a merchant** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| **Mint a merchant portal login** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ➖ portfolio |
+| **Assign a merchant's commercial** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Read the recipient address book | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Post ledger adjustment | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Manage users & roles | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Override shipment status | ✅ | ➖ audited | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Export customer PII | ✅ | ❌ | ❌ | ➖ audited | ❌ | ➖ own only | ❌ |
 
 ✅ full · ➖ limited/audited/own-scoped · ❌ denied
 
-**Three deliberate choices:** dispatchers do not see COD amounts (they do not need them, and it shrinks the blast radius of a compromised dispatcher account); finance is read-only on operations (separation of duties — the person who reconciles cash cannot also alter delivery status to hide a discrepancy); and a merchant sees **money but not operations** — their own COD balance and settlements, never a route, a driver, or another merchant. A merchant is a customer of the tenant, not a member of it.
+**Five deliberate choices:**
+
+1. **Dispatchers do not see COD amounts.** They do not need them, and excluding them shrinks the blast radius of the most numerous and least-hardened account type.
+2. **Finance is read-only on operations.** Separation of duties — whoever reconciles cash must not also be able to alter delivery status to hide a discrepancy.
+3. **A merchant sees money but not operations.** Their own COD balance and settlements, never a route, a driver, or another merchant. A merchant is a customer of the tenant, not a member of it.
+4. **A commercial mints logins through `merchant:onboard`, never `user:manage`.** Onboarding an *expéditeur* has to create credentials, but `user:manage` creates them for any role — a commercial holding it could mint themselves an OWNER. `merchant:onboard` can only ever produce a MERCHANT login, for a merchant they already manage.
+5. **A commercial cannot reassign accounts.** Ownership moves under its own permission held by the OWNER alone; otherwise a salesperson could help themselves to a colleague's book of business, which is exactly what the portfolio scope exists to prevent.
 
 ---
 

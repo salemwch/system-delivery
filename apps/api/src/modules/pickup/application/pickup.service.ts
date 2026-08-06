@@ -12,6 +12,7 @@ import {
   assignPickupRequestSchema,
   batchScanPickupSchema,
   cancelPickupRequestSchema,
+  claimPickupRequestSchema,
   collectPickupRequestSchema,
   completePickupRequestSchema,
   createPickupRequestSchema,
@@ -226,16 +227,59 @@ export class PickupService {
     );
   }
 
+  /** Dispatch names who will go and collect. Requires `pickup:assign`. */
   async assign(id: string, input: unknown, ctx: CommandContext): Promise<PickupRequest> {
     const dto = parseWithZod(assignPickupRequestSchema, input);
+    return this.assignTo(id, dto.driverId, dto.routeStopId, ctx);
+  }
+
+  /**
+   * The caller takes the run themselves. Requires `pickup:claim`.
+   *
+   * The collector is `ctx.actorId` — read from the verified token, never from
+   * the body — so this command cannot assign work to anyone else. That is the
+   * whole reason it exists separately from {@link assign}: a COMMERCIAL must be
+   * able to collect their own merchants' parcels without being able to route
+   * the fleet, and a permission that could do both would be `pickup:assign`
+   * under a friendlier name.
+   *
+   * Which pickups they can reach is already settled by RLS — a commercial only
+   * sees `pickup_requests` for merchants in their portfolio (invariant I25) —
+   * so an out-of-portfolio id is a 404 here, not a forbidden.
+   *
+   * No route stop: a claimed run is an errand, not a planned stop on an
+   * optimised route. If it needs to be sequenced, dispatch assigns it.
+   */
+  async claim(id: string, input: unknown, ctx: CommandContext): Promise<PickupRequest> {
+    parseWithZod(claimPickupRequestSchema, input);
+    return this.assignTo(id, ctx.actorId, undefined, ctx);
+  }
+
+  /**
+   * The one implementation of "this pickup now has a collector".
+   *
+   * Shared so the state-machine check, the outbox event, and the audit trail
+   * are identical whichever way the collector was chosen — a second copy would
+   * be a second place for `assign` and `claim` to drift apart.
+   *
+   * `collectorId` is a bare user id by design: `assigned_driver_id` carries no
+   * foreign key to `drivers`, because the person who physically collects is not
+   * always a driver. A commercial is the case that proves it.
+   */
+  private async assignTo(
+    id: string,
+    collectorId: string,
+    routeStopId: string | undefined,
+    ctx: CommandContext,
+  ): Promise<PickupRequest> {
     return this.transition(id, "ASSIGNED", ctx, (tx, row) =>
       tx
         .update(pickupRequests)
         .set({
           status: "ASSIGNED" as const,
-          assignedDriverId: dto.driverId,
+          assignedDriverId: collectorId,
           assignedAt: new Date(),
-          ...(dto.routeStopId === undefined ? {} : { assignedRouteStopId: dto.routeStopId }),
+          ...(routeStopId === undefined ? {} : { assignedRouteStopId: routeStopId }),
           updatedAt: new Date(),
         })
         .where(eq(pickupRequests.id, row.id))

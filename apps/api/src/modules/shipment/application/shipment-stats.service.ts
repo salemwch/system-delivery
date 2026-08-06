@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { eq, sql, and, gte, lt } from "drizzle-orm";
 
 import { DatabaseService } from "../../../shared/database/index.js";
+import { CurrencyService } from "../../../shared/money/index.js";
 import { roundTo } from "../../../shared/math/index.js";
 import { shipments, shipmentEvents } from "../domain/schema.js";
 
@@ -21,6 +22,14 @@ export interface DashboardStats {
   readonly codCollectedMinor: string;
   readonly codPendingMinor: string;
   readonly currency: string;
+  /**
+   * ISO 4217 minor-unit exponent, read from the `currencies` table.
+   *
+   * Returned so no client has to assume one. TND has THREE decimals, and a UI
+   * that divides by a hardcoded 100 misprices every Tunisian amount by a factor
+   * of ten.
+   */
+  readonly currencyExponent: number;
 }
 
 export interface MerchantStats {
@@ -32,6 +41,8 @@ export interface MerchantStats {
   readonly totalCodMinor: string;
   readonly deliveredCodMinor: string;
   readonly currency: string;
+  /** ISO 4217 minor-unit exponent. See {@link DashboardStats.currencyExponent}. */
+  readonly currencyExponent: number;
 }
 
 export interface DriverStats {
@@ -44,13 +55,21 @@ export interface DriverStats {
   readonly onTimeRate: number;
   readonly codCollectedMinor: string;
   readonly currency: string;
+  /** ISO 4217 minor-unit exponent. See {@link DashboardStats.currencyExponent}. */
+  readonly currencyExponent: number;
 }
 
 @Injectable()
 export class ShipmentStatsService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly currencies: CurrencyService,
+  ) {}
 
   async dashboard(currency: string): Promise<DashboardStats> {
+    // Resolved before the transaction opens: the exponent is process-cached
+    // reference data, and holding a transaction open across it would be waste.
+    const currencyExponent = await this.currencies.exponentOf(currency);
     return this.database.withTenant(async (tx) => {
       const todayStart = todayUtc();
       const tomorrowStart = tomorrowUtc();
@@ -148,11 +167,13 @@ export class ShipmentStatsService {
         codCollectedMinor: codCollected,
         codPendingMinor: codPending,
         currency,
+        currencyExponent,
       };
     });
   }
 
   async merchantStats(merchantId: string, currency: string): Promise<MerchantStats> {
+    const currencyExponent = await this.currencies.exponentOf(currency);
     return this.database.withTenant(async (tx) => {
       const statusRows = await tx
         .select({
@@ -200,11 +221,13 @@ export class ShipmentStatsService {
         totalCodMinor: codRows[0]?.total ?? "0",
         deliveredCodMinor: codRows[0]?.delivered ?? "0",
         currency,
+        currencyExponent,
       };
     });
   }
 
   async driverStats(driverId: string, currency: string): Promise<DriverStats> {
+    const currencyExponent = await this.currencies.exponentOf(currency);
     return this.database.withTenant(async (tx) => {
       const deliveredRows = await tx
         .select({ count: sql<number>`count(distinct shipment_id)::int` })
@@ -272,6 +295,7 @@ export class ShipmentStatsService {
         onTimeRate: roundTo(onTimeRate, 4),
         codCollectedMinor: codRows[0]?.total ?? "0",
         currency,
+        currencyExponent,
       };
     });
   }

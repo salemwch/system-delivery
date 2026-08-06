@@ -46,6 +46,15 @@ describe("permissions", () => {
     expect(P.MERCHANT_ASSIGN_MANAGER).toBe("merchant:assign_manager");
   });
 
+  it("separates claiming a pickup from assigning one", () => {
+    // The distinction the pickups page renders on. `claim` can only ever name
+    // the caller; `assign` names anyone, so a commercial holds the first and
+    // never the second.
+    expect(P.PICKUP_CLAIM).toBe("pickup:claim");
+    expect(P.PICKUP_ASSIGN).toBe("pickup:assign");
+    expect(P.PICKUP_CLAIM).not.toBe(P.PICKUP_ASSIGN);
+  });
+
   it("gates merchants on read, so a commercial keeps the section", () => {
     // A commercial holds merchant:read and pickup:read but no route/hub/ledger
     // permissions — the sidebar therefore resolves to their five sections

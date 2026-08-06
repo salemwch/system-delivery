@@ -39,12 +39,22 @@ const password = z
 
 const roleName = z.enum(ROLES);
 
+/** 254 is the RFC 5321 maximum for a whole address. */
+const email = z.email().max(254).trim().toLowerCase();
+
+const fullName = z.string().trim().min(1, "fullName is required").max(200);
+
+/** The identity every new login carries, whichever endpoint mints it. */
+const identityFields = {
+  email,
+  fullName,
+  phone: e164.optional(),
+  locale: locale.optional(),
+} as const;
+
 export const createUserSchema = z
   .strictObject({
-    email: z.email().max(254).trim().toLowerCase(),
-    fullName: z.string().trim().min(1, "fullName is required").max(200),
-    phone: e164.optional(),
-    locale: locale.optional(),
+    ...identityFields,
     /**
      * Optional on purpose. Omitting it makes the server generate one and return
      * it exactly once, which is the safer default: an administrator typing a
@@ -94,16 +104,20 @@ export const createUserSchema = z
       });
     }
 
-    // MERCHANT is scoped below the tenant; every other role sees the whole
-    // tenant. Combining them yields an account whose courier-side permissions
-    // silently return almost nothing, which reads as data loss rather than as a
-    // misconfiguration.
-    if (isMerchant && unique.size > 1) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["roles"],
-        message: "MERCHANT cannot be combined with another role",
-      });
+    // MERCHANT and COMMERCIAL are the two roles scoped BELOW the tenant; every
+    // other role sees the whole of it. Combining either with a tenant-wide role
+    // yields an account whose courier-side permissions silently return almost
+    // nothing — a dispatcher who is also a commercial would see only the
+    // shipments of the merchants they manage, which reads as data loss rather
+    // than as a misconfiguration, and is diagnosed by nobody for weeks.
+    for (const scoped of ["MERCHANT", "COMMERCIAL"] as const) {
+      if (unique.has(scoped) && unique.size > 1) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["roles"],
+          message: `${scoped} cannot be combined with another role`,
+        });
+      }
     }
 
     if (isMerchant && value.hubScope !== undefined) {
@@ -115,9 +129,31 @@ export const createUserSchema = z
     }
   });
 
+/**
+ * Onboarding the *expéditeur*'s own portal login (`merchant:onboard`).
+ *
+ * Three things are absent on purpose, and each absence is the point:
+ *
+ *  - **`roles`.** Fixed to MERCHANT by the service. A caller who could name the
+ *    role here would hold `user:manage` under a different name — the exact
+ *    escalation this endpoint exists to avoid.
+ *  - **`password`.** Always server-generated and returned exactly once. The
+ *    person onboarding a merchant is standing in their shop; the safe default
+ *    is a credential neither party chose.
+ *  - **`hubScope`.** Meaningless for a merchant login.
+ *
+ * `merchantId` is checked against the caller's portfolio by the database, not
+ * here (migration 0030) — a commercial cannot mint credentials into a rival's
+ * account, and gets a plain 404 rather than confirmation that the id exists.
+ */
+export const createMerchantLoginSchema = z.strictObject({
+  ...identityFields,
+  merchantId: z.uuid(),
+});
+
 export const updateUserSchema = z
   .strictObject({
-    fullName: z.string().trim().min(1).max(200).optional(),
+    fullName: fullName.optional(),
     phone: e164.nullable().optional(),
     locale: locale.optional(),
     hubScope: z.array(z.uuid()).max(100).optional(),

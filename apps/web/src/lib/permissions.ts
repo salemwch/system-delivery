@@ -17,6 +17,10 @@ export const P = {
 
   PICKUP_READ: "pickup:read",
   PICKUP_CREATE: "pickup:create",
+  /** Take a collection run for oneself. Never names anyone else — see PICKUP_ASSIGN. */
+  PICKUP_CLAIM: "pickup:claim",
+  /** Name who will go. Held by dispatch, deliberately not by a commercial. */
+  PICKUP_ASSIGN: "pickup:assign",
 
   MERCHANT_READ: "merchant:read",
   MERCHANT_CREATE: "merchant:create",

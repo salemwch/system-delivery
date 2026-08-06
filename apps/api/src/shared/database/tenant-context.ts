@@ -41,6 +41,19 @@ export interface TenantContextState {
    * role, where the policies are a no-op.
    */
   readonly merchantId?: string;
+  /**
+   * Narrows the caller to the merchants they MANAGE (invariant I25).
+   *
+   * Set only for a `COMMERCIAL` login, to that user's own id. Written to
+   * `app.current_account_manager_id` and read by RLS, for the same reason as
+   * `merchantId`: the narrowing belongs in Postgres, not in every query. Absent
+   * for every other role, where the policies are a no-op.
+   *
+   * Distinct from `merchantId` because it scopes a SET of merchants rather than
+   * one — the two never both apply, but conflating them would silently turn a
+   * portfolio into a single account.
+   */
+  readonly accountManagerId?: string;
   /** Correlates a request with everything it causes, including async fan-out. */
   readonly requestId?: string;
   /**

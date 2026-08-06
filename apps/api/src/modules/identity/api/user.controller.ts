@@ -14,7 +14,12 @@ import { z } from "zod";
 import { zodBody } from "../../../shared/http/index.js";
 import { UserService } from "../application/user.service.js";
 import type { AdminUser, CreatedUser } from "../application/user.service.js";
-import { createUserSchema, disableUserSchema, updateUserSchema } from "../domain/dtos.js";
+import {
+  createMerchantLoginSchema,
+  createUserSchema,
+  disableUserSchema,
+  updateUserSchema,
+} from "../domain/dtos.js";
 import { CurrentPrincipal, RequirePermissions } from "./request-context.js";
 import type { Principal } from "../application/token.service.js";
 
@@ -69,6 +74,23 @@ export class UserController {
     @Body(zodBody(createUserSchema)) body: z.infer<typeof createUserSchema>,
   ): Promise<CreatedUserResponse> {
     return toCreatedResponse(await this.usersService.create(body));
+  }
+
+  /**
+   * Onboards an *expéditeur*: their merchant record already exists, this gives
+   * them the login for it.
+   *
+   * Gated on `merchant:onboard`, NOT `user:manage`, so a COMMERCIAL can finish
+   * the sign-up they started in the shop without also being able to mint an
+   * OWNER. The role is fixed to MERCHANT in the service and the merchant must
+   * be one the caller manages — enforced in the database (migration 0030).
+   */
+  @Post("merchant-login")
+  @RequirePermissions("merchant:onboard")
+  async createMerchantLogin(
+    @Body(zodBody(createMerchantLoginSchema)) body: z.infer<typeof createMerchantLoginSchema>,
+  ): Promise<CreatedUserResponse> {
+    return toCreatedResponse(await this.usersService.createMerchantLogin(body));
   }
 
   @Get()

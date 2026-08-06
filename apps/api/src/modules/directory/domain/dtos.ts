@@ -53,6 +53,22 @@ export const updateMerchantSchema = z
   });
 export type UpdateMerchantInput = z.infer<typeof updateMerchantSchema>;
 
+/**
+ * Hands an account to a commercial, or takes it back (`merchant:assign_manager`).
+ *
+ * Deliberately its own endpoint rather than a field on
+ * {@link updateMerchantSchema}: `merchant:update` is held by everyone who edits
+ * a merchant's phone number, including commercials themselves, and a commercial
+ * who could set this field could quietly help themselves to a colleague's book
+ * of business. Ownership moves under its own permission and leaves its own
+ * audit record.
+ *
+ * `null` unassigns — the account becomes house-managed and no commercial sees it.
+ */
+export const assignAccountManagerSchema = z.strictObject({
+  accountManagerId: z.uuid().nullable(),
+});
+
 // ── Recipients ───────────────────────────────────────────────────────────────
 
 export const createRecipientSchema = z.strictObject({

@@ -1,15 +1,22 @@
 import { Injectable } from "@nestjs/common";
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 
-import { OutboxService } from "../../platform/index.js";
+import { AuditService, OutboxService } from "../../platform/index.js";
 import {
   DatabaseService,
   TenantContext,
+  isCheckViolation,
+  isForeignKeyViolation,
   isUniqueViolation,
 } from "../../../shared/database/index.js";
+import type { TenantTransaction } from "../../../shared/database/index.js";
 import { ConflictError, NotFoundError } from "../../../shared/errors/index.js";
 import { parseWithZod } from "../../../shared/http/index.js";
-import { createMerchantSchema, updateMerchantSchema } from "../domain/dtos.js";
+import {
+  assignAccountManagerSchema,
+  createMerchantSchema,
+  updateMerchantSchema,
+} from "../domain/dtos.js";
 import { merchants } from "../domain/schema.js";
 import type { Merchant, NewMerchant } from "../domain/schema.js";
 
@@ -23,6 +30,14 @@ export interface ListMerchantsParams {
   readonly limit?: number;
   readonly cursor?: string;
   readonly status?: "ACTIVE" | "SUSPENDED";
+  /**
+   * Filters to one commercial's book of business.
+   *
+   * A convenience for tenant-wide roles ("show me what Salem manages"), never a
+   * security control: a commercial's own list is already narrowed by RLS
+   * whether or not they pass this.
+   */
+  readonly accountManagerId?: string;
 }
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -40,17 +55,34 @@ export class MerchantService {
   constructor(
     private readonly database: DatabaseService,
     private readonly outbox: OutboxService,
+    private readonly audit: AuditService,
   ) {}
 
+  /**
+   * Registers a merchant.
+   *
+   * A COMMERCIAL becomes its account manager automatically. The id is read from
+   * the ambient context — the same value RLS is already narrowing this
+   * transaction by — and never from the DTO. Two consequences, both deliberate:
+   * a commercial who signs an *expéditeur* up owns that account from its first
+   * row without having to say so, and nobody can write a merchant into someone
+   * else's portfolio (or out of their own) by putting an id in the body.
+   * Ownership moves through {@link assignAccountManager} alone.
+   *
+   * For every other role the scope is absent and the account is house-managed
+   * until an OWNER assigns it (invariant I25).
+   */
   async create(input: unknown): Promise<Merchant> {
     const dto = parseWithZod(createMerchantSchema, input);
 
     try {
       return await this.database.withTenant(async (tx) => {
         const tenantId = TenantContext.requireTenantId();
+        const accountManagerId = TenantContext.current()?.accountManagerId;
         const values: NewMerchant = {
           tenantId,
           name: dto.name,
+          ...(accountManagerId === undefined ? {} : { accountManagerId }),
           ...(dto.code === undefined ? {} : { code: dto.code }),
           ...(dto.contactName === undefined ? {} : { contactName: dto.contactName }),
           ...(dto.contactPhone === undefined ? {} : { contactPhone: dto.contactPhone }),
@@ -84,10 +116,19 @@ export class MerchantService {
   }
 
   async getById(id: string): Promise<Merchant> {
-    return this.database.withTenant(async (tx) => {
-      const rows = await tx.select().from(merchants).where(eq(merchants.id, id)).limit(1);
-      return requireFound(rows[0], "Merchant");
-    });
+    return this.database.withTenant((tx) => this.loadOne(tx, id));
+  }
+
+  /**
+   * The single-row read, on the CALLER's transaction.
+   *
+   * Separate from {@link getById} so a command that must read-then-write does
+   * both inside one transaction — reading through `getById` would open a second
+   * one, and the row could change in between.
+   */
+  private async loadOne(tx: TenantTransaction, id: string): Promise<Merchant> {
+    const rows = await tx.select().from(merchants).where(eq(merchants.id, id)).limit(1);
+    return requireFound(rows[0], "Merchant");
   }
 
   async list(params: ListMerchantsParams = {}): Promise<MerchantPage> {
@@ -95,6 +136,9 @@ export class MerchantService {
     return this.database.withTenant(async (tx) => {
       const conditions = [
         ...(params.status === undefined ? [] : [eq(merchants.status, params.status)]),
+        ...(params.accountManagerId === undefined
+          ? []
+          : [eq(merchants.accountManagerId, params.accountManagerId)]),
         ...(params.cursor === undefined ? [] : [lt(merchants.id, params.cursor)]),
       ];
       const rows = await tx
@@ -132,6 +176,58 @@ export class MerchantService {
     } catch (error) {
       if (isUniqueViolation(error, "merchants_tenant_code_uq")) {
         throw new ConflictError("MERCHANT_CODE_TAKEN", "That merchant code is already in use.");
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Hands the account to a commercial, or takes it back (`null`).
+   *
+   * Recorded in the audit trail rather than published to the outbox: nothing
+   * downstream reacts to this, but it changes WHO CAN SEE the merchant's
+   * shipments, customers and revenue, and §10 makes a change of access
+   * mandatory to record. Reading `current` first is what lets the entry state
+   * both sides of the move — an entry that says only "assigned to X" cannot
+   * answer who lost the account.
+   */
+  async assignAccountManager(id: string, input: unknown): Promise<Merchant> {
+    const dto = parseWithZod(assignAccountManagerSchema, input);
+
+    try {
+      return await this.database.withTenant(async (tx) => {
+        const current = await this.loadOne(tx, id);
+        if (current.accountManagerId === dto.accountManagerId) {
+          return current;
+        }
+
+        const rows = await tx
+          .update(merchants)
+          .set({ accountManagerId: dto.accountManagerId, updatedAt: sql`now()` })
+          .where(eq(merchants.id, id))
+          .returning();
+        const updated = requireFound(rows[0], "Merchant");
+
+        await this.audit.record(tx, {
+          action: "merchant.account_manager_assigned",
+          resourceType: "merchant",
+          resourceId: id,
+          changes: {
+            accountManagerId: {
+              from: current.accountManagerId,
+              to: dto.accountManagerId,
+            },
+          },
+        });
+
+        return updated;
+      });
+    } catch (error) {
+      // 23514 from `merchants_assert_account_manager_tenant`: the user exists,
+      // but in another tenant. Not found is the honest answer AND the safe one —
+      // confirming the id would make this endpoint a cross-tenant user oracle.
+      if (isCheckViolation(error) || isForeignKeyViolation(error, "merchants_account_manager_id_fkey")) {
+        throw new NotFoundError("User");
       }
       throw error;
     }

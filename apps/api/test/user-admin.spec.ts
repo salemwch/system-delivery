@@ -68,7 +68,7 @@ describe("user administration", () => {
     const passwords = new PasswordService();
     const audit = new AuditService(db);
     usersService = new UserService(db, passwords, outbox, audit);
-    merchants = new MerchantService(db, outbox);
+    merchants = new MerchantService(db, outbox, new AuditService(db));
     auth = buildAuthStack(db).auth;
   }, 240_000);
 

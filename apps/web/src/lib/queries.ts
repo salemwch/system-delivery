@@ -173,13 +173,29 @@ export interface AuditEntry {
   readonly createdAt: string;
 }
 
+/**
+ * A pickup request as `GET /v1/pickups` actually returns it.
+ *
+ * ⚠️ There is no `merchantName` — the endpoint returns `merchantId` only, and
+ * an earlier version of this interface invented one along with `parcelCount`
+ * and `scheduledAt`. All three rendered as `undefined`. The human-readable
+ * handle is `code`; the shop-floor handle is `contactName`.
+ */
 export interface PickupSummary {
   readonly id: string;
+  /** Tenant-facing reference, e.g. PU-4K2M-9XQ1. */
+  readonly code: string;
   readonly merchantId: string;
-  readonly merchantName: string;
   readonly status: string;
-  readonly scheduledAt: string;
-  readonly parcelCount: number;
+  readonly contactName: string;
+  readonly contactPhone: string;
+  readonly requestedWindowFrom: string;
+  readonly requestedWindowTo: string;
+  readonly estimatedParcelCount: number;
+  /** Null until the run is collected — then it is what was actually scanned. */
+  readonly actualParcelCount: number | null;
+  /** Who is going to collect. Not necessarily a driver — a commercial may claim it. */
+  readonly assignedDriverId: string | null;
   readonly createdAt: string;
 }
 

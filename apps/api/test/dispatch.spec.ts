@@ -18,6 +18,7 @@ import { ShiftService } from "../src/modules/fleet/application/shift.service.js"
 import { HubService } from "../src/modules/network/application/hub.service.js";
 import { FeatureService } from "../src/modules/platform/application/feature.service.js";
 import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { FieldCipher } from "../src/shared/crypto/field-cipher.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
@@ -181,7 +182,7 @@ describe("dispatch", () => {
     const outbox = new OutboxService();
     const features = new FeatureService(db);
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
-    const merchants = new MerchantService(db, outbox);
+    const merchants = new MerchantService(db, outbox, new AuditService(db));
     const recipients = new RecipientService(db);
     const hubs = new HubService(db, outbox, addresses);
     const cipher = new FieldCipher(randomBytes(32));

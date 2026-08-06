@@ -26,6 +26,7 @@ import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure
 import { HubService } from "../src/modules/network/application/hub.service.js";
 import { FeatureService } from "../src/modules/platform/application/feature.service.js";
 import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { ShipmentEventService } from "../src/modules/shipment/application/shipment-event.service.js";
 import { ShipmentService } from "../src/modules/shipment/application/shipment.service.js";
@@ -103,7 +104,7 @@ describe("custody", () => {
 
   async function seedMerchant(tenantId: string): Promise<string> {
     return asTenant(tenantId, async () => {
-      const merchants = new MerchantService(db, new OutboxService());
+      const merchants = new MerchantService(db, new OutboxService(), new AuditService(db));
       const m = await merchants.create({
         name: `Merchant ${Math.random().toString(36).slice(2, 8)}`,
       });
@@ -233,7 +234,7 @@ describe("custody", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
-    const merchants = new MerchantService(db, outbox);
+    const merchants = new MerchantService(db, outbox, new AuditService(db));
     const recipients = new RecipientService(db);
     const features = new FeatureService(db);
     hubsSvc = new HubService(db, outbox, addresses);

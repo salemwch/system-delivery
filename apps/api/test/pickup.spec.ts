@@ -15,6 +15,7 @@ import { OUTCOME_REASONS } from "../src/modules/pickup/domain/dtos.js";
 import { MerchantService } from "../src/modules/directory/application/merchant.service.js";
 import { AddressService } from "../src/modules/directory/application/address.service.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
@@ -313,7 +314,7 @@ describe("pickup", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     addressesSvc = new AddressService(db, outbox, new ManualGeocodingProvider());
-    merchantsSvc = new MerchantService(db, outbox);
+    merchantsSvc = new MerchantService(db, outbox, new AuditService(db));
     pickups = new PickupService(db, outbox);
   }, 240_000);
 

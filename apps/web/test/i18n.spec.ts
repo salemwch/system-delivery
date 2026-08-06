@@ -61,6 +61,13 @@ describe("MESSAGES", () => {
       expect(messages.createPortalLogin).toBeTruthy();
       expect(messages.credentialShownOnce).toBeTruthy();
       expect(messages.performance).toBeTruthy();
+      // The pickups page: reference/contact/window columns and the claim action.
+      expect(messages.reference).toBeTruthy();
+      expect(messages.parcels).toBeTruthy();
+      expect(messages.pickupWindow).toBeTruthy();
+      expect(messages.claimPickup).toBeTruthy();
+      expect(messages.pickupNotClaimable).toBeTruthy();
+      expect(messages.assignedToYou).toBeTruthy();
     }
   });
 

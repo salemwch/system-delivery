@@ -31,7 +31,17 @@ export const PERMISSIONS = [
   "pickup:read",
   "pickup:create",
   "pickup:accept",
+  /** Name who will go and collect. Implies routing another person's work. */
   "pickup:assign",
+  /**
+   * Take a collection run for ONESELF.
+   *
+   * Deliberately not `pickup:assign`. The claim command reads the collector
+   * from the token, so its holder can only ever assign themselves — a field
+   * commercial can collect their own merchants' parcels without gaining the
+   * ability to dispatch a fleet of hundreds.
+   */
+  "pickup:claim",
   "pickup:collect",
 
   // Merchants (the businesses that ship through the tenant — never "customer")
@@ -39,6 +49,17 @@ export const PERMISSIONS = [
   "merchant:create",
   "merchant:update",
   "merchant:block",
+  /**
+   * Mint the merchant's own portal login.
+   *
+   * Deliberately NOT `user:manage`. Onboarding an *expéditeur* has to create
+   * credentials, but `user:manage` creates credentials for ANY role — a
+   * commercial holding it could mint themselves an OWNER. This permission can
+   * only ever produce a MERCHANT login, for a merchant the caller manages.
+   */
+  "merchant:onboard",
+  /** Hand an account to a commercial, or take it back. Owner-only. */
+  "merchant:assign_manager",
 
   // Recipients (the address book — never called "customer", invariant I18)
   "recipient:read",
@@ -120,9 +141,37 @@ export const ROLES = [
   "DRIVER",
   "PLATFORM_ADMIN",
   "MERCHANT",
+  "COMMERCIAL",
 ] as const;
 
 export type Role = (typeof ROLES)[number];
+
+/**
+ * The role whose visibility is narrowed to the merchants it manages.
+ *
+ * Named once here so the portfolio rule cannot be restated — and drift — in the
+ * interceptor, the realtime handshake, or a future consumer.
+ */
+const ACCOUNT_MANAGER_ROLE = "COMMERCIAL";
+
+/**
+ * The portfolio scope a caller carries, or null for none (invariant I25).
+ *
+ * A commercial's scope is their own user id: `merchants.account_manager_id`
+ * points at it, and RLS reads it from `app.current_account_manager_id`. Unlike
+ * a merchant's `mid` this is NOT a separate token claim — it is derived from
+ * claims already signed (`sub` and `rol`), so there is no third value that
+ * could disagree with the other two.
+ *
+ * Structurally typed rather than taking a Principal: this file is the bottom of
+ * the identity module and imports nothing.
+ */
+export function accountManagerScope(principal: {
+  readonly roles: readonly Role[];
+  readonly userId: string;
+}): string | null {
+  return principal.roles.includes(ACCOUNT_MANAGER_ROLE) ? principal.userId : null;
+}
 
 const ROLE_SET: ReadonlySet<string> = new Set<string>(ROLES);
 
@@ -244,6 +293,62 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "telemetry:write",
     "manifest:read",
     "cod:collect",
+    "complaint:create",
+  ],
+
+  /**
+   * The *commercial* — the field salesperson who signs the *expéditeur* up,
+   * collects their parcels in person, and stays the named contact afterwards
+   * (docs/01-mvp-scope.md §6, added 2026-08-05).
+   *
+   * ⚠️ Like MERCHANT, this list is narrower than it reads. Every merchant-facing
+   * permission below applies only to the merchants this user MANAGES —
+   * `merchants.account_manager_id = their user id` — narrowed by RLS through
+   * `app.current_account_manager_id` (migration 0030, invariant I25). A
+   * permission list alone would grant the whole tenant, which for this role
+   * would mean reading a rival commercial's book of business.
+   *
+   * Deliberately ABSENT, and each for its own reason:
+   *
+   *  - `recipient:*` — recipients are tenant-scoped by design (RM-R1, migration
+   *    0021) and carry no merchant, so RLS cannot narrow them. Granting the read
+   *    would hand over the tenant's entire customer list, which is the single
+   *    most valuable thing a departing salesperson could walk out with.
+   *  - `merchant:block` — suspending an account is the courier's commercial
+   *    decision, not the salesperson's. They raise it; an OWNER acts on it.
+   *  - `merchant:assign_manager` — otherwise a commercial could help themselves
+   *    to a colleague's accounts, which is precisely the escalation the
+   *    portfolio scope exists to prevent.
+   *  - `pickup:assign` — they hold `pickup:claim` instead. Assigning names any
+   *    collector; claiming can only name the caller.
+   *  - `user:manage` — see `merchant:onboard`. Minting arbitrary logins is not
+   *    the same job as minting a merchant's portal login.
+   *  - routes, drivers, vehicles, hubs, manifests — the operations plane. A
+   *    commercial hands parcels over at the hub and is done.
+   */
+  COMMERCIAL: [
+    // Their book of business.
+    "merchant:read",
+    "merchant:create",
+    "merchant:update",
+    "merchant:onboard",
+    // The collection run: request it, take it on, take it OUT themselves, and
+    // scan the parcels in. `pickup:claim` rather than `pickup:assign` — see the
+    // permission's own note; a commercial routes nobody's work but their own.
+    "pickup:read",
+    "pickup:create",
+    "pickup:accept",
+    "pickup:claim",
+    "pickup:collect",
+    // What they collected, and the label that starts its custody chain.
+    "shipment:read",
+    "shipment:label",
+    "address:read",
+    // "How is my client doing?" — the two numbers a salesperson is asked for.
+    "cod:read_amount",
+    "settlement:read",
+    // Raise, and follow, a problem on behalf of their merchant.
+    "complaint:read",
     "complaint:create",
   ],
 

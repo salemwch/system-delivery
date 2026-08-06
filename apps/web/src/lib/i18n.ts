@@ -77,6 +77,15 @@ interface Messages {
   readonly avgAttempts: string;
   readonly requestFailed: string;
   readonly back: string;
+
+  // ── Pickup runs ───────────────────────────────────────────────────────────
+  readonly reference: string;
+  readonly contact: string;
+  readonly parcels: string;
+  readonly pickupWindow: string;
+  readonly claimPickup: string;
+  readonly pickupNotClaimable: string;
+  readonly assignedToYou: string;
 }
 
 export const MESSAGES: Readonly<Record<Locale, Messages>> = {
@@ -143,6 +152,14 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     avgAttempts: "متوسط المحاولات",
     requestFailed: "تعذّر تنفيذ الطلب",
     back: "رجوع",
+
+    reference: "المرجع",
+    contact: "جهة الاتصال",
+    parcels: "الطرود",
+    pickupWindow: "الموعد",
+    claimPickup: "أتكفّل بها",
+    pickupNotClaimable: "لم تعد متاحة",
+    assignedToYou: "مُسندة إليك",
   },
   fr: {
     title: "Tableau de bord",
@@ -208,6 +225,14 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     avgAttempts: "Tentatives moyennes",
     requestFailed: "La requête a échoué",
     back: "Retour",
+
+    reference: "Référence",
+    contact: "Contact",
+    parcels: "Colis",
+    pickupWindow: "Créneau",
+    claimPickup: "Je m'en charge",
+    pickupNotClaimable: "Plus disponible",
+    assignedToYou: "Qui vous est attribué",
   },
   en: {
     title: "Dashboard",
@@ -272,6 +297,14 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     avgAttempts: "Average attempts",
     requestFailed: "The request failed",
     back: "Back",
+
+    reference: "Reference",
+    contact: "Contact",
+    parcels: "Parcels",
+    pickupWindow: "Window",
+    claimPickup: "I'll take it",
+    pickupNotClaimable: "No longer available",
+    assignedToYou: "Assigned to you",
   },
 };
 

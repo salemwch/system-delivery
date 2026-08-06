@@ -62,6 +62,20 @@ export const assignPickupRequestSchema = z.strictObject({
 });
 export type AssignPickupRequestInput = z.infer<typeof assignPickupRequestSchema>;
 
+/**
+ * Taking a collection run for ONESELF (`pickup:claim`).
+ *
+ * The absence of `driverId` is the entire point. `assign` names whoever should
+ * go, and therefore lets its holder route work to any driver in the tenant;
+ * `claim` can only ever name the caller. A COMMERCIAL can pick up their own
+ * portfolio's parcels without also gaining the ability to dispatch the fleet —
+ * which is what makes this safe to hand to a field salesperson at a courier
+ * with hundreds of drivers.
+ */
+export const claimPickupRequestSchema = z.strictObject({
+  idempotencyKey: nonEmpty("idempotencyKey").max(200),
+});
+
 export const collectPickupRequestSchema = z.strictObject({
   idempotencyKey: nonEmpty("idempotencyKey").max(200),
   outcomeReason: z.enum(OUTCOME_REASONS).optional(),

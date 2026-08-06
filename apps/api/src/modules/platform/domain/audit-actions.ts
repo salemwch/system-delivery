@@ -34,6 +34,13 @@ export const AUDIT_ACTIONS = [
   "user.role_granted",
   "user.role_revoked",
 
+  // ── Merchant account ownership ─────────────────────────────────────────────
+  // Moving an account between commercials moves who can see its shipments,
+  // customers and revenue (invariant I25). That is a change of access, which
+  // §10 makes mandatory to record, even though nothing about the merchant's own
+  // data changed.
+  "merchant.account_manager_assigned",
+
   // ── Tenant lifecycle and configuration (§10) ───────────────────────────────
   "tenant.provisioned",
   "tenant.updated",

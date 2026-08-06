@@ -11,6 +11,7 @@ import {
   parseTimeToMinutes,
 } from "../src/modules/platform/domain/working-calendar.js";
 import type { WorkingCalendar } from "../src/modules/platform/domain/working-calendar.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { AddressService } from "../src/modules/directory/application/address.service.js";
 import { MerchantService } from "../src/modules/directory/application/merchant.service.js";
@@ -81,7 +82,7 @@ describe("operating config", () => {
 
     const outbox = new OutboxService();
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
-    merchants = new MerchantService(db, outbox);
+    merchants = new MerchantService(db, outbox, new AuditService(db));
     const recipients = new RecipientService(db);
     const events = new ShipmentEventService(outbox);
     shipments = new ShipmentService(db, events, outbox, merchants, recipients, addresses, config);

@@ -11,6 +11,7 @@ import {
   assignPickupRequestSchema,
   batchScanPickupSchema,
   cancelPickupRequestSchema,
+  claimPickupRequestSchema,
   collectPickupRequestSchema,
   completePickupRequestSchema,
   createPickupRequestSchema,
@@ -184,6 +185,25 @@ export class PickupController {
     @CurrentPrincipal() principal: Principal,
   ): Promise<PickupResponse> {
     const result = await this.pickups.assign(id, body, { actorId: principal.userId });
+    return toResponse(result);
+  }
+
+  /**
+   * The caller takes this collection run themselves.
+   *
+   * Separate from `:id/assign` so a COMMERCIAL never needs `pickup:assign`.
+   * The collector is taken from the authenticated principal, never the body —
+   * there is no field here that could name someone else.
+   */
+  @Post(":id/claim")
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions("pickup:claim")
+  async claim(
+    @Param("id") id: string,
+    @Body(zodBody(claimPickupRequestSchema)) body: z.infer<typeof claimPickupRequestSchema>,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<PickupResponse> {
+    const result = await this.pickups.claim(id, body, { actorId: principal.userId });
     return toResponse(result);
   }
 

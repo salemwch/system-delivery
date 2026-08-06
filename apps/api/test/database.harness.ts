@@ -234,6 +234,7 @@ export async function deleteTenants(migrator: Sql, tenantIds: string[]): Promise
   await migrator.begin(async (tx) => {
     await tx`select set_config('app.current_tenant_id', '00000000-0000-0000-0000-000000000000', true)`;
     await tx`select set_config('app.current_merchant_id', '', true)`;
+    await tx`select set_config('app.current_account_manager_id', '', true)`;
     await tx`delete from tenants where id = any(${migrator.array(tenantIds)}::uuid[])`;
   });
 }

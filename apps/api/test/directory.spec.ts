@@ -8,6 +8,7 @@ import type {
   GeocodeResult,
   GeocodingProvider,
 } from "../src/modules/directory/domain/geocoding.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
@@ -62,7 +63,7 @@ describe("directory", () => {
     database = await createTestDatabase();
     dbService = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    merchants = new MerchantService(dbService, outbox);
+    merchants = new MerchantService(dbService, outbox, new AuditService(dbService));
     recipients = new RecipientService(dbService);
     addresses = new AddressService(dbService, outbox, new ManualGeocodingProvider());
   }, 240_000);

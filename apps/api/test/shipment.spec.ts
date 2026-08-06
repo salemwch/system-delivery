@@ -10,6 +10,7 @@ import { RecipientService } from "../src/modules/directory/application/recipient
 import { AddressService } from "../src/modules/directory/application/address.service.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
 import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
@@ -128,7 +129,7 @@ describe("shipment", () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
     outbox = new OutboxService();
-    const merchants = new MerchantService(db, outbox);
+    const merchants = new MerchantService(db, outbox, new AuditService(db));
     const recipients = new RecipientService(db);
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
     const events = new ShipmentEventService(outbox);
@@ -203,7 +204,7 @@ describe("shipment", () => {
 
     it("rejects a shipment for a suspended merchant", async () => {
       const tenantId = await seedTenant("ship-susp");
-      const merchants = new MerchantService(db, outbox);
+      const merchants = new MerchantService(db, outbox, new AuditService(db));
       const merchantId = await asTenant(tenantId, async () => {
         const m = await merchants.create({ name: "Suspended Co" });
         await merchants.suspend(m.id, "unpaid");

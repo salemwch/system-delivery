@@ -88,7 +88,7 @@ describe("audit log", () => {
     const outbox = new OutboxService();
     const passwords = new PasswordService();
     usersService = new UserService(db, passwords, outbox, audit);
-    merchants = new MerchantService(db, outbox);
+    merchants = new MerchantService(db, outbox, new AuditService(db));
     auth = buildAuthStack(db).auth;
   }, 240_000);
 

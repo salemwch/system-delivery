@@ -196,8 +196,10 @@ PROVISIONING → ACTIVE ⇄ SUSPENDED → CLOSED
 4. Users are disabled, never deleted — `audit_log` and `shipment_event` reference them as actors forever.
 5. Role changes are always audited with before/after.
 6. Password reset tokens are single-use, expire in 30 minutes, and invalidate all sessions on use.
-7. **`merchantId` is required for a `MERCHANT` user and forbidden for every other role** (added 2026-07-29). A merchant login with no merchant would see the whole tenant; a dispatcher carrying one would be silently narrowed. Both are enforced by a DB constraint, not by application discipline — this is the only sub-tenant scope in the system and the one place where a missing `WHERE` clause leaks one merchant's volume, customers, and revenue to a competitor sharing the tenant.
+7. **`merchantId` is required for a `MERCHANT` user and forbidden for every other role** (added 2026-07-29). A merchant login with no merchant would see the whole tenant; a dispatcher carrying one would be silently narrowed. Both are enforced by a DB constraint, not by application discipline — this is a sub-tenant scope and one of the two places where a missing `WHERE` clause leaks one merchant's volume, customers, and revenue to a competitor sharing the tenant.
 8. **Merchant users are provisioned by the courier company, never self-registered** (2026-07-29). There is a commercial relationship before there is a login; public signup is deferred (01-mvp-scope §5).
+9. **`MERCHANT` and `COMMERCIAL` cannot be combined with any other role** (2026-08-05). Both are scoped below the tenant; every other role sees the whole of it. A hybrid account keeps the wider role's permissions but the narrower role's visibility, so it silently returns almost nothing — read as data loss, not as misconfiguration.
+10. **A `COMMERCIAL` carries no scope column of its own** (2026-08-05). Their portfolio is the set of merchants pointing at them through `merchant.accountManagerId`, so the scope is derived from `sub` + `rol` at request time rather than stored twice. See invariant I25.
 
 **Lifecycle.** `INVITED → ACTIVE ⇄ DISABLED`
 
@@ -1015,7 +1017,7 @@ OPEN → INVESTIGATING → RESOLVED | REJECTED
 | Entity | One-line purpose |
 |---|---|
 | `Address` | Normalised address + geocode + confidence + access notes + timezone |
-| `Merchant` | The business sending shipments; owns a `MERCHANT_PAYABLE` account |
+| `Merchant` | The business sending shipments; owns a `MERCHANT_PAYABLE` account. `accountManagerId` names the `COMMERCIAL` who owns the relationship — `NULL` is house-managed (invariant I25, 2026-08-05) |
 | `Shift` | A driver's working period; **gates all location collection** |
 | `ShipmentItem` | Line items within a shipment |
 | `DeliveryAttempt` | One try at a delivery; links to POD or failure reason |
@@ -1057,7 +1059,8 @@ Invariants that span aggregates. Each is enforced by a database constraint, a do
 | I21 | A `PickupRequest` cannot be `CANCELLED` after `COLLECTED` | State machine — custody has already transferred |
 | I22 | A `Complaint` cannot be `RESOLVED`/`REJECTED` with an empty `resolution` | DB check constraint |
 | I23 | A `User` holds `merchantId` **if and only if** they have the `MERCHANT` role | DB check constraint + role-assignment guard. A merchant login without a merchant sees the whole tenant; any other role with one is silently narrowed |
-| I24 | A `MERCHANT` user can read and write only rows whose `merchantId` matches their own | Enforced in the data layer, not per query. The only sub-tenant scope in the system — a missed `WHERE` here leaks a competitor's volume, customers, and revenue |
+| I24 | A `MERCHANT` user can read and write only rows whose `merchantId` matches their own | Enforced in the data layer, not per query. The first sub-tenant scope in the system — a missed `WHERE` here leaks a competitor's volume, customers, and revenue |
+| I25 | A `COMMERCIAL` user can read and write only rows belonging to merchants where `merchant.accountManagerId` is their own user id | RLS, migration 0030. The second sub-tenant scope, and a different SHAPE from I24: a *set* of merchants rather than one, resolved through `merchants` rather than carried in the token. Fails closed on rows with no merchant — those are the courier's own operations |
 
 ---
 

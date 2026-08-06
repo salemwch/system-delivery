@@ -3,6 +3,7 @@ import type { CallHandler, ExecutionContext, NestInterceptor } from "@nestjs/com
 import { Observable } from "rxjs";
 
 import { TenantContext, asTenantId } from "../../../shared/database/index.js";
+import { accountManagerScope } from "../domain/permissions.js";
 import type { AuthenticatedRequest } from "./request-context.js";
 
 /**
@@ -49,6 +50,8 @@ export class TenantContextInterceptor implements NestInterceptor {
       return next.handle();
     }
 
+    const managerScope = accountManagerScope(principal);
+
     // Spread conditionally rather than assigning `undefined`: under
     // `exactOptionalPropertyTypes` an explicit undefined is not an absent
     // property.
@@ -60,6 +63,11 @@ export class TenantContextInterceptor implements NestInterceptor {
       // (invariant I24). Taken from the signed token, never from the request —
       // a merchant must not be able to widen their own scope by asking.
       ...(principal.merchantId === null ? {} : { merchantId: principal.merchantId }),
+      // Narrows a COMMERCIAL login to the merchants they manage (invariant
+      // I25). Derived from the signed role claim rather than carried as a
+      // claim of its own, so there is no separate value a tampered token could
+      // put out of step with `rol`.
+      ...(managerScope === null ? {} : { accountManagerId: managerScope }),
       ...(typeof request.id === "string" ? { requestId: request.id } : {}),
       // Origin of the request, carried for the audit trail. Read from Fastify's
       // own `ip`, which already honours `trustProxy` — parsing

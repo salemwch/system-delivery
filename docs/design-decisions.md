@@ -34,8 +34,16 @@ Read this file before proposing changes to a module. These decisions were made d
 ## Identity & Auth
 
 - `TokenService.authenticate()` is the ONE implementation of "bearer token → Principal". Both `AuthGuard` and the WebSocket handshake call it
-- **MERCHANT is the only role scoped BELOW the tenant.** Enforced by RLS via `app.current_merchant_id` (migration 0020), never by a `WHERE` clause
+- **TWO roles are scoped BELOW the tenant, in two different shapes.** MERCHANT → one merchant, `app.current_merchant_id` from the token's `mid` (0020, I24). COMMERCIAL → a *set* of merchants, `app.current_account_manager_id` (0030, I25). Both in RLS, never a `WHERE` clause
 - A merchant token without `mid`, or a non-merchant token carrying one, is **rejected outright** by `TokenService`
+- **The commercial's scope is DERIVED, not a claim.** It is the user's own `sub` when `rol` contains COMMERCIAL — one function, `accountManagerScope()`. A third signed value could disagree with the other two; a derived one cannot
+- **A commercial's portfolio needs TWO RLS predicates, not one.** `current_account_manager_allows(account_manager_id)` guards `merchants` with a direct column comparison; `current_portfolio_allows(merchant_id)` guards everything else with an EXISTS against `merchants`. Giving `merchants` the EXISTS form recurses until the stack dies
+- **`merchant:onboard` exists so a commercial never needs `user:manage`.** It can only ever mint a MERCHANT login. Which merchant is enforced by a constraint trigger (`users_assert_merchant_in_portfolio`), not by service code — `identity` cannot import `directory`, so only Postgres can see both sides
+- **Merchant ownership is set from ambient context, never from the DTO.** `MerchantService.create` reads `TenantContext.current()?.accountManagerId`. A body field would let a commercial write into a colleague's portfolio, or out of their own
+- **MERCHANT and COMMERCIAL cannot be combined with any other role.** A hybrid keeps the wider role's permissions and the narrower role's visibility — it returns almost nothing and reads as data loss
+- A commercial holds **no** `recipient:*` (same reasoning as MERCHANT) and no `merchant:block` / `merchant:assign_manager`
+- **`pickup:claim`, not `pickup:assign`.** `POST /v1/pickups/:id/claim` reads the collector from the token, so it can only ever assign the caller. Granting `pickup:assign` instead would let a field salesperson route work to any driver in a fleet of hundreds. Both go through one private `assignTo()` so the state machine, outbox event and audit cannot drift
+- **`pickup_requests.assigned_driver_id` has no FK to `drivers`, deliberately.** The person who physically collects is not always a driver — a commercial is the case that proves it. `scan`/`scanBatch` already record `ctx.actorId`, not a driver lookup
 - RLS predicates must use `CASE`, not `OR`: SQL does not guarantee short-circuit, `''::uuid` errors
 - A transaction-local `set_config` reverts to the **empty string**, not unset. `deleteTenants` sets `NO_TENANT` for this reason
 - `recipients` is tenant-scoped with no `merchant_id`, so MERCHANT holds **no** `recipient:*` permission
@@ -101,6 +109,12 @@ Read this file before proposing changes to a module. These decisions were made d
 
 - **`@Global()` module still needs one IMPORT.** `ValkeyModule` was worker-only; API graph couldn't resolve `VALKEY_CLIENT`
 - **Locale in PATH, not query parameter.** Layout can't read `searchParams`; `dir`/`lang` on `<html>` requires it
+- **List endpoints return `{data, page:{nextCursor, hasMore}}`, not `{data, cursor, total}`.** `apps/web` modelled the latter, so `result.cursor` was `undefined`, `undefined !== null` was true — and "Load more" rendered on every page while linking nowhere. One `fetchPage()` translates the envelope now. **`hasMore` is the authority**: `nextCursor` is the last row's id and is non-null on the final page too
+- **There is no `total`.** Cursor pagination exists so a list never pays for `COUNT(*)`; the fleet page rendered `(undefined)` for months by assuming otherwise
+- **`PickupSummary` invented `merchantName`, `parcelCount` and `scheduledAt`** — none exist on `GET /v1/pickups`, so three columns rendered `undefined`. Real handles are `code` and `contactName`. **The pickup list still returns no merchant name**; adding one is a backend join, not a frontend lookup
+- **The Claim button renders only on ACCEPTED rows.** `ACCEPTED → ASSIGNED` is the sole transition into an assigned run (`pickup-status.ts`), so a button anywhere else is an offer the API refuses
+- **`formatMoney` takes `number | bigint`.** COD sums arrive as decimal strings that can exceed `MAX_SAFE_INTEGER` in a 3-decimal currency. Integer division on BigInt, never float
+- **Stats endpoints return `currencyExponent`.** A client that hardcodes ÷100 misprices every TND amount by ten
 - **`en-GB` needs explicit `hourCycle: "h23"`** for 24-hour time in Tunisia
 - **WebSocket `message` listener attached SYNCHRONOUSLY** before handshake await. Early frames queued + capped
 
