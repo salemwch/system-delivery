@@ -63,7 +63,7 @@ describe("directory", () => {
     database = await createTestDatabase();
     dbService = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    merchants = new MerchantService(dbService, outbox, new AuditService(dbService));
+    merchants = new MerchantService(dbService, outbox, new AuditService(dbService), new AddressService(dbService, outbox, new ManualGeocodingProvider()));
     recipients = new RecipientService(dbService);
     addresses = new AddressService(dbService, outbox, new ManualGeocodingProvider());
   }, 240_000);

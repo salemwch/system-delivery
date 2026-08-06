@@ -129,7 +129,7 @@ describe("shipment", () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
     outbox = new OutboxService();
-    const merchants = new MerchantService(db, outbox, new AuditService(db));
+    const merchants = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
     const recipients = new RecipientService(db);
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
     const events = new ShipmentEventService(outbox);
@@ -204,7 +204,7 @@ describe("shipment", () => {
 
     it("rejects a shipment for a suspended merchant", async () => {
       const tenantId = await seedTenant("ship-susp");
-      const merchants = new MerchantService(db, outbox, new AuditService(db));
+      const merchants = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
       const merchantId = await asTenant(tenantId, async () => {
         const m = await merchants.create({ name: "Suspended Co" });
         await merchants.suspend(m.id, "unpaid");

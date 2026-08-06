@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { AuditService, OutboxService } from "../../platform/index.js";
 import {
@@ -19,6 +19,7 @@ import {
 } from "../domain/dtos.js";
 import { merchants } from "../domain/schema.js";
 import type { Merchant, NewMerchant } from "../domain/schema.js";
+import { AddressService } from "./address.service.js";
 
 /** A page of merchants plus the cursor to fetch the next one. */
 export interface MerchantPage {
@@ -56,7 +57,36 @@ export class MerchantService {
     private readonly database: DatabaseService,
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
+    private readonly addresses: AddressService,
   ) {}
+
+  /**
+   * Merchant names for a set of ids, as one query.
+   *
+   * Exists so other modules can label a `merchantId` without reaching into
+   * `merchants` themselves — `directory` owns the table, and a module that
+   * queried it directly would be a boundary violation the lint rejects.
+   *
+   * ONE `inArray`, never a lookup per row: a page of 50 pickups must cost one
+   * query, not 50. Ids absent from the result are simply missing from the map,
+   * which callers render as a fallback rather than treating as an error — a
+   * merchant outside the caller's RLS scope is invisible here by design.
+   */
+  async namesByIds(ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+    // De-duplicated: a page of pickups is usually a handful of merchants, and
+    // the same id repeated 50 times would widen the IN list for nothing.
+    const unique = [...new Set(ids)];
+    return this.database.withTenant(async (tx) => {
+      const rows = await tx
+        .select({ id: merchants.id, name: merchants.name })
+        .from(merchants)
+        .where(inArray(merchants.id, unique));
+      return new Map(rows.map((row) => [row.id, row.name]));
+    });
+  }
 
   /**
    * Registers a merchant.
@@ -75,6 +105,18 @@ export class MerchantService {
   async create(input: unknown): Promise<Merchant> {
     const dto = parseWithZod(createMerchantSchema, input);
 
+    // Resolved BEFORE the merchant transaction opens, not inside it.
+    // `AddressService.resolve` geocodes — a network call to Nominatim or a
+    // commercial provider — and holding a write transaction open across it
+    // would pin a connection for the length of someone else's HTTP timeout.
+    // The cost of the two being separate is an orphaned address row if the
+    // merchant insert then fails, which is harmless: addresses are retained
+    // history and nothing references it.
+    const pickupAddressId =
+      dto.pickupAddress === undefined
+        ? dto.defaultPickupAddressId
+        : (await this.addresses.resolve(dto.pickupAddress)).addressId;
+
     try {
       return await this.database.withTenant(async (tx) => {
         const tenantId = TenantContext.requireTenantId();
@@ -87,9 +129,7 @@ export class MerchantService {
           ...(dto.contactName === undefined ? {} : { contactName: dto.contactName }),
           ...(dto.contactPhone === undefined ? {} : { contactPhone: dto.contactPhone }),
           ...(dto.contactEmail === undefined ? {} : { contactEmail: dto.contactEmail }),
-          ...(dto.defaultPickupAddressId === undefined
-            ? {}
-            : { defaultPickupAddressId: dto.defaultPickupAddressId }),
+          ...(pickupAddressId === undefined ? {} : { defaultPickupAddressId: pickupAddressId }),
           ...(dto.settings === undefined ? {} : { settings: dto.settings }),
         };
 

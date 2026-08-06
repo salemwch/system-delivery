@@ -18,7 +18,7 @@ import { ShipmentEventService } from "../src/modules/shipment/application/shipme
 import { ShipmentService } from "../src/modules/shipment/application/shipment.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
-import { NotFoundError } from "../src/shared/errors/index.js";
+import { NotFoundError, ValidationError } from "../src/shared/errors/index.js";
 import {
   createTenant,
   createTestDatabase,
@@ -126,7 +126,7 @@ describe("commercial portfolio", () => {
     const audit = new AuditService(db);
     addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
     pickups = new PickupService(db, outbox);
-    merchants = new MerchantService(db, outbox, audit);
+    merchants = new MerchantService(db, outbox, audit, addresses);
     const recipients = new RecipientService(db);
     shipments = new ShipmentService(
       db,
@@ -400,6 +400,89 @@ describe("commercial portfolio", () => {
       );
 
       expect(created.user.merchantId).toBe(theirs.id);
+    });
+  });
+
+  // ── Registration resolves the pickup address ───────────────────────────────
+
+  describe("pickup address at registration", () => {
+    it("resolves and stores the shop address, so pickups have somewhere to go", async () => {
+      const tenantId = await seedTenant("com-addr");
+      const salem = await seedUser(tenantId, "COMMERCIAL", `salem-${randomUUID()}@courier.tn`);
+
+      const merchant = await asCommercial(tenantId, salem, () =>
+        merchants.create({
+          name: "Boutique with an address",
+          pickupAddress: {
+            rawInput: "Avenue Habib Bourguiba, Tunis",
+            countryCode: "TN",
+            coordinates: { lat: 36.8, lng: 10.18 },
+          },
+        }),
+      );
+
+      // Without this the merchant exists but every pickup request for them
+      // fails on a missing pickupAddressId — where the workflow used to stop.
+      expect(merchant.defaultPickupAddressId).not.toBeNull();
+    });
+
+    it("leaves it null when no address is given", async () => {
+      const tenantId = await seedTenant("com-addr-none");
+      const merchant = await asStaff(tenantId, () => merchants.create({ name: "No address" }));
+      expect(merchant.defaultPickupAddressId).toBeNull();
+    });
+
+    it("refuses both an address and an address id", async () => {
+      const tenantId = await seedTenant("com-addr-both");
+      await expect(
+        asStaff(tenantId, () =>
+          merchants.create({
+            name: "Ambiguous",
+            defaultPickupAddressId: randomUUID(),
+            pickupAddress: { rawInput: "Tunis", countryCode: "TN" },
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+  });
+
+  // ── Labelling a merchant id from another module ────────────────────────────
+
+  describe("namesByIds", () => {
+    it("returns one entry per id, in one query, de-duplicated", async () => {
+      const tenantId = await seedTenant("com-names");
+      const a = await asStaff(tenantId, () => merchants.create({ name: "Alpha" }));
+      const b = await asStaff(tenantId, () => merchants.create({ name: "Beta" }));
+
+      const names = await asStaff(tenantId, () =>
+        merchants.namesByIds([a.id, b.id, a.id, a.id]),
+      );
+
+      expect(names.get(a.id)).toBe("Alpha");
+      expect(names.get(b.id)).toBe("Beta");
+      expect(names.size).toBe(2);
+    });
+
+    it("omits merchants the caller cannot see, rather than failing", async () => {
+      const tenantId = await seedTenant("com-names-rls");
+      const salem = await seedUser(tenantId, "COMMERCIAL", `salem-${randomUUID()}@courier.tn`);
+      const mine = await asCommercial(tenantId, salem, () => merchants.create({ name: "Mine" }));
+      const house = await asStaff(tenantId, () => merchants.create({ name: "House" }));
+
+      const names = await asCommercial(tenantId, salem, () =>
+        merchants.namesByIds([mine.id, house.id]),
+      );
+
+      expect(names.get(mine.id)).toBe("Mine");
+      // Outside the portfolio: absent from the map, which callers render as a
+      // fallback. RLS decides, not the caller.
+      expect(names.has(house.id)).toBe(false);
+    });
+
+    it("makes no query at all for an empty list", async () => {
+      const tenantId = await seedTenant("com-names-empty");
+      const names = await asStaff(tenantId, () => merchants.namesByIds([]));
+      expect(names.size).toBe(0);
     });
   });
 

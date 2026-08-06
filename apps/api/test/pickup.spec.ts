@@ -314,7 +314,7 @@ describe("pickup", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     addressesSvc = new AddressService(db, outbox, new ManualGeocodingProvider());
-    merchantsSvc = new MerchantService(db, outbox, new AuditService(db));
+    merchantsSvc = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
     pickups = new PickupService(db, outbox);
   }, 240_000);
 

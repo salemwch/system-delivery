@@ -20,7 +20,7 @@ Authorized 2026-07-22. Build within these limits:
 
 ## Current state (updated 2026-08-05)
 
-**Everything green:** `pnpm build` → ok · `pnpm test` → 967/967 (890 api + 30 track + 17 merchant + 30 web) · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (308 targets, `apps/web` now tracked and covered).
+**Everything green:** `pnpm build` → ok · `pnpm test` → 973/973 (896 api + 30 track + 17 merchant + 30 web) · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (308 targets, `apps/web` now tracked and covered).
 
 ⚠️ `pnpm sast` scans **git-tracked files only** — an untracked app is silently invisible to it. Never pipe it to `tail`: the pipeline's exit status is the last command's, which hid a `RuleParseError` behind a green tick.
 

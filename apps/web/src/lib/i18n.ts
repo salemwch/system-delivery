@@ -86,6 +86,9 @@ interface Messages {
   readonly claimPickup: string;
   readonly pickupNotClaimable: string;
   readonly assignedToYou: string;
+  readonly pickupAddress: string;
+  readonly pickupAddressHint: string;
+  readonly city: string;
 }
 
 export const MESSAGES: Readonly<Record<Locale, Messages>> = {
@@ -160,6 +163,9 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     claimPickup: "أتكفّل بها",
     pickupNotClaimable: "لم تعد متاحة",
     assignedToYou: "مُسندة إليك",
+    pickupAddress: "عنوان الاستلام",
+    pickupAddressHint: "بدونه لا يمكن طلب استلام لهذا التاجر",
+    city: "المدينة",
   },
   fr: {
     title: "Tableau de bord",
@@ -233,6 +239,9 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     claimPickup: "Je m'en charge",
     pickupNotClaimable: "Plus disponible",
     assignedToYou: "Qui vous est attribué",
+    pickupAddress: "Adresse de ramassage",
+    pickupAddressHint: "Sans elle, aucun ramassage ne peut être demandé pour ce commerçant",
+    city: "Ville",
   },
   en: {
     title: "Dashboard",
@@ -305,6 +314,9 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     claimPickup: "I'll take it",
     pickupNotClaimable: "No longer available",
     assignedToYou: "Assigned to you",
+    pickupAddress: "Pickup address",
+    pickupAddressHint: "Without it, no pickup can be requested for this merchant",
+    city: "City",
   },
 };
 

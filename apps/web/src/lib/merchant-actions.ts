@@ -32,6 +32,13 @@ const createMerchantSchema = z.object({
     .regex(/^\+[1-9]\d{6,14}$/u, "e164")
     .optional(),
   contactEmail: z.email("format").optional(),
+  /**
+   * The shop's address. Optional in the form, but a merchant registered
+   * without one cannot have a pickup requested for them — the API requires a
+   * `pickupAddressId` and there is no address endpoint to add one afterwards.
+   */
+  addressLine: z.string().trim().max(500).optional(),
+  city: z.string().trim().max(200).optional(),
 });
 
 interface CreatedMerchant {
@@ -55,10 +62,14 @@ export async function createMerchant(
     contactName: optional(formData, "contactName"),
     contactPhone: optional(formData, "contactPhone"),
     contactEmail: optional(formData, "contactEmail"),
+    addressLine: optional(formData, "addressLine"),
+    city: optional(formData, "city"),
   });
   if (!parsed.success) {
     return { error: "validation", fieldErrors: fieldErrorsFrom(parsed.error) };
   }
+
+  const { addressLine, city, ...merchant } = parsed.data;
 
   let created: CreatedMerchant;
   try {
@@ -67,7 +78,21 @@ export async function createMerchant(
       // One key per submission, so a double-tapped button on a phone in a shop
       // registers ONE merchant.
       idempotencyKey: randomUUID(),
-      body: parsed.data,
+      body: {
+        ...merchant,
+        // The API resolves and geocodes this into an `addresses` row and points
+        // `defaultPickupAddressId` at it. Omitted entirely when blank — sending
+        // an empty rawInput would store a useless address rather than none.
+        ...(addressLine === undefined
+          ? {}
+          : {
+              pickupAddress: {
+                rawInput: [addressLine, city].filter(Boolean).join(", "),
+                countryCode: "TN",
+                ...(city === undefined ? {} : { city }),
+              },
+            }),
+      },
     });
   } catch (error) {
     if (error instanceof ApiError) {

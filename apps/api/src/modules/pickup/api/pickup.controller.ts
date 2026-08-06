@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from 
 import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
+import { MerchantService } from "../../directory/index.js";
 import { CurrentPrincipal, RequirePermissions } from "../../identity/index.js";
 import type { Principal } from "../../identity/index.js";
 import { PickupService } from "../application/pickup.service.js";
@@ -37,6 +38,16 @@ interface PickupResponse {
   readonly id: string;
   readonly code: string;
   readonly merchantId: string;
+  /**
+   * The merchant's name, resolved through directory.
+   *
+   * Null on the single-row routes, where the caller already knows which
+   * merchant they asked about, and on list rows whose merchant is not visible
+   * to this caller — a commercial sees pickups only for their own portfolio, so
+   * that second case should not arise, and a null is the honest rendering if it
+   * ever does.
+   */
+  readonly merchantName: string | null;
   readonly status: string;
   readonly pickupAddressId: string;
   readonly contactName: string;
@@ -95,7 +106,10 @@ interface ScanResponse {
 
 @Controller("v1/pickups")
 export class PickupController {
-  constructor(private readonly pickups: PickupService) {}
+  constructor(
+    private readonly pickups: PickupService,
+    private readonly merchants: MerchantService,
+  ) {}
 
   @Post()
   @RequirePermissions("pickup:create")
@@ -112,7 +126,9 @@ export class PickupController {
   async listByWindow(@Query() query: unknown): Promise<{ data: readonly PickupResponse[] }> {
     const { from, to, status } = windowQuerySchema.parse(query);
     const items = await this.pickups.listByWindow(from, to, status);
-    return { data: items.map(toResponse) };
+    // Wrapped, not point-free: `map` would pass the index into the optional
+    // second parameter and label every row with a number.
+    return { data: items.map((p) => toResponse(p)) };
   }
 
   @Get("by-code/:code")
@@ -133,8 +149,14 @@ export class PickupController {
       ...(parsed.merchantId === undefined ? {} : { merchantId: parsed.merchantId }),
       ...(parsed.driverId === undefined ? {} : { driverId: parsed.driverId }),
     });
+
+    // ONE extra query for the whole page, not one per row. A dispatcher
+    // scanning collection runs needs to see WHICH merchant, and `pickup_requests`
+    // stores only the id.
+    const names = await this.merchants.namesByIds(page.items.map((p) => p.merchantId));
+
     return {
-      data: page.items.map(toResponse),
+      data: page.items.map((p) => toResponse(p, names.get(p.merchantId) ?? null)),
       page: { nextCursor: page.nextCursor, hasMore: page.nextCursor !== null },
     };
   }
@@ -278,7 +300,7 @@ export class PickupController {
   }
 }
 
-function toResponse(p: PickupRequest): PickupResponse {
+function toResponse(p: PickupRequest, merchantName: string | null = null): PickupResponse {
   const countVariance =
     p.actualParcelCount !== null ? p.estimatedParcelCount - p.actualParcelCount : null;
 
@@ -286,6 +308,7 @@ function toResponse(p: PickupRequest): PickupResponse {
     id: p.id,
     code: p.code,
     merchantId: p.merchantId,
+    merchantName,
     status: p.status,
     pickupAddressId: p.pickupAddressId,
     contactName: p.contactName,

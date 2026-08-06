@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
+import { AddressService } from "../src/modules/directory/application/address.service.js";
 import { MerchantService } from "../src/modules/directory/application/merchant.service.js";
+import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
 import type { AuthService } from "../src/modules/identity/application/auth.service.js";
 import { PasswordService } from "../src/modules/identity/application/password.service.js";
 import { UserService } from "../src/modules/identity/application/user.service.js";
@@ -68,7 +70,7 @@ describe("user administration", () => {
     const passwords = new PasswordService();
     const audit = new AuditService(db);
     usersService = new UserService(db, passwords, outbox, audit);
-    merchants = new MerchantService(db, outbox, new AuditService(db));
+    merchants = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
     auth = buildAuthStack(db).auth;
   }, 240_000);
 

@@ -47,6 +47,7 @@ export default async function PickupsPage({
       <DataTable
         headers={[
           messages.reference,
+          messages.merchants,
           messages.contact,
           messages.status,
           messages.parcels,
@@ -58,6 +59,18 @@ export default async function PickupsPage({
           <tr key={p.id} className="hover:bg-slate-50">
             <td className="px-4 py-3">
               <span className="ltr-isolate font-mono text-sm">{p.code}</span>
+            </td>
+            <td className="px-4 py-3 text-sm">
+              {p.merchantName === null ? (
+                <span className="text-slate-400">—</span>
+              ) : (
+                <Link
+                  href={`/${locale}/merchants/${p.merchantId}`}
+                  className="font-medium text-brand hover:underline"
+                >
+                  {p.merchantName}
+                </Link>
+              )}
             </td>
             <td className="px-4 py-3 text-sm">
               <span className="font-medium">{p.contactName}</span>

@@ -25,17 +25,69 @@ const language = z.enum(["ar", "fr", "en"]);
 
 const nonEmpty = (label: string) => z.string().trim().min(1, `${label} is required`);
 
+// ── Addresses ────────────────────────────────────────────────────────────────
+//
+// Declared BEFORE merchants because `createMerchantSchema` embeds
+// `resolveAddressSchema`. A `const` is in its temporal dead zone until it is
+// evaluated, so the merchant schema referencing it from further up the file is
+// a ReferenceError at import time, not a type error a build would catch.
+
+const coordinatesSchema = z.strictObject({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+});
+
+export const resolveAddressSchema = z.strictObject({
+  /** The unparsed original — always required, never overwritten once stored. */
+  rawInput: nonEmpty("rawInput"),
+  line1: z.string().trim().min(1).optional(),
+  line2: z.string().trim().min(1).optional(),
+  city: z.string().trim().min(1).optional(),
+  region: z.string().trim().min(1).optional(),
+  postalCode: z.string().trim().min(1).optional(),
+  countryCode,
+  timezone: z.string().trim().min(1).optional(),
+  accessNotes: z.string().trim().min(1).optional(),
+  /** A human-placed map pin. When present it is authoritative (confidence 1). */
+  coordinates: coordinatesSchema.optional(),
+});
+export type ResolveAddressInput = z.infer<typeof resolveAddressSchema>;
+
 // ── Merchants ────────────────────────────────────────────────────────────────
 
-export const createMerchantSchema = z.strictObject({
-  name: nonEmpty("name"),
-  code: z.string().trim().min(1).optional(),
-  contactName: z.string().trim().min(1).optional(),
-  contactPhone: e164.optional(),
-  contactEmail: z.email().optional(),
-  defaultPickupAddressId: z.uuid().optional(),
-  settings: z.record(z.string(), z.unknown()).optional(),
-});
+export const createMerchantSchema = z
+  .strictObject({
+    name: nonEmpty("name"),
+    code: z.string().trim().min(1).optional(),
+    contactName: z.string().trim().min(1).optional(),
+    contactPhone: e164.optional(),
+    contactEmail: z.email().optional(),
+    /** An address that already exists. Mutually exclusive with `pickupAddress`. */
+    defaultPickupAddressId: z.uuid().optional(),
+    /**
+     * The shop's address, resolved and stored as part of registration.
+     *
+     * Here because there is no address API: `addresses` has no controller, and
+     * exposing one is a larger decision than onboarding needs. Without this a
+     * merchant is registered with nowhere to collect from, and every pickup
+     * request for them fails on a missing `pickupAddressId` — which is exactly
+     * where the commercial's workflow stopped.
+     */
+    pickupAddress: resolveAddressSchema.optional(),
+    settings: z.record(z.string(), z.unknown()).optional(),
+  })
+  .superRefine((value, ctx) => {
+    // Both would mean registering an address and then ignoring it. Refuse
+    // rather than silently picking one — the caller believes they set
+    // something that would never take effect.
+    if (value.defaultPickupAddressId !== undefined && value.pickupAddress !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["pickupAddress"],
+        message: "provide either defaultPickupAddressId or pickupAddress, not both",
+      });
+    }
+  });
 export type CreateMerchantInput = z.infer<typeof createMerchantSchema>;
 
 export const updateMerchantSchema = z
@@ -100,29 +152,6 @@ export const blockRecipientSchema = z.strictObject({
   reason: nonEmpty("reason"),
 });
 export type BlockRecipientInput = z.infer<typeof blockRecipientSchema>;
-
-// ── Addresses ────────────────────────────────────────────────────────────────
-
-const coordinatesSchema = z.strictObject({
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
-});
-
-export const resolveAddressSchema = z.strictObject({
-  /** The unparsed original — always required, never overwritten once stored. */
-  rawInput: nonEmpty("rawInput"),
-  line1: z.string().trim().min(1).optional(),
-  line2: z.string().trim().min(1).optional(),
-  city: z.string().trim().min(1).optional(),
-  region: z.string().trim().min(1).optional(),
-  postalCode: z.string().trim().min(1).optional(),
-  countryCode,
-  timezone: z.string().trim().min(1).optional(),
-  accessNotes: z.string().trim().min(1).optional(),
-  /** A human-placed map pin. When present it is authoritative (confidence 1). */
-  coordinates: coordinatesSchema.optional(),
-});
-export type ResolveAddressInput = z.infer<typeof resolveAddressSchema>;
 
 export const correctAddressSchema = z.strictObject({
   coordinates: coordinatesSchema,

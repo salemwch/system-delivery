@@ -77,6 +77,19 @@ export function MerchantForm({ locale }: { locale: Locale }) {
         />
       </Field>
 
+      <Field
+        label={messages.pickupAddress}
+        name="addressLine"
+        hint={messages.pickupAddressHint}
+        error={state.fieldErrors["addressLine"]}
+      >
+        <input id="addressLine" name="addressLine" maxLength={500} className={INPUT_CLASS} />
+      </Field>
+
+      <Field label={messages.city} name="city" error={state.fieldErrors["city"]}>
+        <input id="city" name="city" maxLength={200} className={INPUT_CLASS} />
+      </Field>
+
       <SubmitButton label={messages.create} />
     </form>
   );
