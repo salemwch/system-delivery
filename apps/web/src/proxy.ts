@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
+import { LOCALE_HEADER, PATHNAME_HEADER, SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 
 /**
  * Turns "not signed in" into a redirect, before anything renders.
@@ -52,11 +52,25 @@ export default function proxy(request: NextRequest): NextResponse {
     return NextResponse.next();
   }
 
+  // The refresh route must run even though the session it carries is expired —
+  // renewing it is the entire job. It re-checks the cookie itself and redirects
+  // to login when there is nothing to renew.
+  if (segments[1] === "session") {
+    return NextResponse.next();
+  }
+
   if (request.cookies.get(SESSION_COOKIE_NAME) === undefined) {
     return NextResponse.redirect(new URL(`/${locale}/login`, request.url));
   }
 
-  return NextResponse.next();
+  // Forwarded so a server component can build a redirect back to where the
+  // visitor actually is. A render has no other way to learn its own URL, and
+  // `currentSession()` needs both to send an expired session somewhere useful.
+  const headers = new Headers(request.headers);
+  headers.set(LOCALE_HEADER, locale);
+  headers.set(PATHNAME_HEADER, pathname + request.nextUrl.search);
+
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {

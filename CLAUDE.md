@@ -20,7 +20,7 @@ Authorized 2026-07-22. Build within these limits:
 
 ## Current state (updated 2026-08-05)
 
-**Everything green:** `pnpm build` → ok · `pnpm test` → 973/973 (896 api + 30 track + 17 merchant + 30 web) · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (308 targets, `apps/web` now tracked and covered).
+**Everything green:** `pnpm build` → ok · `pnpm test` → 980/980 (896 api + 30 track + 17 merchant + 37 web) · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (308 targets, `apps/web` now tracked and covered).
 
 ⚠️ `pnpm sast` scans **git-tracked files only** — an untracked app is silently invisible to it. Never pipe it to `tail`: the pipeline's exit status is the last command's, which hid a `RuleParseError` behind a green tick.
 
@@ -76,6 +76,7 @@ Most critical rules (the ones that cause silent data corruption or total feature
 - **Migration + FORCE RLS:** seed BEFORE enabling FORCE; back-fill via `NO FORCE` … `FORCE` (DML filtered, constraint validation not)
 - **Never pipe `pnpm sast` to `tail`** — pipeline exit status is last command's
 - **Each Next app needs its own `apps/<app>/.env.local`** — Next loads env from the app dir, not the repo root. Nest's `envFilePath` resolves against CWD for the same reason: `[".env", "../../.env"]`
+- **Never rotate a refresh token during a render.** `cookies().set()` throws in a Server Component, and the API revokes the whole family on reuse — a render spends the token, cannot store the replacement, and the next request is locked out permanently. Rotation belongs in a Route Handler (`session/refresh`); `currentSession()` only redirects there
 - **A layout `redirect()` does not protect its pages.** Layout and page render concurrently, so the page throws first and returns 500. Guard routes in **`src/proxy.ts`** — Next 16 renamed `middleware.ts` and warns on the old name; the handler is the DEFAULT export. It checks cookie PRESENCE only, never validity
 - **Never cast a GUC to uuid without `NULLIF(setting, '')`.** `CASE` guarantees ordered evaluation of *scalar* branches only — an `EXISTS` inside a branch becomes a SubPlan the executor may run regardless, so the cast hits `''` and raises 22P02 on every non-scoped request. Cost one migration (0031) to learn
 - **`set_config(…, true)` not `SET LOCAL`**. Drizzle errors: walk `.cause` chain. PostGIS: never select raw geography. `REVOKE` for restrictions. `inArray()` not `= ANY($1::uuid[])`. Events self-contained. OTel = first import. Finance accounts lazy. Ledger zero-sum DEFERRABLE. Never re-export `@Module` from barrel

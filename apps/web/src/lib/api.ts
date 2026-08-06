@@ -1,5 +1,9 @@
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+
 import { apiBaseUrl, tenantSlug } from "./config";
-import { readSession, writeSession } from "./session";
+import { LOCALE_HEADER, PATHNAME_HEADER } from "./session-cookie";
+import { readSession } from "./session";
 import type { Session } from "./session";
 
 /**
@@ -24,12 +28,12 @@ export class ApiError extends Error {
   }
 }
 
-class NotAuthenticatedError extends Error {
-  constructor() {
-    super("not authenticated");
-    this.name = "NotAuthenticatedError";
-  }
-}
+/**
+ * The route that owns token rotation — the only place allowed to spend a
+ * refresh token, because it is the only one that can store the replacement.
+ * See {@link currentSession}.
+ */
+const REFRESH_ROUTE = "session/refresh";
 
 interface RequestOptions {
   readonly method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
@@ -89,24 +93,74 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   return callWith<T>(session.accessToken, path, options);
 }
 
+/**
+ * The live session, or a redirect. NEVER refreshes here.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * WHY REFRESHING IN THIS FUNCTION DESTROYED SESSIONS
+ *
+ * It used to call `refresh()` and then `writeSession()`. Both halves are wrong
+ * in a Server Component:
+ *
+ *   1. `cookies().set()` THROWS during a render — Next allows it only in a
+ *      Server Action or a Route Handler. So the rotated token was never stored.
+ *   2. The API rotates refresh tokens and treats a second use of one as theft:
+ *      `auth.service` revokes the ENTIRE token family with
+ *      `revokeReason: 'REUSE_DETECTED'`.
+ *
+ * Together: a page render consumed the refresh token, failed to persist the new
+ * one, and left the old — already spent — token in the cookie. The next request
+ * presented it again, the API called that reuse, and every session for that
+ * user was revoked. From then on `refresh()` returned null forever and the app
+ * served a 500 on every page. Not a transient error: a self-inflicted lockout
+ * that survives a restart.
+ *
+ * So rotation lives in ONE place that is allowed to write cookies — the
+ * `session/refresh` Route Handler — and this function only ever redirects to
+ * it. A render never spends a token it cannot save.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 async function currentSession(): Promise<Session> {
   const session = await readSession();
   if (session === null) {
-    throw new NotAuthenticatedError();
+    // `return`, not a bare call: TypeScript does not treat the statements after
+    // an awaited `Promise<never>` as unreachable, so `session` would stay
+    // nullable below. Returning it both narrows and states the intent.
+    return redirectToLogin();
   }
   if (session.expiresAt - REFRESH_SKEW_MS > Date.now()) {
     return session;
   }
-
-  const refreshed = await refresh(session);
-  if (refreshed === null) {
-    throw new NotAuthenticatedError();
-  }
-  await writeSession(refreshed);
-  return refreshed;
+  // Expired. Hand off to the route handler, which refreshes, stores the
+  // rotated token, and returns the visitor to exactly where they were.
+  return redirectToRefresh();
 }
 
-async function refresh(session: Session): Promise<Session | null> {
+/** The locale and path the proxy recorded for this request. */
+async function requestContext(): Promise<{ locale: string; path: string }> {
+  const requestHeaders = await headers();
+  const locale = requestHeaders.get(LOCALE_HEADER) ?? "fr";
+  return { locale, path: requestHeaders.get(PATHNAME_HEADER) ?? `/${locale}` };
+}
+
+async function redirectToLogin(): Promise<never> {
+  const { locale } = await requestContext();
+  redirect(`/${locale}/login`);
+}
+
+async function redirectToRefresh(): Promise<never> {
+  const { locale, path } = await requestContext();
+  redirect(`/${locale}/${REFRESH_ROUTE}?next=${encodeURIComponent(path)}`);
+}
+
+/**
+ * Exchanges the refresh token for a new session.
+ *
+ * ⚠️ Call ONLY from a context that can persist the result — the refresh Route
+ * Handler. The token is rotated by the API, so a caller that cannot store the
+ * replacement burns the session (see {@link currentSession}).
+ */
+export async function refresh(session: Session): Promise<Session | null> {
   try {
     const response = await fetch(`${apiBaseUrl()}/v1/auth/refresh`, {
       method: "POST",
@@ -153,7 +207,11 @@ async function callWith<T>(
   });
 
   if (response.status === 401) {
-    throw new NotAuthenticatedError();
+    // The token looked live but the API refused it — revoked elsewhere, or the
+    // clocks disagree. `callWith` is only ever reached through `apiFetch`, so
+    // this is always an authenticated call and always a dead session. Same
+    // handling as an expired one: renew, or be sent to sign in.
+    return redirectToRefresh();
   }
   if (!response.ok) {
     throw await toApiError(response);
