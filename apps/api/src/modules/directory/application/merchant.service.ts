@@ -105,17 +105,7 @@ export class MerchantService {
   async create(input: unknown): Promise<Merchant> {
     const dto = parseWithZod(createMerchantSchema, input);
 
-    // Resolved BEFORE the merchant transaction opens, not inside it.
-    // `AddressService.resolve` geocodes — a network call to Nominatim or a
-    // commercial provider — and holding a write transaction open across it
-    // would pin a connection for the length of someone else's HTTP timeout.
-    // The cost of the two being separate is an orphaned address row if the
-    // merchant insert then fails, which is harmless: addresses are retained
-    // history and nothing references it.
-    const pickupAddressId =
-      dto.pickupAddress === undefined
-        ? dto.defaultPickupAddressId
-        : (await this.addresses.resolve(dto.pickupAddress)).addressId;
+    const pickupAddressId = await this.resolvePickupAddress(dto);
 
     try {
       return await this.database.withTenant(async (tx) => {
@@ -153,6 +143,31 @@ export class MerchantService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Turns whichever address form the caller sent into an id.
+   *
+   * `undefined` — leave the column alone. `null` — unset it. An id — use it.
+   * A `pickupAddress` object is resolved into a new `addresses` row and its id
+   * returned. The DTO already refused both forms at once, so the branches
+   * cannot overlap.
+   *
+   * ⚠️ Resolved BEFORE the caller's transaction opens, not inside it.
+   * `AddressService.resolve` geocodes — a network call to Nominatim or a paid
+   * provider — and holding a write transaction across it pins a connection for
+   * the length of someone else's HTTP timeout. The cost of separating them is
+   * an orphaned address row if the merchant write then fails, which is
+   * harmless: `addresses` is retained history and nothing references it.
+   */
+  private async resolvePickupAddress(dto: {
+    readonly defaultPickupAddressId?: string | null | undefined;
+    readonly pickupAddress?: unknown;
+  }): Promise<string | null | undefined> {
+    if (dto.pickupAddress === undefined) {
+      return dto.defaultPickupAddressId;
+    }
+    return (await this.addresses.resolve(dto.pickupAddress)).addressId;
   }
 
   async getById(id: string): Promise<Merchant> {
@@ -193,6 +208,7 @@ export class MerchantService {
 
   async update(id: string, input: unknown): Promise<Merchant> {
     const dto = parseWithZod(updateMerchantSchema, input);
+    const pickupAddressId = await this.resolvePickupAddress(dto);
     try {
       return await this.database.withTenant(async (tx) => {
         const rows = await tx
@@ -203,9 +219,9 @@ export class MerchantService {
             ...(dto.contactName === undefined ? {} : { contactName: dto.contactName }),
             ...(dto.contactPhone === undefined ? {} : { contactPhone: dto.contactPhone }),
             ...(dto.contactEmail === undefined ? {} : { contactEmail: dto.contactEmail }),
-            ...(dto.defaultPickupAddressId === undefined
-              ? {}
-              : { defaultPickupAddressId: dto.defaultPickupAddressId }),
+            // `undefined` leaves it alone; `null` unsets it; an id sets it.
+            // `pickupAddress` has already become an id by this point.
+            ...(pickupAddressId === undefined ? {} : { defaultPickupAddressId: pickupAddressId }),
             ...(dto.settings === undefined ? {} : { settings: dto.settings }),
             updatedAt: sql`now()`,
           })

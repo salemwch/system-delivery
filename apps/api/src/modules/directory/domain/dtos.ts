@@ -97,11 +97,36 @@ export const updateMerchantSchema = z
     contactName: z.string().trim().min(1).nullable().optional(),
     contactPhone: e164.nullable().optional(),
     contactEmail: z.email().nullable().optional(),
+    /** An address that already exists, or `null` to unset. */
     defaultPickupAddressId: z.uuid().nullable().optional(),
+    /**
+     * A new address, resolved and stored, replacing whatever was there.
+     *
+     * The only way to give a pickup address to a merchant registered before
+     * `pickupAddress` existed on create — and, with no address API, the only
+     * way to change one at all. Without it those merchants can never have a
+     * pickup requested: the command needs a `pickupAddressId` and nothing
+     * could mint one.
+     *
+     * The previous address is left in place rather than deleted. `addresses`
+     * is retained history, and shipments already reference it.
+     */
+    pickupAddress: resolveAddressSchema.optional(),
     settings: z.record(z.string(), z.unknown()).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "at least one field must be provided",
+  })
+  .superRefine((value, ctx) => {
+    // Same rule as create: accepting both would resolve an address and then
+    // ignore it, so the caller believes they set something that never applied.
+    if (value.defaultPickupAddressId !== undefined && value.pickupAddress !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["pickupAddress"],
+        message: "provide either defaultPickupAddressId or pickupAddress, not both",
+      });
+    }
   });
 export type UpdateMerchantInput = z.infer<typeof updateMerchantSchema>;
 

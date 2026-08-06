@@ -90,6 +90,8 @@ interface Messages {
   readonly pickupAddressHint: string;
   readonly city: string;
   readonly phoneHint: string;
+  readonly addressOnFile: string;
+  readonly addressMissing: string;
 }
 
 export const MESSAGES: Readonly<Record<Locale, Messages>> = {
@@ -168,6 +170,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pickupAddressHint: "بدونه لا يمكن طلب استلام لهذا التاجر",
     city: "المدينة",
     phoneHint: "24 201 314 أو 216 24 201 314+",
+    addressOnFile: "عنوان الاستلام مسجَّل. أدخل عنوانًا جديدًا لتعويضه.",
+    addressMissing: "لا يوجد عنوان استلام — لا يمكن طلب استلام لهذا التاجر.",
   },
   fr: {
     title: "Tableau de bord",
@@ -245,6 +249,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pickupAddressHint: "Sans elle, aucun ramassage ne peut être demandé pour ce commerçant",
     city: "Ville",
     phoneHint: "24 201 314 ou +216 24 201 314",
+    addressOnFile: "Une adresse de ramassage est enregistrée. Saisissez-en une nouvelle pour la remplacer.",
+    addressMissing: "Aucune adresse de ramassage — aucun ramassage ne peut être demandé.",
   },
   en: {
     title: "Dashboard",
@@ -321,6 +327,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pickupAddressHint: "Without it, no pickup can be requested for this merchant",
     city: "City",
     phoneHint: "24 201 314 or +216 24 201 314",
+    addressOnFile: "A pickup address is on file. Enter a new one to replace it.",
+    addressMissing: "No pickup address — no pickup can be requested for this merchant.",
   },
 };
 

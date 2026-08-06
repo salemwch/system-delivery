@@ -96,6 +96,11 @@ export interface MerchantDetail extends MerchantSummary {
   readonly code: string | null;
   readonly contactEmail: string | null;
   readonly blockReason: string | null;
+  /**
+   * Where the courier collects. `null` means no pickup can be requested for
+   * this merchant at all — the command requires an address id.
+   */
+  readonly defaultPickupAddressId: string | null;
   readonly updatedAt: string;
 }
 

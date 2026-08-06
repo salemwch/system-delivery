@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AccountManagerForm } from "@/components/account-manager-form";
 import type { CommercialOption } from "@/components/account-manager-form";
+import { PickupAddressForm } from "@/components/pickup-address-form";
 import { PortalLoginForm } from "@/components/portal-login-form";
 import { PageHeader, StatCard, StatusBadge } from "@/components/ui";
 import { formatMoney, formatRate } from "@/lib/format";
@@ -70,6 +71,17 @@ export default async function MerchantDetailPage({
         <h2 className="text-lg font-semibold">{messages.performance}</h2>
         <Performance stats={stats} locale={locale} />
       </section>
+
+      {hasPermission(session, P.MERCHANT_UPDATE) ? (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">{messages.pickupAddress}</h2>
+          <PickupAddressForm
+            merchantId={merchant.id}
+            hasAddress={merchant.defaultPickupAddressId !== null}
+            locale={locale}
+          />
+        </section>
+      ) : null}
 
       {hasPermission(session, P.MERCHANT_ONBOARD) ? (
         <section className="space-y-3">

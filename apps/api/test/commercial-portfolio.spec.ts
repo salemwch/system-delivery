@@ -444,6 +444,98 @@ describe("commercial portfolio", () => {
         ),
       ).rejects.toThrow(ValidationError);
     });
+
+    it("gives an address to a merchant registered without one", async () => {
+      const tenantId = await seedTenant("com-addr-update");
+      const salem = await seedUser(tenantId, "COMMERCIAL", `salem-${randomUUID()}@courier.tn`);
+
+      // The state every merchant created before `pickupAddress` existed is in:
+      // no address, and — with no address API — no way to acquire one.
+      const merchant = await asCommercial(tenantId, salem, () =>
+        merchants.create({ name: "Legacy merchant" }),
+      );
+      expect(merchant.defaultPickupAddressId).toBeNull();
+
+      const updated = await asCommercial(tenantId, salem, () =>
+        merchants.update(merchant.id, {
+          pickupAddress: {
+            rawInput: "Rue de Marseille, Sousse",
+            countryCode: "TN",
+            city: "Sousse",
+            coordinates: { lat: 35.83, lng: 10.64 },
+          },
+        }),
+      );
+
+      expect(updated.defaultPickupAddressId).not.toBeNull();
+    });
+
+    it("replaces an existing address with a new one", async () => {
+      const tenantId = await seedTenant("com-addr-replace");
+      const first = await asStaff(tenantId, () =>
+        merchants.create({
+          name: "Moved shop",
+          pickupAddress: { rawInput: "Old address, Tunis", countryCode: "TN" },
+        }),
+      );
+
+      const moved = await asStaff(tenantId, () =>
+        merchants.update(first.id, {
+          pickupAddress: { rawInput: "New address, Sfax", countryCode: "TN" },
+        }),
+      );
+
+      expect(moved.defaultPickupAddressId).not.toBe(first.defaultPickupAddressId);
+      // The old row survives: `addresses` is retained history and past
+      // shipments still point at it.
+      expect(moved.defaultPickupAddressId).not.toBeNull();
+    });
+
+    it("unsets the address when given an explicit null", async () => {
+      const tenantId = await seedTenant("com-addr-unset");
+      const merchant = await asStaff(tenantId, () =>
+        merchants.create({
+          name: "Closing shop",
+          pickupAddress: { rawInput: "Somewhere, Tunis", countryCode: "TN" },
+        }),
+      );
+
+      const cleared = await asStaff(tenantId, () =>
+        merchants.update(merchant.id, { defaultPickupAddressId: null }),
+      );
+
+      expect(cleared.defaultPickupAddressId).toBeNull();
+    });
+
+    it("leaves the address untouched when the update does not mention it", async () => {
+      const tenantId = await seedTenant("com-addr-keep");
+      const merchant = await asStaff(tenantId, () =>
+        merchants.create({
+          name: "Renamed shop",
+          pickupAddress: { rawInput: "Stable address, Tunis", countryCode: "TN" },
+        }),
+      );
+
+      const renamed = await asStaff(tenantId, () =>
+        merchants.update(merchant.id, { name: "Renamed shop v2" }),
+      );
+
+      expect(renamed.name).toBe("Renamed shop v2");
+      expect(renamed.defaultPickupAddressId).toBe(merchant.defaultPickupAddressId);
+    });
+
+    it("refuses both forms on update too", async () => {
+      const tenantId = await seedTenant("com-addr-both-update");
+      const merchant = await asStaff(tenantId, () => merchants.create({ name: "Ambiguous" }));
+      await expect(
+        asStaff(tenantId, () =>
+          merchants.update(merchant.id, {
+            defaultPickupAddressId: randomUUID(),
+            pickupAddress: { rawInput: "Tunis", countryCode: "TN" },
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
   });
 
   // ── Labelling a merchant id from another module ────────────────────────────

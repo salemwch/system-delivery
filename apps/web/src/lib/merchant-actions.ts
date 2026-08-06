@@ -181,6 +181,58 @@ export async function createPortalLogin(
   }
 }
 
+const pickupAddressSchema = z.object({
+  merchantId: z.uuid(),
+  addressLine: z.string().trim().min(1, "required").max(500),
+  city: z.string().trim().max(200).optional(),
+});
+
+/**
+ * Sets or replaces the shop's pickup address.
+ *
+ * The only route to one for a merchant registered before `pickupAddress`
+ * existed on create — and, with no address API, the only way to change one at
+ * all. Until this existed, those merchants could never have a pickup
+ * requested: the command needs a `pickupAddressId` and nothing could mint one.
+ */
+export async function updatePickupAddress(
+  locale: string,
+  _previous: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = pickupAddressSchema.safeParse({
+    merchantId: formData.get("merchantId"),
+    addressLine: formData.get("addressLine"),
+    city: optional(formData, "city"),
+  });
+  if (!parsed.success) {
+    return { error: "validation", fieldErrors: fieldErrorsFrom(parsed.error) };
+  }
+
+  const { merchantId, addressLine, city } = parsed.data;
+  try {
+    await apiFetch(`/v1/merchants/${encodeURIComponent(merchantId)}`, {
+      method: "PATCH",
+      idempotencyKey: randomUUID(),
+      body: {
+        pickupAddress: {
+          rawInput: [addressLine, city].filter(Boolean).join(", "),
+          countryCode: "TN",
+          ...(city === undefined ? {} : { city }),
+        },
+      },
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.code, fieldErrors: error.fieldErrors };
+    }
+    throw error;
+  }
+
+  revalidatePath(`/${toLocale(locale)}/merchants/${merchantId}`);
+  return { error: null, fieldErrors: {} };
+}
+
 const assignManagerSchema = z.object({
   merchantId: z.uuid(),
   /** "" is the unassign case — the account goes back to house-managed. */
