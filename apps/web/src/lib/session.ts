@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { isProduction, sessionSecret } from "./config";
+import { SESSION_COOKIE_NAME } from "./session-cookie";
 
 /**
  * The staff session, held in an ENCRYPTED, httpOnly cookie.
@@ -15,7 +16,7 @@ import { isProduction, sessionSecret } from "./config";
  * The access token never reaches browser JavaScript.
  */
 
-const COOKIE_NAME = "web_session";
+const COOKIE_NAME = SESSION_COOKIE_NAME;
 const COOKIE_MAX_AGE_S = 30 * 24 * 60 * 60;
 const KEY_SALT = "delivery-web-session";
 

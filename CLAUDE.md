@@ -75,6 +75,8 @@ Most critical rules (the ones that cause silent data corruption or total feature
 - **Per-tenant defaults seeded at provisioning** (`TenantService.provision`), never migration `CROSS JOIN tenants`
 - **Migration + FORCE RLS:** seed BEFORE enabling FORCE; back-fill via `NO FORCE` … `FORCE` (DML filtered, constraint validation not)
 - **Never pipe `pnpm sast` to `tail`** — pipeline exit status is last command's
+- **Each Next app needs its own `apps/<app>/.env.local`** — Next loads env from the app dir, not the repo root. Nest's `envFilePath` resolves against CWD for the same reason: `[".env", "../../.env"]`
+- **A layout `redirect()` does not protect its pages.** Layout and page render concurrently, so the page throws first and returns 500. Guard routes in `src/middleware.ts`, which runs before rendering; it checks cookie PRESENCE only, never validity
 - **Never cast a GUC to uuid without `NULLIF(setting, '')`.** `CASE` guarantees ordered evaluation of *scalar* branches only — an `EXISTS` inside a branch becomes a SubPlan the executor may run regardless, so the cast hits `''` and raises 22P02 on every non-scoped request. Cost one migration (0031) to learn
 - **`set_config(…, true)` not `SET LOCAL`**. Drizzle errors: walk `.cause` chain. PostGIS: never select raw geography. `REVOKE` for restrictions. `inArray()` not `= ANY($1::uuid[])`. Events self-contained. OTel = first import. Finance accounts lazy. Ledger zero-sum DEFERRABLE. Never re-export `@Module` from barrel
 
