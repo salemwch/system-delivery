@@ -47,3 +47,8 @@ export function timezone(): string {
 export function supportPhone(): string {
   return optional("TRACKING_SUPPORT_PHONE", "");
 }
+
+/** Gates the development-only relaxations in the Content-Security-Policy. */
+export function isProduction(): boolean {
+  return process.env["NODE_ENV"] === "production";
+}

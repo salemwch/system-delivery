@@ -14,6 +14,12 @@ const config: NextConfig = {
   // The version is a free disclosure to anyone fingerprinting the deployment.
   poweredByHeader: false,
 
+  /**
+   * ⚠️ Content-Security-Policy is NOT here — `src/proxy.ts` builds it per
+   * request, because it carries a nonce and a nonce must be unique per
+   * response. As a static `script-src 'self'` it blocked every inline script
+   * Next uses to start React. See `src/lib/csp.ts`.
+   */
   // Next's type wants a promise; there is nothing to await, so it is returned
   // rather than declared `async` (which lint correctly flags as pointless).
   headers() {
@@ -21,26 +27,6 @@ const config: NextConfig = {
       {
         source: "/:path*",
         headers: [
-          {
-            // A tracking page renders no third-party anything: no analytics, no
-            // fonts, no maps, no images from elsewhere. `default-src 'none'` with
-            // a narrow allow-list is achievable here in a way it never is on an
-            // app with embedded widgets, so it is worth taking.
-            //
-            // `style-src 'unsafe-inline'` is required by Next's inlined critical
-            // CSS. Scripts get no such exemption.
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'none'",
-              "script-src 'self'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data:",
-              "connect-src 'self'",
-              "base-uri 'none'",
-              "form-action 'none'",
-              "frame-ancestors 'none'",
-            ].join("; "),
-          },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "no-referrer" },
           {

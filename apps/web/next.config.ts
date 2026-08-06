@@ -12,25 +12,22 @@ const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
 
+  /**
+   * ⚠️ Content-Security-Policy is NOT here — it is built per request in
+   * `src/proxy.ts`, because it carries a nonce and a nonce must be unique per
+   * response.
+   *
+   * It lived here as `script-src 'self'`, which blocked every inline script
+   * Next uses to hydrate React. The page rendered and then did nothing: forms
+   * submitted nowhere, buttons had no handlers. See `src/lib/csp.ts`.
+   *
+   * The headers below are constant and belong here.
+   */
   headers() {
     return Promise.resolve([
       {
         source: "/:path*",
         headers: [
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'none'",
-              "script-src 'self'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob:",
-              "connect-src 'self'",
-              "worker-src 'self' blob:",
-              "form-action 'self'",
-              "base-uri 'none'",
-              "frame-ancestors 'none'",
-            ].join("; "),
-          },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "same-origin" },
           { key: "X-Frame-Options", value: "DENY" },

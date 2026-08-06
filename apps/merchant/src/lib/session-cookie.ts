@@ -8,3 +8,13 @@
  * valid.
  */
 export const SESSION_COOKIE_NAME = "merchant_session";
+
+/**
+ * The per-request CSP nonce, and the policy carrying it.
+ *
+ * Next reads `Content-Security-Policy` off the REQUEST to find the nonce and
+ * stamp it on the inline scripts it emits. It must be set on the request as
+ * well as the response, or the browser blocks scripts the policy allows.
+ */
+export const NONCE_HEADER = "x-nonce";
+export const CSP_HEADER = "Content-Security-Policy";

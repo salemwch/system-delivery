@@ -18,3 +18,13 @@ export const SESSION_COOKIE_NAME = "web_session";
  */
 export const LOCALE_HEADER = "x-web-locale";
 export const PATHNAME_HEADER = "x-web-pathname";
+
+/**
+ * The per-request CSP nonce, and the policy carrying it.
+ *
+ * Next reads `Content-Security-Policy` off the REQUEST to find the nonce and
+ * stamp it on the inline scripts it emits. Set it on the request as well as the
+ * response, or the browser blocks scripts the policy was meant to allow.
+ */
+export const NONCE_HEADER = "x-nonce";
+export const CSP_HEADER = "Content-Security-Policy";

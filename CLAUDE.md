@@ -20,7 +20,7 @@ Authorized 2026-07-22. Build within these limits:
 
 ## Current state (updated 2026-08-05)
 
-**Everything green:** `pnpm build` → ok · `pnpm test` → 999/999 (901 api + 30 track + 24 merchant + 44 web) · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (308 targets, `apps/web` now tracked and covered).
+**Everything green:** `pnpm build` → ok · `pnpm test` → 1026/1026 (901 api + 39 track + 33 merchant + 53 web) · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (308 targets, `apps/web` now tracked and covered).
 
 ⚠️ `pnpm sast` scans **git-tracked files only** — an untracked app is silently invisible to it. Never pipe it to `tail`: the pipeline's exit status is the last command's, which hid a `RuleParseError` behind a green tick.
 
@@ -76,6 +76,7 @@ Most critical rules (the ones that cause silent data corruption or total feature
 - **Migration + FORCE RLS:** seed BEFORE enabling FORCE; back-fill via `NO FORCE` … `FORCE` (DML filtered, constraint validation not)
 - **Never pipe `pnpm sast` to `tail`** — pipeline exit status is last command's
 - **Each Next app needs its own `apps/<app>/.env.local`** — Next loads env from the app dir, not the repo root. Nest's `envFilePath` resolves against CWD for the same reason: `[".env", "../../.env"]`
+- **CSP needs a per-request NONCE, built in `proxy.ts`, never a static header.** `script-src 'self'` blocks Next's inline hydration scripts — the page renders and then does nothing, because a Server Action form is `action=""` and binds client-side. Set the policy on the REQUEST header too, or Next cannot find the nonce
 - **A Server Action refreshes in place; only a render redirects.** Redirecting out of an action throws away the user's submission — a filled form returned blank with no error. `canPersistCookies()` probes with a no-op cookie write
 - **Sidebar needs `sticky top-0` alongside `h-dvh`** — `h-dvh` alone scrolls the panel away on a tall page, which reads as "the menu items vanished"
 - **Normalise phone input in the UI, don't just validate it.** Tunisians type `24201314`, not `+21624201314`. `toE164()` in `apps/web/src/lib/phone.ts`; the API stays strict

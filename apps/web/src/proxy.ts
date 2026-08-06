@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { LOCALE_HEADER, PATHNAME_HEADER, SESSION_COOKIE_NAME } from "@/lib/session-cookie";
+import { contentSecurityPolicy, newNonce } from "@/lib/csp";
+import {
+  CSP_HEADER,
+  LOCALE_HEADER,
+  NONCE_HEADER,
+  PATHNAME_HEADER,
+  SESSION_COOKIE_NAME,
+} from "@/lib/session-cookie";
 
 /**
  * Turns "not signed in" into a redirect, before anything renders.
@@ -35,42 +42,67 @@ const LOCALES = new Set(["ar", "fr", "en"]);
 const DEFAULT_LOCALE = "fr";
 
 export default function proxy(request: NextRequest): NextResponse {
+  // A fresh nonce per response. Built here rather than in next.config.ts
+  // because a static CSP cannot carry one — and `script-src 'self'` without a
+  // nonce blocks every inline script Next uses to hydrate React. See lib/csp.ts.
+  const nonce = newNonce();
+  const csp = contentSecurityPolicy(nonce);
+
   const { pathname } = request.nextUrl;
 
   const segments = pathname.split("/").filter((s) => s !== "");
   const first = segments[0];
   const locale = first !== undefined && LOCALES.has(first) ? first : DEFAULT_LOCALE;
 
+  /*
+   * Forwarded to the render:
+   *  - locale and path, because a Server Component cannot learn its own URL and
+   *    `currentSession()` needs both to redirect an expired session somewhere
+   *    useful;
+   *  - the CSP itself, which is how Next discovers the nonce and stamps it on
+   *    the inline scripts it emits. Without this header on the REQUEST, Next
+   *    generates unnonced scripts and the browser blocks them even though the
+   *    response header names a nonce.
+   */
+  const headers = new Headers(request.headers);
+  headers.set(LOCALE_HEADER, locale);
+  headers.set(PATHNAME_HEADER, pathname + request.nextUrl.search);
+  headers.set(NONCE_HEADER, nonce);
+  headers.set(CSP_HEADER, csp);
+
+  const proceed = (): NextResponse => withCsp(NextResponse.next({ request: { headers } }), csp);
+  const goTo = (path: string): NextResponse =>
+    withCsp(NextResponse.redirect(new URL(path, request.url)), csp);
+
   // A visitor landing on "/" has not chosen a language yet.
   if (segments.length === 0) {
-    return NextResponse.redirect(new URL(`/${DEFAULT_LOCALE}`, request.url));
+    return goTo(`/${DEFAULT_LOCALE}`);
   }
 
   // The login page is the destination of this redirect; sending it here too
   // would be a loop.
   if (segments[1] === "login") {
-    return NextResponse.next();
+    return proceed();
   }
 
   // The refresh route must run even though the session it carries is expired —
   // renewing it is the entire job. It re-checks the cookie itself and redirects
   // to login when there is nothing to renew.
   if (segments[1] === "session") {
-    return NextResponse.next();
+    return proceed();
   }
 
   if (request.cookies.get(SESSION_COOKIE_NAME) === undefined) {
-    return NextResponse.redirect(new URL(`/${locale}/login`, request.url));
+    return goTo(`/${locale}/login`);
   }
 
-  // Forwarded so a server component can build a redirect back to where the
-  // visitor actually is. A render has no other way to learn its own URL, and
-  // `currentSession()` needs both to send an expired session somewhere useful.
-  const headers = new Headers(request.headers);
-  headers.set(LOCALE_HEADER, locale);
-  headers.set(PATHNAME_HEADER, pathname + request.nextUrl.search);
+  return proceed();
+}
 
-  return NextResponse.next({ request: { headers } });
+/** Applies the policy to a response. Every path returns one — a page with no CSP is worse than a wrong one. */
+function withCsp(response: NextResponse, csp: string): NextResponse {
+  response.headers.set(CSP_HEADER, csp);
+  return response;
 }
 
 export const config = {

@@ -13,30 +13,22 @@ const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
 
+  /**
+   * ⚠️ Content-Security-Policy is NOT here — it is built per request in
+   * `src/proxy.ts`, because it carries a nonce and a nonce must be unique per
+   * response.
+   *
+   * It lived here as `script-src 'self'`, which blocked every inline script
+   * Next uses to hydrate React: the page rendered and then did nothing, forms
+   * included. See `src/lib/csp.ts`.
+   *
+   * The headers below are constant and belong here.
+   */
   headers() {
     return Promise.resolve([
       {
         source: "/:path*",
         headers: [
-          {
-            // No third-party anything: no analytics, no CDN fonts, no maps. The
-            // portal talks to its own server and nothing else, so a tight policy
-            // is achievable here in a way it is not on an app with widgets.
-            //
-            // `'unsafe-inline'` for styles only — Next inlines critical CSS.
-            // Scripts get no such exemption.
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'none'",
-              "script-src 'self'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data:",
-              "connect-src 'self'",
-              "form-action 'self'",
-              "base-uri 'none'",
-              "frame-ancestors 'none'",
-            ].join("; "),
-          },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "same-origin" },
           { key: "X-Frame-Options", value: "DENY" },

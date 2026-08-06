@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
+import { contentSecurityPolicy, newNonce } from "@/lib/csp";
+import { CSP_HEADER, NONCE_HEADER, SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 
 /**
  * Turns "not signed in" into a redirect, before anything renders.
@@ -24,26 +25,48 @@ const LOCALES = new Set(["ar", "fr", "en"]);
 const DEFAULT_LOCALE = "fr";
 
 export default function proxy(request: NextRequest): NextResponse {
+  // A fresh nonce per response. `script-src 'self'` with no nonce blocks every
+  // inline script Next uses to hydrate React — the page renders and then does
+  // nothing. See lib/csp.ts.
+  const nonce = newNonce();
+  const csp = contentSecurityPolicy(nonce);
+
   const { pathname } = request.nextUrl;
 
   const segments = pathname.split("/").filter((s) => s !== "");
   const first = segments[0];
   const locale = first !== undefined && LOCALES.has(first) ? first : DEFAULT_LOCALE;
 
+  // The CSP goes on the REQUEST too: that is how Next finds the nonce and
+  // stamps it on the scripts it generates.
+  const headers = new Headers(request.headers);
+  headers.set(NONCE_HEADER, nonce);
+  headers.set(CSP_HEADER, csp);
+
+  const proceed = (): NextResponse => withCsp(NextResponse.next({ request: { headers } }), csp);
+  const goTo = (path: string): NextResponse =>
+    withCsp(NextResponse.redirect(new URL(path, request.url)), csp);
+
   if (segments.length === 0) {
-    return NextResponse.redirect(new URL(`/${DEFAULT_LOCALE}`, request.url));
+    return goTo(`/${DEFAULT_LOCALE}`);
   }
 
   // The destination of this redirect; sending it here too would loop.
   if (segments[1] === "login") {
-    return NextResponse.next();
+    return proceed();
   }
 
   if (request.cookies.get(SESSION_COOKIE_NAME) === undefined) {
-    return NextResponse.redirect(new URL(`/${locale}/login`, request.url));
+    return goTo(`/${locale}/login`);
   }
 
-  return NextResponse.next();
+  return proceed();
+}
+
+/** Applies the policy to a response. Every path returns one. */
+function withCsp(response: NextResponse, csp: string): NextResponse {
+  response.headers.set(CSP_HEADER, csp);
+  return response;
 }
 
 export const config = {
