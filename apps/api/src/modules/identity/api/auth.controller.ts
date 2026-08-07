@@ -4,6 +4,8 @@ import { z } from "zod";
 
 import { UnauthenticatedError } from "../../../shared/errors/domain-error.js";
 import { zodBody } from "../../../shared/http/index.js";
+import { toSessionResponse } from "./session-response.js";
+import type { SessionResponse } from "./session-response.js";
 import { AuthService } from "../application/auth.service.js";
 import type { AuthResult } from "../application/auth.service.js";
 import { MFA_CHALLENGE_TTL_SECONDS } from "../application/token.service.js";
@@ -77,20 +79,6 @@ const refreshSchema = z
 
 type LoginBody = z.infer<typeof loginSchema>;
 type RefreshBody = z.infer<typeof refreshSchema>;
-
-interface SessionResponse {
-  /** Discriminator. A client switches on this, never on which fields are present. */
-  readonly status: "AUTHENTICATED";
-  readonly accessToken: string;
-  readonly expiresIn: number;
-  readonly refreshToken: string;
-  readonly user: {
-    readonly id: string;
-    readonly tenantId: string;
-    readonly roles: readonly string[];
-    readonly permissions: readonly string[];
-  };
-}
 
 /**
  * The password was correct and a second factor now stands between the caller
@@ -265,19 +253,6 @@ export class AuthController {
     if (!result.ok) {
       throw new UnauthenticatedError("Invalid credentials");
     }
-
-    const { session } = result;
-    return {
-      status: "AUTHENTICATED",
-      accessToken: session.accessToken,
-      expiresIn: session.expiresIn,
-      refreshToken: session.refreshToken,
-      user: {
-        id: session.principal.userId,
-        tenantId: session.principal.tenantId,
-        roles: session.principal.roles,
-        permissions: [...session.principal.permissions],
-      },
-    };
+    return toSessionResponse(result.session);
   }
 }

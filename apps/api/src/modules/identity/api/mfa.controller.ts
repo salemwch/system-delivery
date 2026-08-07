@@ -5,6 +5,9 @@ import { AppConfigService } from "../../../shared/config/index.js";
 import { TenantContext, asTenantId } from "../../../shared/database/index.js";
 import { UnauthenticatedError } from "../../../shared/errors/index.js";
 import { zodBody } from "../../../shared/http/index.js";
+import { toSessionResponse } from "./session-response.js";
+import type { SessionResponse } from "./session-response.js";
+import { totpQrSvg } from "../domain/totp-qr.js";
 import { AuthService } from "../application/auth.service.js";
 import { MfaService } from "../application/mfa.service.js";
 import { TokenService } from "../application/token.service.js";
@@ -101,13 +104,9 @@ export class MfaController {
   @Post("challenge")
   @Public()
   @HttpCode(HttpStatus.OK)
-  async challenge(@Body(zodBody(challengeSchema)) body: z.infer<typeof challengeSchema>): Promise<{
-    accessToken: string;
-    expiresIn: number;
-    refreshToken: string;
-    usedRecoveryCode: boolean;
-    remainingRecoveryCodes: number;
-  }> {
+  async challenge(
+    @Body(zodBody(challengeSchema)) body: z.infer<typeof challengeSchema>,
+  ): Promise<SessionResponse & { usedRecoveryCode: boolean; remainingRecoveryCodes: number }> {
     const verified = await this.tokens.verifyMfaChallenge(body.challenge);
     if (verified === null) {
       // Expired, tampered, or not a challenge token at all — one answer for all.
@@ -119,10 +118,12 @@ export class MfaController {
       throw new UnauthenticatedError();
     }
 
+    // The SAME envelope `POST /v1/auth/login` returns, plus the recovery-code
+    // accounting. This endpoint completes a login, so a client must be able to
+    // read the session out of it exactly as it does there — returning bare
+    // tokens with no `user` is what made MFA sign-in impossible in apps/web.
     return {
-      accessToken: result.session.accessToken,
-      expiresIn: result.session.expiresIn,
-      refreshToken: result.session.refreshToken,
+      ...toSessionResponse(result.session),
       usedRecoveryCode: result.usedRecoveryCode,
       remainingRecoveryCodes: result.remainingRecoveryCodes,
     };
@@ -145,14 +146,29 @@ export class MfaController {
   @HttpCode(HttpStatus.OK)
   async bootstrapEnrol(
     @Body(zodBody(bootstrapEnrolSchema)) body: z.infer<typeof bootstrapEnrolSchema>,
-  ): Promise<{ secret: string; provisioningUri: string }> {
+  ): Promise<{ secret: string; provisioningUri: string; qrSvg: string }> {
     const verified = await this.tokens.verifyMfaChallenge(body.challenge);
     if (verified === null) {
       throw new UnauthenticatedError();
     }
-    return this.runAsChallenger(verified, () =>
+    const enrolment = await this.runAsChallenger(verified, () =>
       this.mfa.beginEnrolment(verified.userId, this.config.get("MFA_ISSUER")),
     );
+
+    /*
+     * The QR is rendered HERE, not in the browser.
+     *
+     * The provisioning URI contains the shared secret. Handing it to client
+     * JavaScript to draw would put the factor in the browser's memory and in
+     * any script that shares the page — the whole point of this app is that
+     * secrets stay server-side. An inline SVG is a string; it renders under
+     * `img-src 'self' data:` without a `data:` URI at all.
+     *
+     * `secret` is still returned alongside it: authenticator apps all accept
+     * manual entry, and a QR that will not scan on a cracked phone screen must
+     * not be the only way in.
+     */
+    return { ...enrolment, qrSvg: await totpQrSvg(enrolment.provisioningUri) };
   }
 
   /**
@@ -197,12 +213,7 @@ export class MfaController {
   @HttpCode(HttpStatus.OK)
   async bootstrapConfirm(
     @Body(zodBody(bootstrapConfirmSchema)) body: z.infer<typeof bootstrapConfirmSchema>,
-  ): Promise<{
-    recoveryCodes: readonly string[];
-    accessToken: string;
-    expiresIn: number;
-    refreshToken: string;
-  }> {
+  ): Promise<SessionResponse & { recoveryCodes: readonly string[] }> {
     const verified = await this.tokens.verifyMfaChallenge(body.challenge);
     if (verified === null) {
       throw new UnauthenticatedError();
@@ -215,11 +226,10 @@ export class MfaController {
       session: await this.auth.issueSessionAfterEnrolment(verified.tenantId, verified.userId),
     }));
 
+    // Same envelope as login, for the same reason as `challenge` above.
     return {
+      ...toSessionResponse(session),
       recoveryCodes: enrolment.recoveryCodes,
-      accessToken: session.accessToken,
-      expiresIn: session.expiresIn,
-      refreshToken: session.refreshToken,
     };
   }
 

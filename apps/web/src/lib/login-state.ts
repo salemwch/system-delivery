@@ -6,6 +6,8 @@ export interface MfaState {
   readonly challenge: string;
   readonly uri?: string;
   readonly secret?: string;
+  /** Inline SVG rendered by the API. The secret never reaches client JS as a URI. */
+  readonly qrSvg?: string;
 }
 
 export type LoginState = FormState | MfaState;

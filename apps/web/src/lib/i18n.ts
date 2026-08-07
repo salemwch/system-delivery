@@ -53,6 +53,7 @@ interface Messages {
   readonly mfaVerify: string;
   readonly mfaEnrolRequired: string;
   readonly mfaEnrolInstructions: string;
+  readonly mfaEnrolManual: string;
 
   // ── Merchant accounts (the commercial's book of business) ─────────────────
   readonly newMerchant: string;
@@ -150,6 +151,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     mfaVerify: "تحقق",
     mfaEnrolRequired: "يجب تفعيل المصادقة الثنائية",
     mfaEnrolInstructions: "امسح رمز QR بتطبيق المصادقة",
+    mfaEnrolManual: "أو أدخل هذا المفتاح يدويًا:",
 
     newMerchant: "تاجر جديد",
     merchantName: "اسم التاجر",
@@ -243,6 +245,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     mfaVerify: "Vérifier",
     mfaEnrolRequired: "L'authentification à deux facteurs est requise",
     mfaEnrolInstructions: "Scannez le code QR avec votre application d'authentification",
+    mfaEnrolManual: "Ou saisissez cette clé manuellement :",
 
     newMerchant: "Nouveau commerçant",
     merchantName: "Nom du commerçant",
@@ -337,6 +340,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     mfaVerify: "Verify",
     mfaEnrolRequired: "Two-factor authentication is required",
     mfaEnrolInstructions: "Scan the QR code with your authenticator app",
+    mfaEnrolManual: "Or enter this key manually:",
 
     newMerchant: "New merchant",
     merchantName: "Merchant name",

@@ -43,6 +43,7 @@ export async function signIn(
           challenge: result.challenge,
           uri: enrol.uri,
           secret: enrol.secret,
+          qrSvg: enrol.qrSvg,
         };
       }
       return { kind: "mfa", status: result.status, challenge: result.challenge };

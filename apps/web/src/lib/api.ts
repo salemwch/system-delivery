@@ -339,14 +339,17 @@ export async function verifyMfa(challenge: string, code: string): Promise<Sessio
 }
 
 /** Bootstrap MFA enrolment for a never-enrolled privileged user. */
-export async function bootstrapMfaEnrol(challenge: string): Promise<{ uri: string; secret: string }> {
+export async function bootstrapMfaEnrol(
+  challenge: string,
+): Promise<{ uri: string; secret: string; qrSvg: string }> {
   const response = await fetch(`${apiBaseUrl()}/v1/auth/mfa/bootstrap/enrol`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-      authorization: `Bearer ${challenge}`,
-    },
+    headers: { "content-type": "application/json", accept: "application/json" },
+    // ⚠️ The challenge goes in the BODY. It was sent as `Authorization: Bearer`
+    // with no body at all, which the endpoint's strict schema rejected — so
+    // every privileged sign-in died here and the login page reported it as
+    // invalid credentials.
+    body: JSON.stringify({ challenge }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     cache: "no-store",
   });
@@ -354,23 +357,28 @@ export async function bootstrapMfaEnrol(challenge: string): Promise<{ uri: strin
     throw await toApiError(response);
   }
   const body: unknown = await response.json();
-  const b = body as { uri?: unknown; secret?: unknown };
-  if (typeof b.uri !== "string" || typeof b.secret !== "string") {
+  // The field is `provisioningUri`, not `uri`. Reading the wrong name threw
+  // "malformed enrolment response" even once the request itself was right.
+  const b = body as { provisioningUri?: unknown; secret?: unknown; qrSvg?: unknown };
+  if (typeof b.provisioningUri !== "string" || typeof b.secret !== "string") {
     throw new Error("malformed enrolment response");
   }
-  return { uri: b.uri, secret: b.secret };
+  return {
+    uri: b.provisioningUri,
+    secret: b.secret,
+    // Absent only if an older API is deployed; the secret alone still enrols.
+    qrSvg: typeof b.qrSvg === "string" ? b.qrSvg : "",
+  };
 }
 
 /** Confirm bootstrap MFA enrolment and get a session. */
 export async function bootstrapMfaConfirm(challenge: string, code: string): Promise<Session> {
   const response = await fetch(`${apiBaseUrl()}/v1/auth/mfa/bootstrap/confirm`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-      authorization: `Bearer ${challenge}`,
-    },
-    body: JSON.stringify({ code }),
+    headers: { "content-type": "application/json", accept: "application/json" },
+    // Both fields in the body, as the endpoint's strict schema requires. The
+    // challenge was previously a Bearer header the endpoint never reads.
+    body: JSON.stringify({ challenge, code }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     cache: "no-store",
   });
