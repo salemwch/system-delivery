@@ -448,6 +448,50 @@ describe("mfa", () => {
       expect(result.challenge).toBeDefined();
     });
 
+    it("offers enrolment when the FLAG is set but no secret was ever stored", async () => {
+      // ⚠️ THE STATE PRODUCTION ACTUALLY CREATES, and the one this suite used to
+      // miss. `UserService.create` sets mfa_enabled = true for a privileged
+      // role and stores no secret; `seedUser` above then clears the flag, so
+      // every other test here starts from a state the admin API never produces.
+      //
+      // The login guard used to read the FLAG. With it set and no secret, the
+      // enrolment branch never fired and the challenge branch asked for a code
+      // no authenticator could generate. Every OWNER and FINANCE account minted
+      // through the admin API was born permanently locked out — found on a real
+      // account in the dev database, not in theory.
+      const tenantId = await seedTenant("mfa");
+      const address = email("mfa");
+      const password = "a-long-enough-password-for-policy";
+      const created = await asAdmin(tenantId, () =>
+        usersService.create({
+          email: address,
+          fullName: "Fresh Owner",
+          password,
+          roles: ["OWNER"],
+        }),
+      );
+
+      // Exactly as the admin API leaves it: flag true, secret absent.
+      const [row] = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<{ mfa_enabled: boolean; has_secret: boolean }[]>`
+          select mfa_enabled, (mfa_secret is not null) as has_secret
+            from users where id = ${created.user.id}
+        `,
+      );
+      expect(row?.mfa_enabled).toBe(true);
+      expect(row?.has_secret).toBe(false);
+
+      const result = await auth.login({ tenantId, email: address, password });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("unreachable");
+      // NOT "MFA_REQUIRED" — that is the lockout. There is nothing to challenge.
+      expect(result.reason).toBe("MFA_ENROLMENT_REQUIRED");
+      expect(result.challenge).toBeDefined();
+    });
+
     it("lets a never-enrolled privileged user bootstrap out of the deadlock", async () => {
       const tenantId = await seedTenant("mfa");
       const owner = await seedUser(tenantId, "OWNER");

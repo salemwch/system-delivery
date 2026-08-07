@@ -10,7 +10,7 @@ import type { OtpRequestOutcome } from "./otp.service.js";
 import { DatabaseService, TenantContext, asTenantId } from "../../../shared/database/index.js";
 import { UnauthenticatedError } from "../../../shared/errors/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
-import { isRole, permissionsForRoles } from "../domain/permissions.js";
+import { MFA_REQUIRED_ROLES, isRole, permissionsForRoles } from "../domain/permissions.js";
 import type { Role } from "../domain/permissions.js";
 import { refreshTokens, userRoles, users } from "../domain/schema.js";
 import { PasswordService } from "./password.service.js";
@@ -182,7 +182,32 @@ export class AuthService {
       // Fail closed: granting a session that skips the requirement is exactly
       // the hole this used to have, when the flag was set true at provisioning
       // with no enrolment behind it.
-      if (this.requiresMfa(roles) && !user.mfaEnabled) {
+      /*
+       * ⚠️ ENROLMENT IS PROVEN BY A STORED SECRET, NEVER BY THE FLAG.
+       *
+       * `mfa_enabled` is set to true at provisioning for privileged roles —
+       * `ProvisioningService` and `UserService.create` both do it — long before
+       * any secret exists. Migration 0023 says so in its own header: the flag
+       * SAID multi-factor while the login was password-only.
+       *
+       * This guard used to read `!user.mfaEnabled`, so an account with the flag
+       * set and no secret fell through to the challenge branch below and was
+       * asked for a code no authenticator could produce. It could never enrol,
+       * because the enrolment branch never fired. Every OWNER, FINANCE and
+       * PLATFORM_ADMIN account created through the admin API was born
+       * permanently locked out — found on a real one in the dev database.
+       *
+       * The two halves are now independent: a secret is what makes a factor
+       * real, the flag only records that enrolment was CONFIRMED. A half-
+       * finished enrolment (secret written, never confirmed) also lands here and
+       * starts again, which is correct — `bootstrapEnrol` issues a fresh secret.
+       */
+      const enrolled = user.mfaEnabled && user.mfaSecret !== null;
+
+      // Needed either because the role demands it, or because this user opted
+      // in and never finished. Both are "you must enrol", not "you are locked
+      // out".
+      if (!enrolled && (this.requiresMfa(roles) || user.mfaEnabled)) {
         await auditFailure("MFA_REQUIRED", user.id);
         // A challenge token, even though there is nothing yet to challenge.
         //
@@ -196,8 +221,9 @@ export class AuthService {
       }
 
       // The second factor. Enrolled users are challenged whatever their role —
-      // someone who has chosen to enrol expects to be asked.
-      if (user.mfaEnabled) {
+      // someone who has chosen to enrol expects to be asked. Reached only when
+      // a secret genuinely exists, so the code can actually be verified.
+      if (enrolled) {
         if (request.mfaCode === undefined) {
           // The password was correct. Rather than issuing a session, hand back a
           // short-lived challenge token bound to this user, which is the only
@@ -401,10 +427,15 @@ export class AuthService {
     }, tenantId);
   }
 
+  /**
+   * Whether any of these roles must carry a second factor.
+   *
+   * Reads `MFA_REQUIRED_ROLES` rather than restating it. The hand-written list
+   * that used to live here was a second source of truth for a security rule —
+   * exactly the shape of the bug that dropped MERCHANT from `rolesOf`.
+   */
   private requiresMfa(roles: readonly Role[]): boolean {
-    return roles.some(
-      (role) => role === "OWNER" || role === "FINANCE" || role === "PLATFORM_ADMIN",
-    );
+    return roles.some((role) => MFA_REQUIRED_ROLES.has(role));
   }
 
   private async rolesOf(tx: TenantTransaction, userId: string): Promise<Role[]> {

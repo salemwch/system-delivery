@@ -289,15 +289,20 @@ describe("identity", () => {
 
       expect(inA.ok).toBe(true);
 
-      // Tenant B's user has a second factor, so the correct password buys a
-      // CHALLENGE rather than a session. That is the point of the change: this
-      // assertion used to be `inB.ok === true`, because `mfa_enabled` was set
-      // with no enrolment behind it and the flag alone granted a session.
-      // Reaching the challenge still proves the email resolved to a different
-      // user in tenant B and that the password matched it.
+      // Tenant B's user must present a second factor, so the correct password
+      // buys a CHALLENGE rather than a session. Reaching it still proves what
+      // this test is about: the email resolved to a DIFFERENT user in tenant B
+      // and the password matched that user.
+      //
+      // ⚠️ The expectation has moved twice, each time toward the truth. It was
+      // `inB.ok === true` while `mfa_enabled` alone granted a session. Then
+      // `MFA_REQUIRED` — which was still wrong: this user is seeded with the
+      // flag set and NO secret, so asking for a code meant asking for one no
+      // authenticator could produce. `MFA_ENROLMENT_REQUIRED` is the only
+      // answer that leaves the account able to finish enrolling.
       expect(inB.ok).toBe(false);
       if (inB.ok) throw new Error("unreachable");
-      expect(inB.reason).toBe("MFA_REQUIRED");
+      expect(inB.reason).toBe("MFA_ENROLMENT_REQUIRED");
       expect(inB.challenge).toBeDefined();
 
       if (!inA.ok) throw new Error("tenant A login should have succeeded");
