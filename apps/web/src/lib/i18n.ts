@@ -100,6 +100,13 @@ interface Messages {
   readonly errorRequired: string;
   readonly errorPhone: string;
   readonly errorFormat: string;
+  readonly errorWindowOrder: string;
+  readonly requestPickup: string;
+  readonly acceptPickup: string;
+  readonly pickupWindowFrom: string;
+  readonly pickupWindowTo: string;
+  readonly notes: string;
+  readonly pickupCreated: string;
 }
 
 export const MESSAGES: Readonly<Record<Locale, Messages>> = {
@@ -188,6 +195,13 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     errorRequired: "هذا الحقل مطلوب",
     errorPhone: "رقم هاتف غير صالح",
     errorFormat: "صيغة غير صالحة",
+    errorWindowOrder: "يجب أن تكون النهاية بعد البداية",
+    requestPickup: "طلب استلام",
+    acceptPickup: "قبول",
+    pickupWindowFrom: "من",
+    pickupWindowTo: "إلى",
+    notes: "ملاحظات",
+    pickupCreated: "تم إنشاء طلب الاستلام. اقبله ثم تكفّل به.",
   },
   fr: {
     title: "Tableau de bord",
@@ -275,6 +289,13 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     errorRequired: "Ce champ est obligatoire",
     errorPhone: "Numéro de téléphone invalide",
     errorFormat: "Format invalide",
+    errorWindowOrder: "La fin doit être après le début",
+    requestPickup: "Demander un ramassage",
+    acceptPickup: "Accepter",
+    pickupWindowFrom: "De",
+    pickupWindowTo: "À",
+    notes: "Notes",
+    pickupCreated: "Demande de ramassage créée. Acceptez-la puis prenez-la en charge.",
   },
   en: {
     title: "Dashboard",
@@ -361,6 +382,13 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     errorRequired: "This field is required",
     errorPhone: "Invalid phone number",
     errorFormat: "Invalid format",
+    errorWindowOrder: "The end must be after the start",
+    requestPickup: "Request a pickup",
+    acceptPickup: "Accept",
+    pickupWindowFrom: "From",
+    pickupWindowTo: "To",
+    notes: "Notes",
+    pickupCreated: "Pickup request created. Accept it, then claim it.",
   },
 };
 

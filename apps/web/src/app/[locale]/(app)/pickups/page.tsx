@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AcceptPickupButton } from "@/components/accept-pickup-button";
 import { ClaimPickupButton } from "@/components/claim-pickup-button";
 import { DataTable, PageHeader, StatusBadge } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
@@ -26,7 +27,7 @@ export default async function PickupsPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ cursor?: string }>;
+  searchParams: Promise<{ cursor?: string; created?: string }>;
 }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
@@ -39,10 +40,19 @@ export default async function PickupsPage({
     fetchPickups(query.cursor),
   ]);
   const canClaim = hasPermission(session, P.PICKUP_CLAIM);
+  const canAccept = hasPermission(session, P.PICKUP_ACCEPT);
 
   return (
     <div className="space-y-4">
       <PageHeader title={messages.pickups} />
+
+      {/* The request lands as REQUESTED and cannot be claimed until accepted,
+          so the banner says what to do next rather than just "done". */}
+      {query.created === undefined ? null : (
+        <p className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">
+          {messages.pickupCreated}
+        </p>
+      )}
 
       <DataTable
         headers={[
@@ -52,7 +62,7 @@ export default async function PickupsPage({
           messages.status,
           messages.parcels,
           messages.pickupWindow,
-          ...(canClaim ? [messages.actions] : []),
+          ...(canClaim || canAccept ? [messages.actions] : []),
         ]}
       >
         {result.data.map((p) => (
@@ -87,13 +97,14 @@ export default async function PickupsPage({
             <td className="px-4 py-3 text-sm text-slate-500">
               {formatDateTime(p.requestedWindowFrom, locale, tz)}
             </td>
-            {canClaim ? (
+            {canClaim || canAccept ? (
               <td className="px-4 py-3">
                 <ClaimCell
                   pickupId={p.id}
                   status={p.status}
                   assignedTo={p.assignedDriverId}
                   currentUserId={session.userId}
+                  canAccept={canAccept}
                   locale={locale}
                 />
               </td>
@@ -129,14 +140,21 @@ function ClaimCell({
   status,
   assignedTo,
   currentUserId,
+  canAccept,
   locale,
 }: {
   pickupId: string;
   status: string;
   assignedTo: string | null;
   currentUserId: string;
+  canAccept: boolean;
   locale: ReturnType<typeof toLocale>;
 }) {
+  // REQUESTED → ACCEPTED → ASSIGNED. Each button appears on exactly the status
+  // its transition starts from; anywhere else the API would refuse it.
+  if (status === "REQUESTED") {
+    return canAccept ? <AcceptPickupButton pickupId={pickupId} locale={locale} /> : null;
+  }
   if (status === "ACCEPTED") {
     return <ClaimPickupButton pickupId={pickupId} locale={locale} />;
   }

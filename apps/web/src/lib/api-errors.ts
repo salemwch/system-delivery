@@ -64,6 +64,8 @@ export function fieldErrorMessage(
       return messages.errorPhone;
     case "format":
       return messages.errorFormat;
+    case "windowOrder":
+      return messages.errorWindowOrder;
     default:
       return apiErrorMessage(value, locale);
   }

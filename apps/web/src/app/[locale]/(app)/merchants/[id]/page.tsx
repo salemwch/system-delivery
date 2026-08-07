@@ -4,6 +4,9 @@ import { AccountManagerForm } from "@/components/account-manager-form";
 import type { CommercialOption } from "@/components/account-manager-form";
 import { PickupAddressForm } from "@/components/pickup-address-form";
 import { PortalLoginForm } from "@/components/portal-login-form";
+import { RequestPickupForm } from "@/components/request-pickup-form";
+import { timezone } from "@/lib/config";
+import { nextWorkingWindow } from "@/lib/pickup-window";
 import { PageHeader, StatCard, StatusBadge } from "@/components/ui";
 import { formatMoney, formatRate } from "@/lib/format";
 import { MESSAGES, toLocale } from "@/lib/i18n";
@@ -44,6 +47,8 @@ export default async function MerchantDetailPage({
     canAssign ? fetchCommercials() : Promise.resolve({ data: [], cursor: null }),
   ]);
 
+  const defaultWindow = nextWorkingWindow(timezone());
+
   const options: CommercialOption[] = commercials.data.map((c) => ({
     id: c.id,
     label: c.name === "" ? c.email : `${c.name} (${c.email})`,
@@ -71,6 +76,26 @@ export default async function MerchantDetailPage({
         <h2 className="text-lg font-semibold">{messages.performance}</h2>
         <Performance stats={stats} locale={locale} />
       </section>
+
+      {/*
+        Only offered when an address exists — the command requires one, so a
+        form that could only fail is worse than no form. When it is missing the
+        pickup-address section below says so explicitly.
+      */}
+      {hasPermission(session, P.PICKUP_CREATE) && merchant.defaultPickupAddressId !== null ? (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">{messages.requestPickup}</h2>
+          <RequestPickupForm
+            merchantId={merchant.id}
+            pickupAddressId={merchant.defaultPickupAddressId}
+            contactName={merchant.contactName ?? merchant.name}
+            contactPhone={merchant.contactPhone ?? ""}
+            defaultFrom={defaultWindow.from}
+            defaultTo={defaultWindow.to}
+            locale={locale}
+          />
+        </section>
+      ) : null}
 
       {hasPermission(session, P.MERCHANT_UPDATE) ? (
         <section className="space-y-3">

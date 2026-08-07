@@ -17,6 +17,8 @@ export const P = {
 
   PICKUP_READ: "pickup:read",
   PICKUP_CREATE: "pickup:create",
+  /** Take the request on: REQUESTED → ACCEPTED. The step before anyone can claim it. */
+  PICKUP_ACCEPT: "pickup:accept",
   /** Take a collection run for oneself. Never names anyone else — see PICKUP_ASSIGN. */
   PICKUP_CLAIM: "pickup:claim",
   /** Name who will go. Held by dispatch, deliberately not by a commercial. */
