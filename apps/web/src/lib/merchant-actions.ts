@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { ApiError, apiFetch } from "./api";
+import { FIELD_FOR_ERROR } from "./api-errors";
 import { fieldErrorsFrom } from "./form-state";
 import type { CredentialState, FormState } from "./form-state";
 import { toLocale } from "./i18n";
@@ -58,6 +59,22 @@ function optional(formData: FormData, key: string): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
+/**
+ * Turns an API rejection into form state.
+ *
+ * Some failures name a specific input — a duplicate merchant code is a problem
+ * with the code box, not with the request as a whole — so they are attached
+ * there rather than reported as a banner the user has to interpret. The API
+ * sends no `fieldErrors` for these; the mapping lives in `FIELD_FOR_ERROR`.
+ */
+function toFormState(error: ApiError): FormState {
+  const field = FIELD_FOR_ERROR[error.code];
+  if (field !== undefined && Object.keys(error.fieldErrors).length === 0) {
+    return { error: error.code, fieldErrors: { [field]: error.code } };
+  }
+  return { error: error.code, fieldErrors: error.fieldErrors };
+}
+
 export async function createMerchant(
   locale: string,
   _previous: FormState,
@@ -103,7 +120,7 @@ export async function createMerchant(
     });
   } catch (error) {
     if (error instanceof ApiError) {
-      return { error: error.code, fieldErrors: error.fieldErrors };
+      return toFormState(error);
     }
     throw error;
   }
@@ -175,7 +192,9 @@ export async function createPortalLogin(
     };
   } catch (error) {
     if (error instanceof ApiError) {
-      return { error: error.code, fieldErrors: error.fieldErrors, credential: null };
+      // Same field mapping as the other actions — a duplicate email belongs
+      // beside the email box, not in a banner.
+      return { ...toFormState(error), credential: null };
     }
     throw error;
   }
@@ -224,7 +243,7 @@ export async function updatePickupAddress(
     });
   } catch (error) {
     if (error instanceof ApiError) {
-      return { error: error.code, fieldErrors: error.fieldErrors };
+      return toFormState(error);
     }
     throw error;
   }
@@ -262,7 +281,7 @@ export async function assignAccountManager(
     });
   } catch (error) {
     if (error instanceof ApiError) {
-      return { error: error.code, fieldErrors: error.fieldErrors };
+      return toFormState(error);
     }
     throw error;
   }

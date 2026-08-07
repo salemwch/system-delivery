@@ -6,6 +6,7 @@ import { useFormStatus } from "react-dom";
 import { BUTTON_CLASS, Field, INPUT_CLASS } from "./ui";
 import { updatePickupAddress } from "@/lib/merchant-actions";
 import { INITIAL_STATE } from "@/lib/form-state";
+import { apiErrorMessage, fieldErrorMessage } from "@/lib/api-errors";
 import { MESSAGES } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 
@@ -37,19 +38,19 @@ export function PickupAddressForm({
         {hasAddress ? messages.addressOnFile : messages.addressMissing}
       </p>
 
-      {state.error !== null && Object.keys(state.fieldErrors).length === 0 ? (
+      {state.error !== null ? (
         <p
           role="alert"
           className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-800"
         >
-          {messages.requestFailed}
+          {apiErrorMessage(state.error, locale)}
         </p>
       ) : null}
 
       <Field
         label={messages.pickupAddress}
         name="pickupAddressLine"
-        error={state.fieldErrors["addressLine"]}
+        error={fieldErrorMessage(state.fieldErrors["addressLine"], locale)}
       >
         <input
           id="pickupAddressLine"
@@ -60,7 +61,7 @@ export function PickupAddressForm({
         />
       </Field>
 
-      <Field label={messages.city} name="pickupCity" error={state.fieldErrors["city"]}>
+      <Field label={messages.city} name="pickupCity" error={fieldErrorMessage(state.fieldErrors["city"], locale)}>
         <input id="pickupCity" name="city" maxLength={200} className={INPUT_CLASS} />
       </Field>
 

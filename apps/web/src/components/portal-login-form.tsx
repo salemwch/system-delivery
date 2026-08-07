@@ -6,6 +6,7 @@ import { useFormStatus } from "react-dom";
 import { BUTTON_CLASS, Field, INPUT_CLASS } from "./ui";
 import { createPortalLogin } from "@/lib/merchant-actions";
 import { INITIAL_CREDENTIAL_STATE } from "@/lib/form-state";
+import { apiErrorMessage, fieldErrorMessage } from "@/lib/api-errors";
 import { MESSAGES } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 
@@ -52,20 +53,20 @@ export function PortalLoginForm({
     <form action={action} className="max-w-xl space-y-4">
       <input type="hidden" name="merchantId" value={merchantId} />
 
-      {state.error !== null && Object.keys(state.fieldErrors).length === 0 ? (
+      {state.error !== null ? (
         <p
           role="alert"
           className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-800"
         >
-          {messages.requestFailed}
+          {apiErrorMessage(state.error, locale)}
         </p>
       ) : null}
 
-      <Field label={messages.fullName} name="fullName" error={state.fieldErrors["fullName"]}>
+      <Field label={messages.fullName} name="fullName" error={fieldErrorMessage(state.fieldErrors["fullName"], locale)}>
         <input id="fullName" name="fullName" required maxLength={200} className={INPUT_CLASS} />
       </Field>
 
-      <Field label={messages.email} name="email" error={state.fieldErrors["email"]}>
+      <Field label={messages.email} name="email" error={fieldErrorMessage(state.fieldErrors["email"], locale)}>
         <input
           id="email"
           name="email"
@@ -77,7 +78,7 @@ export function PortalLoginForm({
         />
       </Field>
 
-      <Field label={messages.phone} name="phone" hint={messages.phoneHint} error={state.fieldErrors["phone"]}>
+      <Field label={messages.phone} name="phone" hint={messages.phoneHint} error={fieldErrorMessage(state.fieldErrors["phone"], locale)}>
         <input
           id="phone"
           name="phone"

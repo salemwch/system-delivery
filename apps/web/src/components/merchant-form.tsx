@@ -6,6 +6,7 @@ import { useFormStatus } from "react-dom";
 import { BUTTON_CLASS, Field, INPUT_CLASS } from "./ui";
 import { createMerchant } from "@/lib/merchant-actions";
 import { INITIAL_STATE } from "@/lib/form-state";
+import { apiErrorMessage, fieldErrorMessage } from "@/lib/api-errors";
 import { MESSAGES } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 
@@ -23,27 +24,27 @@ export function MerchantForm({ locale }: { locale: Locale }) {
 
   return (
     <form action={action} className="max-w-xl space-y-4">
-      {state.error !== null && Object.keys(state.fieldErrors).length === 0 ? (
+      {state.error !== null ? (
         <p
           role="alert"
           className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-800"
         >
-          {messages.requestFailed}
+          {apiErrorMessage(state.error, locale)}
         </p>
       ) : null}
 
-      <Field label={messages.merchantName} name="name" error={state.fieldErrors["name"]}>
+      <Field label={messages.merchantName} name="name" error={fieldErrorMessage(state.fieldErrors["name"], locale)}>
         <input id="name" name="name" required maxLength={200} className={INPUT_CLASS} />
       </Field>
 
-      <Field label={messages.merchantCode} name="code" error={state.fieldErrors["code"]}>
+      <Field label={messages.merchantCode} name="code" error={fieldErrorMessage(state.fieldErrors["code"], locale)}>
         <input id="code" name="code" maxLength={50} className={`${INPUT_CLASS} ltr-isolate`} />
       </Field>
 
       <Field
         label={messages.contactName}
         name="contactName"
-        error={state.fieldErrors["contactName"]}
+        error={fieldErrorMessage(state.fieldErrors["contactName"], locale)}
       >
         <input id="contactName" name="contactName" maxLength={200} className={INPUT_CLASS} />
       </Field>
@@ -52,7 +53,7 @@ export function MerchantForm({ locale }: { locale: Locale }) {
         label={messages.contactPhone}
         name="contactPhone"
         hint={messages.phoneHint}
-        error={state.fieldErrors["contactPhone"]}
+        error={fieldErrorMessage(state.fieldErrors["contactPhone"], locale)}
       >
         <input
           id="contactPhone"
@@ -66,7 +67,7 @@ export function MerchantForm({ locale }: { locale: Locale }) {
       <Field
         label={messages.contactEmail}
         name="contactEmail"
-        error={state.fieldErrors["contactEmail"]}
+        error={fieldErrorMessage(state.fieldErrors["contactEmail"], locale)}
       >
         <input
           id="contactEmail"
@@ -81,12 +82,12 @@ export function MerchantForm({ locale }: { locale: Locale }) {
         label={messages.pickupAddress}
         name="addressLine"
         hint={messages.pickupAddressHint}
-        error={state.fieldErrors["addressLine"]}
+        error={fieldErrorMessage(state.fieldErrors["addressLine"], locale)}
       >
         <input id="addressLine" name="addressLine" maxLength={500} className={INPUT_CLASS} />
       </Field>
 
-      <Field label={messages.city} name="city" error={state.fieldErrors["city"]}>
+      <Field label={messages.city} name="city" error={fieldErrorMessage(state.fieldErrors["city"], locale)}>
         <input id="city" name="city" maxLength={200} className={INPUT_CLASS} />
       </Field>
 

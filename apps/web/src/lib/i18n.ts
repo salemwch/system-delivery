@@ -92,6 +92,14 @@ interface Messages {
   readonly phoneHint: string;
   readonly addressOnFile: string;
   readonly addressMissing: string;
+  readonly errorCodeTaken: string;
+  readonly errorEmailTaken: string;
+  readonly errorNotFound: string;
+  readonly errorForbidden: string;
+  readonly errorValidation: string;
+  readonly errorRequired: string;
+  readonly errorPhone: string;
+  readonly errorFormat: string;
 }
 
 export const MESSAGES: Readonly<Record<Locale, Messages>> = {
@@ -172,6 +180,14 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     phoneHint: "24 201 314 أو 216 24 201 314+",
     addressOnFile: "عنوان الاستلام مسجَّل. أدخل عنوانًا جديدًا لتعويضه.",
     addressMissing: "لا يوجد عنوان استلام — لا يمكن طلب استلام لهذا التاجر.",
+    errorCodeTaken: "رمز التاجر مستعمل من قبل. اختر رمزًا آخر.",
+    errorEmailTaken: "البريد الإلكتروني مستعمل من قبل في هذه الشركة.",
+    errorNotFound: "العنصر غير موجود أو خارج نطاقك.",
+    errorForbidden: "لا تملك صلاحية هذا الإجراء.",
+    errorValidation: "تحقّق من الحقول المميّزة.",
+    errorRequired: "هذا الحقل مطلوب",
+    errorPhone: "رقم هاتف غير صالح",
+    errorFormat: "صيغة غير صالحة",
   },
   fr: {
     title: "Tableau de bord",
@@ -251,6 +267,14 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     phoneHint: "24 201 314 ou +216 24 201 314",
     addressOnFile: "Une adresse de ramassage est enregistrée. Saisissez-en une nouvelle pour la remplacer.",
     addressMissing: "Aucune adresse de ramassage — aucun ramassage ne peut être demandé.",
+    errorCodeTaken: "Ce code commerçant est déjà utilisé. Choisissez-en un autre.",
+    errorEmailTaken: "Cette adresse e-mail est déjà utilisée dans cette société.",
+    errorNotFound: "Introuvable, ou hors de votre portefeuille.",
+    errorForbidden: "Vous n avez pas le droit d effectuer cette action.",
+    errorValidation: "Vérifiez les champs signalés.",
+    errorRequired: "Ce champ est obligatoire",
+    errorPhone: "Numéro de téléphone invalide",
+    errorFormat: "Format invalide",
   },
   en: {
     title: "Dashboard",
@@ -329,6 +353,14 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     phoneHint: "24 201 314 or +216 24 201 314",
     addressOnFile: "A pickup address is on file. Enter a new one to replace it.",
     addressMissing: "No pickup address — no pickup can be requested for this merchant.",
+    errorCodeTaken: "That merchant code is already in use. Choose another.",
+    errorEmailTaken: "That email address is already used in this company.",
+    errorNotFound: "Not found, or outside your portfolio.",
+    errorForbidden: "You do not have permission for this action.",
+    errorValidation: "Check the highlighted fields.",
+    errorRequired: "This field is required",
+    errorPhone: "Invalid phone number",
+    errorFormat: "Invalid format",
   },
 };
 
