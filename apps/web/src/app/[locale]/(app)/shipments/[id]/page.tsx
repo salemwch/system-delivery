@@ -6,7 +6,7 @@ import { formatDateTime, formatMoney } from "@/lib/format";
 import { toLocale } from "@/lib/i18n";
 import { hasPermission, readSession } from "@/lib/session";
 import { P } from "@/lib/permissions";
-import { fetchShipment } from "@/lib/queries";
+import { fetchShipment, fetchShipmentEvents } from "@/lib/queries";
 
 export default async function ShipmentDetailPage({
   params,
@@ -19,7 +19,8 @@ export default async function ShipmentDetailPage({
   const session = await readSession();
   const canReadCod = session !== null && hasPermission(session, P.COD_READ_AMOUNT);
 
-  const shipment = await fetchShipment(id);
+  // Two calls, in parallel: the detail response never embedded its events.
+  const [shipment, events] = await Promise.all([fetchShipment(id), fetchShipmentEvents(id)]);
 
   return (
     <div className="space-y-6">
@@ -45,12 +46,12 @@ export default async function ShipmentDetailPage({
         </Section>
 
         <Section title={locale === "ar" ? "التفاصيل" : locale === "fr" ? "Détails" : "Details"}>
-          <InfoRow label={locale === "ar" ? "التاجر" : locale === "fr" ? "Commerçant" : "Merchant"} value={shipment.merchantName} />
+          <InfoRow label={locale === "ar" ? "التاجر" : locale === "fr" ? "Commerçant" : "Merchant"} value={shipment.merchantId ?? "—"} />
           <InfoRow label={locale === "ar" ? "الطرود" : locale === "fr" ? "Colis" : "Parcels"} value={String(shipment.parcelCount)} />
-          {canReadCod && shipment.codAmountMinor > 0 ? (
+          {canReadCod && BigInt(shipment.codAmountMinor) > 0n ? (
             <InfoRow
               label="COD"
-              value={`${formatMoney(shipment.codAmountMinor, 3, locale)} ${shipment.currency}`}
+              value={`${formatMoney(BigInt(shipment.codAmountMinor), shipment.currencyExponent, locale)} ${shipment.currency}`}
               ltr
             />
           ) : null}
@@ -59,17 +60,17 @@ export default async function ShipmentDetailPage({
 
       <Section title={locale === "ar" ? "السجل" : locale === "fr" ? "Historique" : "Timeline"}>
         <ol className="space-y-3 border-s-2 border-slate-200 ps-4">
-          {shipment.events.map((event) => (
+          {events.map((event) => (
             <li key={event.id} className="relative">
               <span className="absolute -start-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-brand" />
               <div className="flex items-baseline gap-2">
-                <StatusBadge status={event.status} locale={locale} />
+                <StatusBadge status={event.eventType} locale={locale} />
                 <span className="text-xs text-slate-500">
-                  {formatDateTime(event.createdAt, locale, tz)}
+                  {formatDateTime(event.occurredAt, locale, tz)}
                 </span>
               </div>
-              {event.reason !== null ? (
-                <p className="mt-1 text-sm text-slate-600">{event.reason}</p>
+              {event.reasonCode !== null ? (
+                <p className="mt-1 text-sm text-slate-600">{event.reasonCode}</p>
               ) : null}
             </li>
           ))}

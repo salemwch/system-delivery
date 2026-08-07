@@ -31,47 +31,62 @@ export interface ShipmentSummary {
   readonly status: string;
   readonly recipientName: string;
   readonly recipientPhone: string;
-  readonly merchantName: string;
+  /** No merchant NAME on the list — only the id. Resolve it if you need one. */
+  readonly merchantId: string | null;
   readonly currency: string;
-  readonly codAmountMinor: number;
+  /** Minor units as a decimal STRING. A bigint; parsing it as a number rounds. */
+  readonly codAmountMinor: string;
+  /** ISO 4217 exponent for `currency`. TND is 3 — never hardcode it. */
+  readonly currencyExponent: number;
   readonly codStatus: string;
+  readonly serviceLevel: string;
+  readonly parcelCount: number;
+  readonly weightGrams: number;
+  readonly attemptCount: number;
   readonly createdAt: string;
 }
 
+/** Only the single-row route resolves addresses; the list returns ids. */
 export interface ShipmentDetail extends ShipmentSummary {
-  readonly parcelCount: number;
-  readonly weightGrams: number;
   readonly senderName: string;
   readonly senderPhone: string;
   readonly origin: Address;
   readonly destination: Address;
-  readonly events: readonly ShipmentEvent[];
-  readonly notes: string | null;
+  readonly promisedTo: string | null;
+  readonly maxAttempts: number;
+  readonly updatedAt: string;
 }
 
 interface Address {
   readonly rawInput: string;
+  readonly line1: string | null;
   readonly city: string | null;
-  readonly countryCode: string;
+  readonly region: string | null;
+  readonly countryCode: string | null;
   readonly latitude: number | null;
   readonly longitude: number | null;
+  readonly accessNotes: string | null;
 }
 
-interface ShipmentEvent {
+/** `GET /v1/shipments/:id/events` — a separate call, never embedded. */
+export interface ShipmentEvent {
   readonly id: string;
-  readonly status: string;
-  readonly reason: string | null;
-  readonly createdAt: string;
-  readonly actor: string | null;
+  readonly sequence: string;
+  readonly eventType: string;
+  readonly occurredAt: string;
+  readonly actorType: string;
+  readonly reasonCode: string | null;
 }
 
 export interface DriverSummary {
   readonly id: string;
-  readonly name: string;
+  readonly fullName: string;
+  readonly employeeCode: string;
   readonly phone: string;
   readonly status: string;
-  readonly vehicleId: string | null;
-  readonly currentShiftId: string | null;
+  readonly employmentType: string;
+  readonly homeHubId: string | null;
+  readonly defaultVehicleId: string | null;
 }
 
 export interface VehicleSummary {
@@ -121,60 +136,95 @@ export interface MerchantStats {
 
 export interface HubSummary {
   readonly id: string;
+  readonly code: string;
   readonly name: string;
   readonly type: string;
-  readonly address: string;
+  /** An id, not text. There is no address endpoint to resolve it. */
+  readonly addressId: string;
   readonly latitude: number;
   readonly longitude: number;
+  readonly timezone: string;
+  readonly status: string;
 }
 
 export interface RouteSummary {
   readonly id: string;
+  readonly code: string;
   readonly status: string;
+  /** No driver NAME — the route carries an id only. */
   readonly driverId: string | null;
-  readonly driverName: string | null;
+  readonly vehicleId: string | null;
+  readonly plannedDate: string;
   readonly stopCount: number;
-  readonly distanceMeters: number;
+  /** Metres, and null until the route is optimised. */
+  readonly plannedDistanceM: number | null;
+  readonly actualDistanceM: number | null;
   readonly createdAt: string;
 }
 
 export interface ManifestSummary {
   readonly id: string;
+  readonly code: string;
   readonly type: string;
   readonly status: string;
-  readonly originHubId: string;
-  readonly destinationHubId: string | null;
-  readonly shipmentCount: number;
+  readonly fromHubId: string | null;
+  readonly toHubId: string | null;
+  readonly fromDriverId: string | null;
+  readonly toDriverId: string | null;
+  /** Parcels on the manifest. Named itemCount by the API, not shipmentCount. */
+  readonly itemCount: number;
+  readonly discrepancyCount: number;
   readonly createdAt: string;
 }
 
 export interface UserSummary {
   readonly id: string;
   readonly email: string;
-  readonly name: string;
+  readonly fullName: string;
+  readonly phone: string | null;
   readonly roles: readonly string[];
   readonly status: string;
+  readonly mfaEnabled: boolean;
+  readonly merchantId: string | null;
+  readonly lastLoginAt: string | null;
   readonly createdAt: string;
 }
 
 export interface ComplaintSummary {
   readonly id: string;
-  readonly shipmentId: string;
-  readonly trackingNumber: string;
+  readonly code: string;
   readonly type: string;
   readonly status: string;
-  readonly priority: string;
+  /** The API calls this SEVERITY. There is no `priority` field. */
+  readonly severity: string;
+  readonly shipmentId: string | null;
+  readonly merchantId: string | null;
+  readonly description: string;
+  readonly slaDueAt: string | null;
+  readonly slaBreached: boolean;
   readonly createdAt: string;
 }
 
+/**
+ * An audit entry as `GET /v1/audit` returns it.
+ *
+ * ⚠️ Every field here was once named for a table that does not exist —
+ * entityType/entityId/userId/userEmail/detail. The trail records a RESOURCE and
+ * an ACTOR, and `resourceId` is nullable: a failed login names no resource.
+ */
 export interface AuditEntry {
   readonly id: string;
   readonly action: string;
-  readonly entityType: string;
-  readonly entityId: string;
-  readonly userId: string;
-  readonly userEmail: string;
-  readonly detail: Record<string, unknown>;
+  readonly outcome: string;
+  readonly resourceType: string;
+  readonly resourceId: string | null;
+  readonly actorType: string;
+  readonly actorId: string | null;
+  /** The email attempted, when there is one. Never a joined user record. */
+  readonly actorLabel: string | null;
+  readonly changes: unknown;
+  readonly context: unknown;
+  readonly ipAddress: string | null;
   readonly createdAt: string;
 }
 
@@ -206,15 +256,26 @@ export interface PickupSummary {
   readonly createdAt: string;
 }
 
+/**
+ * `GET /v1/shipments/dashboard`.
+ *
+ * ⚠️ Six of the fields here were invented: shipmentsToday, deliveredToday,
+ * failedToday, inTransit, pendingPickups, activeDrivers. None exists, so every
+ * tile on the dashboard rendered `undefined`. There is no pickup or driver
+ * count in this response at all — it is a SHIPMENT dashboard.
+ */
 export interface DashboardStats {
-  readonly shipmentsToday: number;
-  readonly deliveredToday: number;
-  readonly failedToday: number;
-  readonly inTransit: number;
-  readonly pendingPickups: number;
-  readonly activeDrivers: number;
+  readonly totalShipments: number;
+  /** One row per status. `inTransit` is a lookup in here, not a field. */
+  readonly byStatus: readonly { readonly status: string; readonly count: number }[];
+  readonly todayCreated: number;
+  readonly todayDelivered: number;
+  readonly todayFailed: number;
   readonly deliveryRate: number;
-  readonly codPendingMinor: number;
+  readonly avgAttemptsPerDelivery: number;
+  /** Minor units as decimal STRINGS — bigints that would round as numbers. */
+  readonly codCollectedMinor: string;
+  readonly codPendingMinor: string;
   readonly currency: string;
   readonly currencyExponent: number;
 }
@@ -261,6 +322,19 @@ export async function fetchShipments(cursor?: string | null, limit = 25): Promis
 
 export async function fetchShipment(id: string): Promise<ShipmentDetail> {
   return apiFetch<ShipmentDetail>(`/v1/shipments/${encodeURIComponent(id)}`);
+}
+
+/**
+ * A shipment's custody trail.
+ *
+ * A SEPARATE call. The detail response never embedded `events`, so a page that
+ * assumed it did crashed on `.map` of undefined.
+ */
+export async function fetchShipmentEvents(id: string): Promise<readonly ShipmentEvent[]> {
+  const result = await apiFetch<{ data: readonly ShipmentEvent[] }>(
+    `/v1/shipments/${encodeURIComponent(id)}/events`,
+  );
+  return result.data;
 }
 
 export async function fetchDrivers(cursor?: string | null, limit = 50): Promise<PaginatedResult<DriverSummary>> {

@@ -28,7 +28,7 @@ export default async function NetworkPage({
           <tr key={h.id} className="hover:bg-slate-50">
             <td className="px-4 py-3 text-sm font-medium">{h.name}</td>
             <td className="px-4 py-3 text-sm">{h.type}</td>
-            <td className="px-4 py-3 text-sm">{h.address}</td>
+            <td className="px-4 py-3 text-sm">{h.code}</td>
           </tr>
         ))}
       </DataTable>

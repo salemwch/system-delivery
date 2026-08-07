@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { DataTable, PageHeader, StatusBadge } from "@/components/ui";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatDistance } from "@/lib/format";
 import { MESSAGES, toLocale } from "@/lib/i18n";
 import { timezone } from "@/lib/config";
 import { fetchRoutes } from "@/lib/queries";
@@ -48,10 +48,16 @@ export default async function DispatchPage({
             <td className="px-4 py-3">
               <StatusBadge status={r.status} locale={locale} />
             </td>
-            <td className="px-4 py-3 text-sm">{r.driverName ?? "—"}</td>
+            {/* An id, not a name — a route carries `driverId` and the API does
+                no join. Truncated so the column stays readable. */}
+            <td className="px-4 py-3 text-sm ltr-isolate font-mono text-xs">
+              {r.driverId === null ? "—" : r.driverId.slice(0, 8)}
+            </td>
             <td className="px-4 py-3 text-sm tabular-nums">{r.stopCount}</td>
             <td className="px-4 py-3 text-sm tabular-nums ltr-isolate">
-              {r.distanceMeters > 0 ? `${(r.distanceMeters / 1000).toFixed(1)} km` : "—"}
+              {/* Actual once driven, planned before that. Null until optimised —
+                  a route created by hand has no distance at all. */}
+              {formatDistance(r.actualDistanceM ?? r.plannedDistanceM)}
             </td>
             <td className="px-4 py-3 text-sm text-slate-500">
               {formatDateTime(r.createdAt, locale, tz)}

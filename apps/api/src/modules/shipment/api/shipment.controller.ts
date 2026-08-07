@@ -12,10 +12,13 @@ import {
 import { z } from "zod";
 
 import { asTenantId } from "../../../shared/database/index.js";
+import { CurrencyService } from "../../../shared/money/index.js";
 import { NotFoundError } from "../../../shared/errors/index.js";
 import { zodBody } from "../../../shared/http/index.js";
 import { CurrentPrincipal, RequirePermissions } from "../../identity/index.js";
 import type { Principal } from "../../identity/index.js";
+import { AddressService } from "../../directory/index.js";
+import type { AddressView } from "../../directory/index.js";
 import { FeatureService } from "../../platform/index.js";
 import { BulkShipmentService } from "../application/bulk-shipment.service.js";
 import type { BulkCreateResult } from "../application/bulk-shipment.service.js";
@@ -79,6 +82,14 @@ interface ShipmentResponse {
   readonly parcelCount: number;
   readonly declaredValueMinor: string | null;
   readonly currency: string;
+  /**
+   * ISO 4217 minor-unit exponent for `currency`, from the `currencies` table.
+   *
+   * Sent so no client has to assume one. TND has THREE decimals; a UI dividing
+   * `codAmountMinor` by a hardcoded 100 misprices every Tunisian parcel by a
+   * factor of ten, and both web pages were doing exactly that.
+   */
+  readonly currencyExponent: number;
   readonly codAmountMinor: string;
   readonly codStatus: string;
   readonly attemptCount: number;
@@ -90,6 +101,33 @@ interface ShipmentResponse {
   readonly customFields: unknown;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+/**
+ * An address as a caller reads it.
+ *
+ * A narrow projection, not the row: `tenantId` is implied by the request and
+ * `geocodeConfidence`/`geocodeSource` are dispatch-internal quality signals
+ * that mean nothing on a detail page.
+ */
+interface AddressResponse {
+  readonly id: string;
+  /** Exactly what was submitted. Always populated, unlike the parsed fields. */
+  readonly rawInput: string;
+  readonly line1: string | null;
+  readonly city: string | null;
+  readonly region: string | null;
+  readonly postalCode: string | null;
+  readonly countryCode: string | null;
+  readonly latitude: number | null;
+  readonly longitude: number | null;
+  readonly accessNotes: string | null;
+}
+
+/** A shipment plus its resolved addresses. Returned by the single-row route only. */
+interface ShipmentDetailResponse extends ShipmentResponse {
+  readonly origin: AddressResponse;
+  readonly destination: AddressResponse;
 }
 
 interface EventResponse {
@@ -188,7 +226,29 @@ export class ShipmentController {
     private readonly features: FeatureService,
     private readonly labels: LabelService,
     private readonly documents: DocumentService,
+    private readonly addresses: AddressService,
+    private readonly currencies: CurrencyService,
   ) {}
+
+  /** One currency's minor-unit exponent. Cached per process by CurrencyService. */
+  private async exponentOf(currency: string): Promise<number> {
+    return this.currencies.exponentOf(currency);
+  }
+
+  /**
+   * Exponents for a page of shipments, resolved ONCE per distinct currency.
+   *
+   * A page is almost always one currency, so this is one lookup — and the
+   * lookup is itself process-cached. Mapping each row independently would be
+   * correct but would ask the same question fifty times.
+   */
+  private async exponentsFor(currencies: readonly string[]): Promise<ReadonlyMap<string, number>> {
+    const distinct = [...new Set(currencies)];
+    const pairs = await Promise.all(
+      distinct.map(async (code) => [code, await this.currencies.exponentOf(code)] as const),
+    );
+    return new Map(pairs);
+  }
 
   /**
    * The scannable label for a parcel (docs/01-mvp-scope.md §4.2 #2.15).
@@ -316,7 +376,10 @@ export class ShipmentController {
       idempotencyKey: item.idempotencyKey,
     }));
     const result = await this.bulkService.createBulk(items, ctxOf(principal));
-    return toBulkResponse(result);
+    const exponents = await this.exponentsFor(
+      result.results.flatMap((r) => (r.shipment === null ? [] : [r.shipment.currency])),
+    );
+    return toBulkResponse(result, exponents);
   }
 
   @Post()
@@ -326,7 +389,7 @@ export class ShipmentController {
     @CurrentPrincipal() principal: Principal,
   ): Promise<ShipmentResponse> {
     const shipment = await this.shipments.create(body, ctxOf(principal));
-    return toResponse(shipment);
+    return toResponse(shipment, await this.exponentOf(shipment.currency));
   }
 
   @Get()
@@ -339,17 +402,33 @@ export class ShipmentController {
       ...(parsed.status === undefined ? {} : { status: parsed.status }),
       ...(parsed.merchantId === undefined ? {} : { merchantId: parsed.merchantId }),
     });
+    const exponents = await this.exponentsFor(page.items.map((item) => item.currency));
     return {
-      data: page.items.map(toResponse),
+      data: page.items.map((item) => toResponse(item, exponents.get(item.currency) ?? 0)),
       page: { nextCursor: page.nextCursor, hasMore: page.nextCursor !== null },
     };
   }
 
+  /**
+   * One shipment, with its two addresses RESOLVED.
+   *
+   * The list returns `originAddressId`/`destinationAddressId` and stops there —
+   * resolving on a list would be N+1. A detail view is one row, and a
+   * dispatcher looking at a single parcel needs to read where it is going;
+   * an id tells them nothing and there is no address endpoint to follow it to.
+   *
+   * The two lookups run together: they are independent, and a detail page
+   * should not pay for them in series.
+   */
   @Get(":id")
   @RequirePermissions("shipment:read")
-  async getById(@Param("id") id: string): Promise<ShipmentResponse> {
+  async getById(@Param("id") id: string): Promise<ShipmentDetailResponse> {
     const shipment = await this.shipments.getById(id);
-    return toResponse(shipment);
+    const [origin, destination] = await Promise.all([
+      this.addresses.getById(shipment.originAddressId),
+      this.addresses.getById(shipment.destinationAddressId),
+    ]);
+    return { ...toResponse(shipment, await this.exponentOf(shipment.currency)), origin: toAddress(origin), destination: toAddress(destination) };
   }
 
   @Get(":id/events")
@@ -392,7 +471,7 @@ export class ShipmentController {
     @CurrentPrincipal() principal: Principal,
   ): Promise<ShipmentResponse> {
     const shipment = await this.shipments.recordPickup(id, body, ctxOf(principal));
-    return toResponse(shipment);
+    return toResponse(shipment, await this.exponentOf(shipment.currency));
   }
 
   @Post(":id/deliver")
@@ -404,7 +483,7 @@ export class ShipmentController {
     @CurrentPrincipal() principal: Principal,
   ): Promise<ShipmentResponse> {
     const shipment = await this.shipments.confirmDelivery(id, body, ctxOf(principal));
-    return toResponse(shipment);
+    return toResponse(shipment, await this.exponentOf(shipment.currency));
   }
 
   @Post(":id/fail")
@@ -416,7 +495,7 @@ export class ShipmentController {
     @CurrentPrincipal() principal: Principal,
   ): Promise<ShipmentResponse> {
     const shipment = await this.shipments.recordFailedAttempt(id, body, ctxOf(principal));
-    return toResponse(shipment);
+    return toResponse(shipment, await this.exponentOf(shipment.currency));
   }
 
   @Post(":id/return")
@@ -428,7 +507,7 @@ export class ShipmentController {
     @CurrentPrincipal() principal: Principal,
   ): Promise<ShipmentResponse> {
     const shipment = await this.shipments.initiateReturn(id, body, ctxOf(principal));
-    return toResponse(shipment);
+    return toResponse(shipment, await this.exponentOf(shipment.currency));
   }
 
   /**
@@ -448,7 +527,7 @@ export class ShipmentController {
     @CurrentPrincipal() principal: Principal,
   ): Promise<ShipmentResponse> {
     const shipment = await this.shipments.completeReturn(id, body, ctxOf(principal));
-    return toResponse(shipment);
+    return toResponse(shipment, await this.exponentOf(shipment.currency));
   }
 
   @Post(":id/cancel")
@@ -460,11 +539,11 @@ export class ShipmentController {
     @CurrentPrincipal() principal: Principal,
   ): Promise<ShipmentResponse> {
     const shipment = await this.shipments.cancel(id, body, ctxOf(principal));
-    return toResponse(shipment);
+    return toResponse(shipment, await this.exponentOf(shipment.currency));
   }
 }
 
-function toResponse(s: Shipment): ShipmentResponse {
+function toResponse(s: Shipment, currencyExponent: number): ShipmentResponse {
   return {
     id: s.id,
     trackingNumber: s.trackingNumber,
@@ -488,6 +567,7 @@ function toResponse(s: Shipment): ShipmentResponse {
     parcelCount: s.parcelCount,
     declaredValueMinor: s.declaredValueMinor?.toString() ?? null,
     currency: s.currency,
+    currencyExponent,
     codAmountMinor: s.codAmountMinor.toString(),
     codStatus: s.codStatus,
     attemptCount: s.attemptCount,
@@ -499,6 +579,21 @@ function toResponse(s: Shipment): ShipmentResponse {
     customFields: s.customFields,
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.updatedAt.toISOString(),
+  };
+}
+
+function toAddress(a: AddressView): AddressResponse {
+  return {
+    id: a.id,
+    rawInput: a.rawInput,
+    line1: a.normalisedLine1,
+    city: a.city,
+    region: a.region,
+    postalCode: a.postalCode,
+    countryCode: a.countryCode,
+    latitude: a.latitude,
+    longitude: a.longitude,
+    accessNotes: a.accessNotes,
   };
 }
 
@@ -521,7 +616,10 @@ function toEventResponse(e: ShipmentEventView): EventResponse {
   };
 }
 
-function toBulkResponse(result: BulkCreateResult): BulkCreateResponse {
+function toBulkResponse(
+  result: BulkCreateResult,
+  exponents: ReadonlyMap<string, number>,
+): BulkCreateResponse {
   return {
     total: result.total,
     succeeded: result.succeeded,
@@ -529,7 +627,10 @@ function toBulkResponse(result: BulkCreateResult): BulkCreateResponse {
     results: result.results.map((r) => ({
       index: r.index,
       success: r.success,
-      shipment: r.shipment !== null ? toResponse(r.shipment) : null,
+      shipment:
+        r.shipment === null
+          ? null
+          : toResponse(r.shipment, exponents.get(r.shipment.currency) ?? 0),
       error: r.error,
       code: r.code,
     })),

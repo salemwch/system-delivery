@@ -60,3 +60,17 @@ export function formatRate(rate: number, locale: Locale): string {
     maximumFractionDigits: 0,
   }).format(rate);
 }
+
+/**
+ * Metres to kilometres, or an em dash.
+ *
+ * The API stores distances in METRES (docs: distances in metres, durations in
+ * seconds) and leaves them null until a route is optimised — a route built by
+ * hand has no distance, which is not the same as zero.
+ */
+export function formatDistance(metres: number | null): string {
+  if (metres === null || metres <= 0) {
+    return "—";
+  }
+  return `${(metres / 1000).toFixed(1)} km`;
+}

@@ -35,13 +35,13 @@ export default async function ComplaintsPage({
         {result.data.map((c) => (
           <tr key={c.id} className="hover:bg-slate-50">
             <td className="px-4 py-3">
-              <span className="ltr-isolate font-mono text-sm">{c.trackingNumber}</span>
+              <span className="ltr-isolate font-mono text-sm">{c.code}</span>
             </td>
             <td className="px-4 py-3 text-sm">{c.type}</td>
             <td className="px-4 py-3">
               <StatusBadge status={c.status} locale={locale} />
             </td>
-            <td className="px-4 py-3 text-sm">{c.priority}</td>
+            <td className="px-4 py-3 text-sm">{c.severity}</td>
             <td className="px-4 py-3 text-sm text-slate-500">
               {formatDateTime(c.createdAt, locale, tz)}
             </td>

@@ -29,7 +29,7 @@ export default async function ShipmentsPage({
     locale === "ar" ? "رقم التتبع" : locale === "fr" ? "N° suivi" : "Tracking #",
     messages.status,
     locale === "ar" ? "المستلم" : locale === "fr" ? "Destinataire" : "Recipient",
-    locale === "ar" ? "التاجر" : locale === "fr" ? "Commerçant" : "Merchant",
+    locale === "ar" ? "الهاتف" : locale === "fr" ? "Téléphone" : "Phone",
     ...(canReadCod
       ? [locale === "ar" ? "المبلغ COD" : locale === "fr" ? "Montant COD" : "COD amount"]
       : []),
@@ -55,11 +55,13 @@ export default async function ShipmentsPage({
               <StatusBadge status={s.status} locale={locale} />
             </td>
             <td className="px-4 py-3 text-sm">{s.recipientName}</td>
-            <td className="px-4 py-3 text-sm">{s.merchantName}</td>
+            <td className="px-4 py-3 text-sm">{s.recipientPhone}</td>
             {canReadCod ? (
               <td className="px-4 py-3 text-sm tabular-nums ltr-isolate">
-                {s.codAmountMinor > 0
-                  ? formatMoney(s.codAmountMinor, 3, locale)
+                {/* String minor units, and the exponent comes from the API —
+                    TND is 3 decimals and a hardcoded scale misprices it. */}
+                {BigInt(s.codAmountMinor) > 0n
+                  ? formatMoney(BigInt(s.codAmountMinor), s.currencyExponent, locale)
                   : "—"}
               </td>
             ) : null}

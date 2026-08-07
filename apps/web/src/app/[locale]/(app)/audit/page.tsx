@@ -37,10 +37,10 @@ export default async function AuditPage({
           <tr key={a.id} className="hover:bg-slate-50">
             <td className="px-4 py-3 text-sm font-medium">{a.action}</td>
             <td className="px-4 py-3 text-sm">
-              <span className="text-slate-600">{a.entityType}</span>
-              <span className="ms-1 ltr-isolate font-mono text-xs text-slate-400">{a.entityId.slice(0, 8)}</span>
+              <span className="text-slate-600">{a.resourceType}</span>
+              <span className="ms-1 ltr-isolate font-mono text-xs text-slate-400">{a.resourceId === null ? "—" : a.resourceId.slice(0, 8)}</span>
             </td>
-            <td className="px-4 py-3 text-sm ltr-isolate">{a.userEmail}</td>
+            <td className="px-4 py-3 text-sm ltr-isolate">{a.actorLabel ?? a.actorType}</td>
             <td className="px-4 py-3 text-sm text-slate-500">
               {formatDateTime(a.createdAt, locale, tz)}
             </td>

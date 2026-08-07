@@ -4,6 +4,7 @@ import { MESSAGES, toLocale } from "@/lib/i18n";
 import { hasPermission, readSession } from "@/lib/session";
 import { P } from "@/lib/permissions";
 import { fetchDashboard } from "@/lib/queries";
+import type { DashboardStats } from "@/lib/queries";
 
 export default async function DashboardPage({
   params,
@@ -26,17 +27,17 @@ export default async function DashboardPage({
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
           label={locale === "ar" ? "طرود اليوم" : locale === "fr" ? "Envois aujourd'hui" : "Shipments today"}
-          value={String(stats.shipmentsToday)}
+          value={String(stats.todayCreated)}
         />
         <StatCard
           label={locale === "ar" ? "تم التسليم" : locale === "fr" ? "Livrés" : "Delivered"}
-          value={String(stats.deliveredToday)}
+          value={String(stats.todayDelivered)}
           tone="plain"
         />
         <StatCard
           label={locale === "ar" ? "فشل" : locale === "fr" ? "Échoués" : "Failed"}
-          value={String(stats.failedToday)}
-          tone={stats.failedToday > 0 ? "attention" : "plain"}
+          value={String(stats.todayFailed)}
+          tone={stats.todayFailed > 0 ? "attention" : "plain"}
         />
         <StatCard
           label={locale === "ar" ? "معدل التسليم" : locale === "fr" ? "Taux de livraison" : "Delivery rate"}
@@ -47,21 +48,20 @@ export default async function DashboardPage({
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
           label={locale === "ar" ? "قيد النقل" : locale === "fr" ? "En transit" : "In transit"}
-          value={String(stats.inTransit)}
+          value={String(countOf(stats, "IN_TRANSIT"))}
         />
         <StatCard
-          label={locale === "ar" ? "استلام معلق" : locale === "fr" ? "Ramassages en attente" : "Pending pickups"}
-          value={String(stats.pendingPickups)}
-          tone={stats.pendingPickups > 0 ? "attention" : "plain"}
+          label={locale === "ar" ? "خارج للتسليم" : locale === "fr" ? "En livraison" : "Out for delivery"}
+          value={String(countOf(stats, "OUT_FOR_DELIVERY"))}
         />
         <StatCard
-          label={locale === "ar" ? "سائقين نشطين" : locale === "fr" ? "Chauffeurs actifs" : "Active drivers"}
-          value={String(stats.activeDrivers)}
+          label={locale === "ar" ? "إجمالي الطرود" : locale === "fr" ? "Total des colis" : "Total shipments"}
+          value={String(stats.totalShipments)}
         />
         {canReadCod ? (
           <StatCard
             label={locale === "ar" ? "COD معلق" : locale === "fr" ? "COD en attente" : "Pending COD"}
-            value={formatMoney(stats.codPendingMinor, stats.currencyExponent, locale)}
+            value={formatMoney(BigInt(stats.codPendingMinor), stats.currencyExponent, locale)}
             tone="money"
           />
         ) : (
@@ -73,4 +73,15 @@ export default async function DashboardPage({
       </div>
     </div>
   );
+}
+
+/**
+ * How many shipments sit in one status.
+ *
+ * The dashboard returns `byStatus` as a list, not a field per status, so
+ * "in transit" is a lookup. Absent means zero — a status with no shipments is
+ * simply not in the array.
+ */
+function countOf(stats: DashboardStats, status: string): number {
+  return stats.byStatus.find((row) => row.status === status)?.count ?? 0;
 }

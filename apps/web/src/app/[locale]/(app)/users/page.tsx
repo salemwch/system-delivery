@@ -34,7 +34,7 @@ export default async function UsersPage({
       >
         {result.data.map((u) => (
           <tr key={u.id} className="hover:bg-slate-50">
-            <td className="px-4 py-3 text-sm font-medium">{u.name}</td>
+            <td className="px-4 py-3 text-sm font-medium">{u.fullName}</td>
             <td className="px-4 py-3 text-sm ltr-isolate">{u.email}</td>
             <td className="px-4 py-3 text-sm">
               <div className="flex flex-wrap gap-1">

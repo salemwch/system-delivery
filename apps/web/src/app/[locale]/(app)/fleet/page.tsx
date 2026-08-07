@@ -31,7 +31,7 @@ export default async function FleetPage({
         >
           {drivers.data.map((d) => (
             <tr key={d.id} className="hover:bg-slate-50">
-              <td className="px-4 py-3 text-sm font-medium">{d.name}</td>
+              <td className="px-4 py-3 text-sm font-medium">{d.fullName}</td>
               <td className="px-4 py-3 text-sm ltr-isolate">{d.phone}</td>
               <td className="px-4 py-3">
                 <StatusBadge status={d.status} locale={locale} />

@@ -43,7 +43,7 @@ export default async function CustodyPage({
             <td className="px-4 py-3">
               <StatusBadge status={m.status} locale={locale} />
             </td>
-            <td className="px-4 py-3 text-sm tabular-nums">{m.shipmentCount}</td>
+            <td className="px-4 py-3 text-sm tabular-nums">{m.itemCount}</td>
             <td className="px-4 py-3 text-sm text-slate-500">
               {formatDateTime(m.createdAt, locale, tz)}
             </td>

@@ -51,7 +51,7 @@ export default async function MerchantDetailPage({
 
   const options: CommercialOption[] = commercials.data.map((c) => ({
     id: c.id,
-    label: c.name === "" ? c.email : `${c.name} (${c.email})`,
+    label: c.fullName === "" ? c.email : `${c.fullName} (${c.email})`,
   }));
 
   return (
