@@ -2,11 +2,12 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from 
 import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
+import { CurrencyService } from "../../../shared/money/index.js";
 import { CurrentPrincipal, RequirePermissions } from "../../identity/index.js";
 import type { Permission, Principal } from "../../identity/index.js";
 import { ShipmentAmendmentService } from "../application/shipment-amendment.service.js";
+import type { AmendmentView } from "../application/shipment-amendment.service.js";
 import { rejectAmendmentSchema, requestAmendmentSchema } from "../domain/dtos.js";
-import type { ShipmentAmendment } from "../domain/schema.js";
 
 /**
  * The permission that turns a request into an immediate change.
@@ -36,6 +37,15 @@ interface AmendmentResponse {
   readonly destinationCity: string | null;
   /** Minor units as a string — JSON has no bigint. */
   readonly codAmountMinor: string | null;
+  /**
+   * The parcel's currency and its ISO 4217 exponent.
+   *
+   * Always present, even when no amount changed: without them 45000 is 45
+   * dinars or 450 euros, and a client that guessed ÷100 would misprice every
+   * Tunisian parcel tenfold.
+   */
+  readonly currency: string;
+  readonly currencyExponent: number;
   /** What the parcel held before, for the fields this touched. */
   readonly previous: unknown;
   readonly requestedByUserId: string;
@@ -59,7 +69,10 @@ interface PageResponse<T> {
  */
 @Controller("v1")
 export class ShipmentAmendmentController {
-  constructor(private readonly amendments: ShipmentAmendmentService) {}
+  constructor(
+    private readonly amendments: ShipmentAmendmentService,
+    private readonly currencies: CurrencyService,
+  ) {}
 
   /**
    * Ask to change a parcel.
@@ -81,7 +94,7 @@ export class ShipmentAmendmentController {
     // is an authorization decision, and a caller-supplied flag would be a way to
     // approve your own change without the permission to do so.
     const canApprove = principal.permissions.has(APPROVE_PERMISSION);
-    return toResponse(
+    return this.render(
       await this.amendments.request(shipmentId, body, principal.userId, canApprove),
     );
   }
@@ -92,7 +105,7 @@ export class ShipmentAmendmentController {
   async forShipment(@Param("id") shipmentId: string): Promise<PageResponse<AmendmentResponse>> {
     const page = await this.amendments.list({ shipmentId });
     return {
-      data: page.items.map(toResponse),
+      data: await this.renderAll(page.items),
       page: { nextCursor: page.nextCursor, hasMore: page.nextCursor !== null },
     };
   }
@@ -109,7 +122,7 @@ export class ShipmentAmendmentController {
       ...(parsed.shipmentId === undefined ? {} : { shipmentId: parsed.shipmentId }),
     });
     return {
-      data: page.items.map(toResponse),
+      data: await this.renderAll(page.items),
       page: { nextCursor: page.nextCursor, hasMore: page.nextCursor !== null },
     };
   }
@@ -124,7 +137,7 @@ export class ShipmentAmendmentController {
   @Get("shipment-amendments/:id")
   @RequirePermissions("shipment:read")
   async getById(@Param("id") id: string): Promise<AmendmentResponse> {
-    return toResponse(await this.amendments.getById(id));
+    return this.render(await this.amendments.getById(id));
   }
 
   @Post("shipment-amendments/:id/approve")
@@ -134,7 +147,7 @@ export class ShipmentAmendmentController {
     @Param("id") id: string,
     @CurrentPrincipal() principal: Principal,
   ): Promise<AmendmentResponse> {
-    return toResponse(await this.amendments.apply(id, principal.userId));
+    return this.render(await this.amendments.apply(id, principal.userId));
   }
 
   @Post("shipment-amendments/:id/reject")
@@ -145,11 +158,39 @@ export class ShipmentAmendmentController {
     @Body(zodBody(rejectAmendmentSchema)) body: z.infer<typeof rejectAmendmentSchema>,
     @CurrentPrincipal() principal: Principal,
   ): Promise<AmendmentResponse> {
-    return toResponse(await this.amendments.reject(id, body, principal.userId));
+    return this.render(await this.amendments.reject(id, body, principal.userId));
+  }
+
+  private async render(row: AmendmentView): Promise<AmendmentResponse> {
+    return toResponse(row, await this.currencies.exponentOf(row.currency));
+  }
+
+  /**
+   * One exponent lookup per DISTINCT currency, not per row.
+   *
+   * `CurrencyService` caches per process, so this is cheap either way — but a
+   * page of fifty awaiting the same answer fifty times is fifty awaits in a hot
+   * path for a value that cannot differ within a currency.
+   */
+  private async renderAll(rows: readonly AmendmentView[]): Promise<AmendmentResponse[]> {
+    const exponents = new Map<string, number>();
+    for (const currency of new Set(rows.map((row) => row.currency))) {
+      exponents.set(currency, await this.currencies.exponentOf(currency));
+    }
+    return rows.map((row) => {
+      const exponent = exponents.get(row.currency);
+      if (exponent === undefined) {
+        // Unreachable: the map is built from these same rows. Thrown rather than
+        // defaulted, because a defaulted exponent prints 45000 millimes as
+        // "45000 TND" on a screen a dispatcher decides money from.
+        throw new Error(`No exponent resolved for currency ${row.currency}`);
+      }
+      return toResponse(row, exponent);
+    });
   }
 }
 
-function toResponse(row: ShipmentAmendment): AmendmentResponse {
+function toResponse(row: AmendmentView, currencyExponent: number): AmendmentResponse {
   return {
     id: row.id,
     shipmentId: row.shipmentId,
@@ -161,6 +202,8 @@ function toResponse(row: ShipmentAmendment): AmendmentResponse {
     destinationRawInput: row.destinationRawInput,
     destinationCity: row.destinationCity,
     codAmountMinor: row.codAmountMinor === null ? null : row.codAmountMinor.toString(),
+    currency: row.currency,
+    currencyExponent,
     previous: row.previous,
     requestedByUserId: row.requestedByUserId,
     decidedAt: row.decidedAt?.toISOString() ?? null,

@@ -1,3 +1,5 @@
+import { formatMoney } from "./format";
+import type { Locale } from "./i18n";
 import type { AmendmentSummary } from "./queries";
 
 /**
@@ -12,7 +14,7 @@ import type { AmendmentSummary } from "./queries";
  * the row links to, and inventing an arrow from nothing would suggest the change
  * had already happened.
  */
-export function amendmentLines(amendment: AmendmentSummary): string[] {
+export function amendmentLines(amendment: AmendmentSummary, locale: Locale): string[] {
   const previous = amendment.previous ?? {};
   const lines: string[] = [];
 
@@ -38,15 +40,17 @@ export function amendmentLines(amendment: AmendmentSummary): string[] {
     lines.push(`address: ${amendment.destinationRawInput}${city}`);
   }
   if (amendment.codAmountMinor !== null) {
-    // ⚠️ Minor units, shown as minor units. Formatting needs the currency's
-    // exponent, which this row does not carry; printing "45000" beside a real
-    // amount would be worse than the raw figure a dispatcher can read as
-    // millimes.
+    // ⚠️ Formatted against the parcel's OWN exponent, which the API sends with
+    // every amendment. TND has THREE decimals: a hardcoded ÷100 would show
+    // 45.000 TND as "450.00" on the screen a dispatcher approves cash from.
+    const money = (minor: string): string =>
+      `${formatMoney(BigInt(minor), amendment.currencyExponent, locale)} ${amendment.currency}`;
+
     const before = previous["codAmountMinor"];
     lines.push(
       typeof before === "string"
-        ? `COD: ${before} → ${amendment.codAmountMinor}`
-        : `COD: ${amendment.codAmountMinor}`,
+        ? `COD: ${money(before)} → ${money(amendment.codAmountMinor)}`
+        : `COD: ${money(amendment.codAmountMinor)}`,
     );
   }
 

@@ -459,6 +459,9 @@ export interface AmendmentSummary {
   readonly destinationCity: string | null;
   /** Minor units as a decimal STRING — a bigint; parsing it as a number rounds. */
   readonly codAmountMinor: string | null;
+  /** The parcel's currency and ISO 4217 exponent — always sent, never guessed. */
+  readonly currency: string;
+  readonly currencyExponent: number;
   readonly previous: Readonly<Record<string, unknown>> | null;
   readonly requestedByUserId: string;
   readonly decidedAt: string | null;

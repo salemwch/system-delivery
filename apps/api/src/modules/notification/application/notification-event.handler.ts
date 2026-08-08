@@ -60,6 +60,20 @@ const ROUTES: Readonly<Record<string, Route>> = {
     recipientField: "recipientPhone",
     params: ["trackingNumber"],
   },
+  /**
+   * Modification colis. Earns its place by the test every other row here has to
+   * pass: an address change the customer does not know about is a failed
+   * delivery, and a failed delivery costs a re-attempt.
+   *
+   * ⚠️ `recipientPhone` in the payload is the NEW number when the amendment
+   * corrected it — which is the point. Notifying the old one would reach the
+   * person who was never expecting the parcel.
+   */
+  "shipment.amended": {
+    channel: "SMS",
+    recipientField: "recipientPhone",
+    params: ["trackingNumber"],
+  },
 
   // ── Merchant (SMS) ─────────────────────────────────────────────────────────
   "pickup.completed": {

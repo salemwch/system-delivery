@@ -91,7 +91,7 @@ export default async function AmendmentsPage({
             </td>
             <td className="px-4 py-3">
               <ul className="space-y-0.5">
-                {amendmentLines(amendment).map((line) => (
+                {amendmentLines(amendment, locale).map((line) => (
                   <li key={line} className="ltr-isolate font-mono text-xs text-slate-700">
                     {line}
                   </li>

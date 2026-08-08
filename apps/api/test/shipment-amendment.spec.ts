@@ -135,7 +135,7 @@ describe("shipment amendments", () => {
       addresses,
       new OperatingConfigService(db),
     );
-    amendments = new ShipmentAmendmentService(db, audit, addresses, recipients);
+    amendments = new ShipmentAmendmentService(db, audit, outbox, addresses, recipients);
   }, 240_000);
 
   afterAll(async () => {
@@ -354,6 +354,46 @@ describe("shipment amendments", () => {
           select action from audit_log where resource_id = ${shipmentId}`,
       );
       expect(rows.map((r) => r.action)).toEqual(["shipment.amended"]);
+    });
+
+    it("tells the customer, on the NEW number when the phone was corrected", async () => {
+      const amendment = await asStaff(tenantId, () =>
+        amendments.request(shipmentId, { recipientPhone: "+21624201314" }, userId, false),
+      );
+      await asStaff(tenantId, () => amendments.apply(amendment.id, userId));
+
+      const rows = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<{ event_type: string; payload: Record<string, unknown> }[]>`
+          select event_type, payload from outbox
+           where aggregate_id = ${shipmentId} and event_type = 'shipment.amended'`,
+      );
+
+      expect(rows).toHaveLength(1);
+      // ⚠️ The NEW number. Notifying the old one reaches the person who was
+      // never expecting the parcel — and an address change the customer does
+      // not know about is a failed delivery.
+      expect(rows[0]?.payload).toMatchObject({ recipientPhone: "+21624201314" });
+      // No address and no amount in the payload: the message reaches whatever
+      // number is on file, which after a phone correction is frequently the
+      // wrong one, and a wrong number that receives a street address has been
+      // handed a stranger's home.
+      expect(rows[0]?.payload).not.toHaveProperty("destination");
+      expect(rows[0]?.payload).not.toHaveProperty("codAmountMinor");
+    });
+
+    it("carries the parcel's currency on every read", async () => {
+      const amendment = await asStaff(tenantId, () =>
+        amendments.request(shipmentId, { codAmountMinor: 12_500 }, userId, false),
+      );
+
+      // Without it, 12500 is 12.500 dinars or 125.00 euros — and the queue
+      // screen a dispatcher approves cash from would have to guess.
+      expect(amendment.currency).toBe("TND");
+      expect((await asStaff(tenantId, () => amendments.getById(amendment.id))).currency).toBe("TND");
+      const page = await asStaff(tenantId, () => amendments.list());
+      expect(page.items[0]?.currency).toBe("TND");
     });
 
     it("refuses to apply twice", async () => {

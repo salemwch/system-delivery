@@ -50,6 +50,21 @@ export const DEFAULT_TEMPLATES: Readonly<Record<string, Readonly<Record<Locale, 
     ar: "تم إلغاء طردك {{trackingNumber}}.",
     en: "Your parcel {{trackingNumber}} has been cancelled.",
   },
+  /**
+   * The delivery details changed after the customer was already told about the
+   * parcel — modification colis.
+   *
+   * ⚠️ SAYS WHAT CHANGED, NOT WHAT IT CHANGED TO. The new address goes to the
+   * driver, not into an SMS: the message reaches whatever number is on file,
+   * which after a phone correction is frequently the WRONG one — and a wrong
+   * number that receives a street address has been handed a stranger's home.
+   * "Something changed, here is your tracking number" is safe to misdeliver.
+   */
+  "shipment.amended": {
+    fr: "Les détails de livraison de votre colis {{trackingNumber}} ont été mis à jour.",
+    ar: "تم تحديث معلومات توصيل طردك {{trackingNumber}}.",
+    en: "The delivery details for your parcel {{trackingNumber}} have been updated.",
+  },
 
   // ── Merchant-facing ────────────────────────────────────────────────────────
   //

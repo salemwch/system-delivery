@@ -1,9 +1,9 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq, gt, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, gt, lt, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 
 import { AddressService, RecipientService } from "../../directory/index.js";
-import { AuditService } from "../../platform/index.js";
+import { AuditService, OutboxService } from "../../platform/index.js";
 import {
   DatabaseService,
   TenantContext,
@@ -21,8 +21,21 @@ import { shipmentAmendments, shipments } from "../domain/schema.js";
 import type { Shipment, ShipmentAmendment } from "../domain/schema.js";
 import { TERMINAL_STATUSES, toShipmentStatus } from "../domain/shipment-status.js";
 
+/**
+ * An amendment with the parcel's currency alongside.
+ *
+ * ⚠️ The currency is joined in rather than left to the caller, because the row
+ * carries `cod_amount_minor` and an amount in minor units WITHOUT its currency
+ * is unreadable — 45000 is 45 dinars or 450 euros depending on an exponent
+ * nobody has. Every read path goes through {@link selectViews}, so no endpoint
+ * can forget it.
+ */
+export interface AmendmentView extends ShipmentAmendment {
+  readonly currency: string;
+}
+
 export interface AmendmentPage {
-  readonly items: readonly ShipmentAmendment[];
+  readonly items: readonly AmendmentView[];
   readonly nextCursor: string | null;
 }
 
@@ -57,6 +70,7 @@ export class ShipmentAmendmentService {
   constructor(
     private readonly database: DatabaseService,
     private readonly audit: AuditService,
+    private readonly outbox: OutboxService,
     private readonly addresses: AddressService,
     private readonly recipients: RecipientService,
   ) {}
@@ -73,7 +87,7 @@ export class ShipmentAmendmentService {
     input: unknown,
     actorUserId: string,
     canApprove: boolean,
-  ): Promise<ShipmentAmendment> {
+  ): Promise<AmendmentView> {
     const dto = parseWithZod(requestAmendmentSchema, input);
 
     const created = await this.database
@@ -108,9 +122,9 @@ export class ShipmentAmendmentService {
               ? {}
               : { codAmountMinor: BigInt(dto.codAmountMinor) }),
           })
-          .returning();
+          .returning({ id: shipmentAmendments.id });
 
-        return requireRow(inserted);
+        return this.requireView(tx, requireId(inserted));
       })
       .catch((error: unknown) => {
         // The partial unique index. Two open requests against one parcel can
@@ -129,7 +143,7 @@ export class ShipmentAmendmentService {
   }
 
   /** Applies a pending amendment to the parcel. */
-  async apply(id: string, actorUserId: string): Promise<ShipmentAmendment> {
+  async apply(id: string, actorUserId: string): Promise<AmendmentView> {
     const amendment = await this.database.withTenant((tx) => this.requirePending(tx, id));
 
     // Geocoding happens OUTSIDE the transaction: `AddressService.resolve` may
@@ -196,10 +210,9 @@ export class ShipmentAmendmentService {
           updatedAt: sql`now()`,
         })
         .where(and(eq(shipmentAmendments.id, id), eq(shipmentAmendments.status, "PENDING")))
-        .returning();
+        .returning({ id: shipmentAmendments.id });
 
-      const row = updated[0];
-      if (row === undefined) {
+      if (updated[0] === undefined) {
         throw new BusinessRuleError(
           "AMENDMENT_ALREADY_DECIDED",
           "This request was decided by someone else while you were reviewing it.",
@@ -212,6 +225,27 @@ export class ShipmentAmendmentService {
         resourceId: amendment.shipmentId,
         changes: changesOf(previous, amendment),
         context: { amendmentId: id, reason: amendment.reason },
+      });
+
+      // ⚠️ SELF-CONTAINED, and the recipient phone is the NEW one when this
+      // amendment corrected it. The notification handler imports no domain
+      // module and reads the destination straight out of this payload — telling
+      // the OLD number that the delivery changed would reach the person who was
+      // never expecting the parcel.
+      //
+      // Deliberately carries no address and no amount. The message reaches
+      // whatever number is on file, which after a phone correction is frequently
+      // the wrong one, and a wrong number that receives a street address has
+      // been handed a stranger's home.
+      await this.outbox.publish(tx, {
+        eventType: "shipment.amended",
+        aggregateType: "shipment",
+        aggregateId: amendment.shipmentId,
+        payload: {
+          trackingNumber: shipment.trackingNumber,
+          recipientPhone: amendment.recipientPhone ?? shipment.recipientPhone,
+          fields: Object.keys(previous),
+        },
       });
 
       // A second, separate entry when the money moved. `cod.amount_changed` is
@@ -232,11 +266,11 @@ export class ShipmentAmendmentService {
         });
       }
 
-      return row;
+      return this.requireView(tx, id);
     });
   }
 
-  async reject(id: string, input: unknown, actorUserId: string): Promise<ShipmentAmendment> {
+  async reject(id: string, input: unknown, actorUserId: string): Promise<AmendmentView> {
     const dto = parseWithZod(rejectAmendmentSchema, input);
 
     return this.database.withTenant(async (tx) => {
@@ -252,32 +286,20 @@ export class ShipmentAmendmentService {
           updatedAt: sql`now()`,
         })
         .where(and(eq(shipmentAmendments.id, id), eq(shipmentAmendments.status, "PENDING")))
-        .returning();
+        .returning({ id: shipmentAmendments.id });
 
-      const row = updated[0];
-      if (row === undefined) {
+      if (updated[0] === undefined) {
         throw new BusinessRuleError(
           "AMENDMENT_ALREADY_DECIDED",
           "This request was decided by someone else while you were reviewing it.",
         );
       }
-      return row;
+      return this.requireView(tx, id);
     });
   }
 
-  async getById(id: string): Promise<ShipmentAmendment> {
-    return this.database.withTenant(async (tx) => {
-      const rows = await tx
-        .select()
-        .from(shipmentAmendments)
-        .where(eq(shipmentAmendments.id, id))
-        .limit(1);
-      const row = rows[0];
-      if (row === undefined) {
-        throw new NotFoundError("Amendment");
-      }
-      return row;
-    });
+  async getById(id: string): Promise<AmendmentView> {
+    return this.database.withTenant((tx) => this.requireView(tx, id));
   }
 
   async list(input: unknown = {}): Promise<AmendmentPage> {
@@ -302,12 +324,12 @@ export class ShipmentAmendmentService {
             ]),
       ];
 
-      const rows = await tx
-        .select()
-        .from(shipmentAmendments)
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(oldestFirst ? asc(shipmentAmendments.id) : desc(shipmentAmendments.id))
-        .limit(limit + 1);
+      const rows = await selectViews(
+        tx,
+        conditions.length > 0 ? and(...conditions) : undefined,
+        oldestFirst,
+        limit + 1,
+      );
 
       if (rows.length > limit) {
         const items = rows.slice(0, limit);
@@ -380,6 +402,16 @@ export class ShipmentAmendmentService {
         `The cash on this parcel is already ${shipment.codStatus.toLowerCase()}; correct it with a ledger adjustment.`,
       );
     }
+  }
+
+  /** One amendment with its parcel's currency, or 404. */
+  private async requireView(tx: TenantTransaction, id: string): Promise<AmendmentView> {
+    const rows = await selectViews(tx, eq(shipmentAmendments.id, id), false, 1);
+    const row = rows[0];
+    if (row === undefined) {
+      throw new NotFoundError("Amendment");
+    }
+    return row;
   }
 
   private async requirePending(
@@ -463,10 +495,32 @@ function changesOf(
   return changes;
 }
 
-function requireRow(rows: readonly ShipmentAmendment[]): ShipmentAmendment {
+/**
+ * The one query every read goes through.
+ *
+ * INNER JOIN rather than a second lookup: `shipment_amendments` always belongs
+ * to a shipment, the currency comes free with the join, and a page of fifty
+ * would otherwise be fifty extra round trips for one column.
+ */
+async function selectViews(
+  tx: TenantTransaction,
+  where: SQL | undefined,
+  oldestFirst: boolean,
+  limit: number,
+): Promise<AmendmentView[]> {
+  return tx
+    .select({ ...getTableColumns(shipmentAmendments), currency: shipments.currency })
+    .from(shipmentAmendments)
+    .innerJoin(shipments, eq(shipments.id, shipmentAmendments.shipmentId))
+    .where(where)
+    .orderBy(oldestFirst ? asc(shipmentAmendments.id) : desc(shipmentAmendments.id))
+    .limit(limit);
+}
+
+function requireId(rows: readonly { id: string }[]): string {
   const row = rows[0];
   if (row === undefined) {
     throw new Error("Amendment insert returned no row");
   }
-  return row;
+  return row.id;
 }

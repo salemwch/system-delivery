@@ -131,7 +131,7 @@ export default async function ShipmentDetailPage({
           status: amendment.status,
           reason: amendment.reason,
           decisionReason: amendment.decisionReason,
-          lines: amendmentLines(amendment),
+          lines: amendmentLines(amendment, locale),
           // Formatted here: the panel is a client component and has no tenant
           // timezone to format against.
           at: formatDateTime(amendment.createdAt, locale, tz),
