@@ -9,7 +9,11 @@ import type { AccountRef } from "../src/modules/finance/application/ledger.servi
 import { LedgerEventHandler } from "../src/modules/finance/application/ledger-event.handler.js";
 import { RemittanceService } from "../src/modules/finance/application/remittance.service.js";
 import { SettlementService } from "../src/modules/finance/application/settlement.service.js";
+import { PaymentNoteService } from "../src/modules/finance/application/payment-note.service.js";
 import { ReconciliationService } from "../src/modules/finance/application/reconciliation.service.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
+import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
+import { TenantService } from "../src/modules/platform/application/tenant.service.js";
 import { ledgerAccounts, ledgerEntries } from "../src/modules/finance/domain/schema.js";
 import { formatMinorUnits, parseMinorUnits } from "../src/shared/money/index.js";
 import { OutboxService } from "../src/modules/platform/index.js";
@@ -786,6 +790,157 @@ describe("finance", () => {
       expect(day.remittedMinor).toBe(20000n);
       expect(day.varianceMinor).toBe(0n);
       expect(day.outstandingMinor).toBe(0n);
+    });
+  });
+
+  // ── Payment note (increment H): the receipt a merchant signs for their money ──
+  describe("PaymentNoteService", () => {
+    const drafter = { actorUserId: randomUUID(), role: "FINANCE" };
+    const approver = { actorUserId: randomUUID(), role: "OWNER" };
+
+    function service(): PaymentNoteService {
+      return new PaymentNoteService(
+        db,
+        new TenantService(
+          db,
+          new OutboxService(),
+          new OperatingConfigService(db),
+          new AuditService(db),
+        ),
+        currency,
+      );
+    }
+    async function asTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
+      return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "system" }, fn);
+    }
+    const today = (): string => new Date().toISOString().slice(0, 10);
+
+    /**
+     * A real merchant row.
+     *
+     * ⚠️ The settlement suite above invents a UUID, which is fine there because
+     * `settlements.merchant_id` carries no key. The receipt PRINTS the merchant's
+     * name, so it must resolve a row that exists — and reading that name is the
+     * exact code path this suite is here to cover.
+     */
+    async function seedMerchant(tenantId: string, name: string): Promise<string> {
+      const rows = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<{ id: string }[]>`
+          insert into merchants (tenant_id, name, status)
+          values (${tenantId}, ${name}, 'ACTIVE')
+          returning id
+        `,
+      );
+      const row = rows[0];
+      if (row === undefined) {
+        throw new Error("merchant seed failed");
+      }
+      return row.id;
+    }
+
+    async function approvedSettlement(
+      tenantId: string,
+      merchantId: string,
+    ): Promise<{ id: string; code: string }> {
+      const handler = new LedgerEventHandler(db, ledger);
+      await handler.handle(
+        codCollectedEvent(tenantId, {
+          driverId: randomUUID(),
+          merchantId,
+          amountMinor: "30000",
+          currency: "TND",
+        }),
+      );
+      const settlements = new SettlementService(db, ledger, currency, new OutboxService());
+      const draft = await asTenant(tenantId, () =>
+        settlements.createDraft(
+          {
+            merchantId,
+            periodFrom: today(),
+            periodTo: today(),
+            currency: "TND",
+            deliveryFeesMinor: "2500",
+          },
+          drafter,
+        ),
+      );
+      const approved = await asTenant(tenantId, () => settlements.approve(draft.id, approver));
+      return { id: approved.id, code: approved.code };
+    }
+
+    it("prints the merchant name, the arithmetic and the awaiting-payment mark", async () => {
+      const tenantId = await seedTenant("note-approved");
+      const merchantId = await seedMerchant(tenantId, "Boutique El Manar");
+      const settlement = await approvedSettlement(tenantId, merchantId);
+
+      const rendered = await asTenant(tenantId, () => service().render(settlement.id));
+
+      expect(rendered.filename).toBe(`bon-de-paiement-${settlement.code}.html`);
+      expect(rendered.html).toContain("Boutique El Manar");
+      // The arithmetic, line by line: gross 30.000 − fees 2.500 = net 27.500.
+      // ⚠️ 30000 minor units is THIRTY dinars, not three hundred: TND carries
+      // three decimals, so this also proves the exponent came from `currencies`
+      // and not from a hardcoded ×100.
+      expect(rendered.html).toContain("30.000");
+      expect(rendered.html).toContain("2.500");
+      expect(rendered.html).toContain("27.500");
+    });
+
+    it("refuses a DRAFT settlement, whose figures can still change", async () => {
+      const tenantId = await seedTenant("note-draft");
+      const merchantId = await seedMerchant(tenantId, "Draft Merchant");
+      const handler = new LedgerEventHandler(db, ledger);
+      await handler.handle(
+        codCollectedEvent(tenantId, {
+          driverId: randomUUID(),
+          merchantId,
+          amountMinor: "10000",
+          currency: "TND",
+        }),
+      );
+      const settlements = new SettlementService(db, ledger, currency, new OutboxService());
+      const draft = await asTenant(tenantId, () =>
+        settlements.createDraft(
+          { merchantId, periodFrom: today(), periodTo: today(), currency: "TND" },
+          drafter,
+        ),
+      );
+
+      // A signed receipt for a number that later changes is worse than none.
+      await expect(asTenant(tenantId, () => service().render(draft.id))).rejects.toThrow(
+        /not found/iu,
+      );
+    });
+
+    it("does not render another tenant's settlement", async () => {
+      const tenantA = await seedTenant("note-tenant-a");
+      const tenantB = await seedTenant("note-tenant-b");
+      const merchantId = await seedMerchant(tenantA, "A Merchant");
+      const settlement = await approvedSettlement(tenantA, merchantId);
+
+      // RLS, not a WHERE clause the caller could forget.
+      await expect(asTenant(tenantB, () => service().render(settlement.id))).rejects.toThrow(
+        /not found/iu,
+      );
+    });
+
+    it("refuses a settlement whose merchant row is gone rather than printing a blank payee", async () => {
+      const tenantId = await seedTenant("note-no-merchant");
+      const merchantId = await seedMerchant(tenantId, "Vanishing Merchant");
+      const settlement = await approvedSettlement(tenantId, merchantId);
+      await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx`delete from merchants where id = ${merchantId}`,
+      );
+
+      // A receipt with an empty payee is a document nobody can act on, and the
+      // name lookup is `?.name` — without the explicit guard it would render one.
+      await expect(asTenant(tenantId, () => service().render(settlement.id))).rejects.toThrow(
+        /not found/iu,
+      );
     });
   });
 });

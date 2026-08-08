@@ -18,9 +18,9 @@ Authorized 2026-07-22. Build within these limits:
 
 ---
 
-## Current state (updated 2026-08-07)
+## Current state (updated 2026-08-09)
 
-**Everything green:** `pnpm build` → ok · `pnpm test` → 1354/1354 (1195 api + 39 track + 33 merchant + 87 web) · MFA sign-in verified end to end · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (442 targets, all four apps tracked and covered).
+**Everything green:** `pnpm build` → ok · `pnpm test` → 1360/1360 (1201 api + 39 track + 33 merchant + 87 web) · MFA sign-in verified end to end · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (442 targets, all four apps tracked and covered).
 
 ⚠️ `pnpm sast` scans **git-tracked files only** — an untracked app is silently invisible to it. Never pipe it to `tail`: the pipeline's exit status is the last command's, which hid a `RuleParseError` behind a green tick.
 
@@ -93,6 +93,7 @@ Most critical rules (the ones that cause silent data corruption or total feature
 - **A Server Action refreshes in place; only a render redirects.** Redirecting out of an action throws away the user's submission — a filled form returned blank with no error. `canPersistCookies()` probes with a no-op cookie write
 - **Sidebar needs `sticky top-0` alongside `h-dvh`** — `h-dvh` alone scrolls the panel away on a tall page, which reads as "the menu items vanished"
 - **Normalise phone input in the UI, don't just validate it.** Tunisians type `24201314`, not `+21624201314`. `toE164()` in `apps/web/src/lib/phone.ts`; the API stays strict
+- **⚠️ A GREEN TEST SUITE DOES NOT MEAN THE APP BOOTS.** Every suite constructs its subject by hand — `new PaymentNoteService(db, merchants, …)` — which proves the service works and proves nothing about whether Nest can build it. `PaymentNoteService` injected `MerchantService` while `FinanceModule` never imported `DirectoryModule`: 1354 tests green, `UnknownDependenciesException` on boot, and the web app showing only `fetch failed`. `app-module.spec.ts` now `compile()`s **both** composition roots (`AppModule` and `WorkerModule` — different graphs; the worker binds the relay and stream consumer the API does not). A service needing a peer module's data reads it with an RLS-filtered query, as `InvoiceService.partiesFor` does — injecting across modules for one string drags in a whole dependency graph
 - **A controller guarded by `RequirePermissions` cannot live in `platform`.** Platform is layer 0 and depends on nothing; importing the decorator from `identity` closes a module cycle that the boundaries lint catches only after the whole feature is written. Tenant settings and feature flags are *served* from `identity` and *implemented* in `platform` — the service stays where the data is
 - **A narrower `GRANT` does not take a privilege away — use `REVOKE`.** `ALTER DEFAULT PRIVILEGES` (initdb/02-roles.sql) already grants dp_app full DML on every table the migrator creates, INCLUDING future ones. Migration 0041 wrote `GRANT SELECT, INSERT` on an append-only table and a comment claiming immutability; the log stayed fully writable until 0042 revoked it. The test caught it
 - **Never rotate a refresh token during a render.** `cookies().set()` throws in a Server Component, and the API revokes the whole family on reuse — a render spends the token, cannot store the replacement, and the next request is locked out permanently. Rotation belongs in a Route Handler (`session/refresh`); `currentSession()` only redirects there

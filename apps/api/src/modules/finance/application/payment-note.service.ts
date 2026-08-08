@@ -1,7 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
-import { MerchantService } from "../../directory/index.js";
 import { TenantService } from "../../platform/index.js";
 import { DatabaseService } from "../../../shared/database/index.js";
 import { toDocumentLocale } from "../../../shared/documents/index.js";
@@ -30,28 +29,41 @@ export interface RenderedPaymentNote {
 export class PaymentNoteService {
   constructor(
     private readonly database: DatabaseService,
-    private readonly merchants: MerchantService,
     private readonly tenants: TenantService,
     private readonly currency: CurrencyService,
   ) {}
 
   async render(settlementId: string, locale?: string): Promise<RenderedPaymentNote> {
-    const settlement = await this.database.withTenant(async (tx) => {
+    // ⚠️ The merchant's NAME is read here, not through MerchantService. Injecting
+    // it would make finance depend on the whole directory module — and its own
+    // dependency graph — for one string, and would cost a second transaction on
+    // the slowest path in the module. `InvoiceService.partiesFor` reads the same
+    // name the same way; this is that pattern, not an exception to it.
+    //
+    // The read is RLS-filtered like any other, so a settlement whose merchant is
+    // outside the caller's scope simply yields no name — never another tenant's.
+    const { settlement, merchantName } = await this.database.withTenant(async (tx) => {
       const rows = await tx.select().from(settlements).where(eq(settlements.id, settlementId)).limit(1);
       const row = rows[0];
       if (row === undefined) {
         throw new NotFoundError("Settlement");
       }
-      return row;
+      const merchants = await tx.execute<{ name: string }>(sql`
+        select name from merchants where id = ${row.merchantId}
+      `);
+      const name = merchants[0]?.name;
+      if (name === undefined) {
+        throw new NotFoundError("Merchant");
+      }
+      return { settlement: row, merchantName: name };
     });
 
     if (settlement.status === "DRAFT") {
       throw new NotFoundError("Settlement receipt");
     }
 
-    const [profile, merchant, exponent] = await Promise.all([
+    const [profile, exponent] = await Promise.all([
       this.tenants.profile(),
-      this.merchants.getById(settlement.merchantId),
       this.currency.exponentOf(settlement.currency),
     ]);
 
@@ -61,7 +73,7 @@ export class PaymentNoteService {
       locale: toDocumentLocale(locale ?? profile.defaultLocale),
       courierName: profile.name,
       reference: settlement.code,
-      merchantName: merchant.name,
+      merchantName,
       periodFrom: settlement.periodFrom,
       periodTo: settlement.periodTo,
       shipmentCount: settlement.shipmentCount,

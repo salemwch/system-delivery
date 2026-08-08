@@ -141,16 +141,6 @@ export class TenantService {
   }
 
   /**
-   * The current tenant's own name, timezone and default language.
-   *
-   * Exists for anything that renders on the tenant's behalf — printed paperwork
-   * puts its name on the letterhead and its dates in its own wall-clock time.
-   * Deliberately narrow: three display fields, not the whole row, so this cannot
-   * become a way for another context to read a tenant's plan or status.
-   *
-   * Scoped by `withTenant`, so a tenant can only ever resolve itself.
-   */
-  /**
    * Général — the courier's own name, timezone and languages.
    *
    * ⚠️ THE SLUG AND THE CURRENCY ARE NOT EDITABLE, and their absence is the
@@ -227,6 +217,16 @@ export class TenantService {
     return rows[0]?.locale ?? "fr";
   }
 
+  /**
+   * The current tenant's own name, timezone and default language.
+   *
+   * Exists for anything that renders on the tenant's behalf — printed paperwork
+   * puts its name on the letterhead and its dates in its own wall-clock time.
+   * Deliberately narrow: three display fields, not the whole row, so this cannot
+   * become a way for another context to read a tenant's plan or status.
+   *
+   * Scoped by `withTenant`, so a tenant can only ever resolve itself.
+   */
   async profile(): Promise<TenantProfile> {
     return this.database.withTenant(async (tx) => {
       const tenantId = TenantContext.requireTenantId();
