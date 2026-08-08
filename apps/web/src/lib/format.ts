@@ -54,10 +54,11 @@ export function formatDateTime(iso: string, locale: Locale, timeZone: string): s
   }).format(new Date(iso));
 }
 
-export function formatRate(rate: number, locale: Locale): string {
+export function formatRate(rate: number, locale: Locale, fractionDigits = 0): string {
   return new Intl.NumberFormat(LOCALE_TAGS[locale], {
     style: "percent",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   }).format(rate);
 }
 

@@ -24,6 +24,8 @@ import { BulkShipmentService } from "../application/bulk-shipment.service.js";
 import type { BulkCreateResult } from "../application/bulk-shipment.service.js";
 import { DocumentService } from "../application/document.service.js";
 import { LabelService } from "../application/label.service.js";
+import { ParcelStateService } from "../application/parcel-state.service.js";
+import type { ParcelStateReport } from "../application/parcel-state.service.js";
 import { ShipmentStatsService } from "../application/shipment-stats.service.js";
 import type {
   DashboardStats,
@@ -220,6 +222,7 @@ export class ShipmentController {
   constructor(
     private readonly shipments: ShipmentService,
     private readonly stats: ShipmentStatsService,
+    private readonly parcelState: ParcelStateService,
     private readonly bulkService: BulkShipmentService,
     private readonly tracking: TrackingService,
     private readonly traceability: ShipmentTraceabilityService,
@@ -311,6 +314,34 @@ export class ShipmentController {
     }
     const rendered = await this.documents.render(id, normalised, locale);
     return rendered.html;
+  }
+
+  /**
+   * État Colis (Entreprise) — every merchant's parcels by status, over a period.
+   *
+   * Declared BEFORE `:id`, or Nest matches "parcel-state" as a shipment id.
+   */
+  @Get("parcel-state")
+  @RequirePermissions("shipment:read")
+  async parcelStateReport(@Query() query: unknown): Promise<ParcelStateReport> {
+    return this.parcelState.report(query);
+  }
+
+  /**
+   * The same report as a CSV a courier opens in a spreadsheet.
+   *
+   * ⚠️ `content-disposition: attachment` is load-bearing, not cosmetic. Served
+   * inline, a browser may sniff the body and render it — and a merchant name
+   * containing markup would then execute in the courier's own session. As a
+   * download it is never parsed as a document.
+   */
+  @Get("parcel-state.csv")
+  @RequirePermissions("shipment:read")
+  @Header("content-type", "text/csv; charset=utf-8")
+  @Header("content-disposition", 'attachment; filename="etat-colis.csv"')
+  @Header("cache-control", "no-store")
+  async parcelStateCsv(@Query() query: unknown): Promise<string> {
+    return this.parcelState.csv(query);
   }
 
   @Get("dashboard")

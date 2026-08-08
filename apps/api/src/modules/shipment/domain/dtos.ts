@@ -294,6 +294,26 @@ export const listAmendmentsSchema = z.strictObject({
 });
 export type ListAmendmentsInput = z.infer<typeof listAmendmentsSchema>;
 
+/**
+ * État Colis (Entreprise) — the per-merchant status report.
+ *
+ * The period is REQUIRED. A report over "everything ever" is a full table scan
+ * whose answer nobody wants, and defaulting it silently would make the slowest
+ * query in the system the easiest one to run by accident.
+ */
+export const parcelStateQuerySchema = z
+  .strictObject({
+    from: z.iso.date(),
+    to: z.iso.date(),
+    /** Narrow to one account. Absent = every merchant. */
+    merchantId: z.uuid().optional(),
+  })
+  .refine((value) => value.from <= value.to, {
+    message: "from must not be after to",
+    path: ["to"],
+  });
+export type ParcelStateQueryInput = z.infer<typeof parcelStateQuerySchema>;
+
 // ── Queries ──────────────────────────────────────────────────────────────────
 
 export const listShipmentsSchema = z.strictObject({

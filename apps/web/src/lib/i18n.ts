@@ -193,6 +193,10 @@ interface Messages {
   readonly ticketClosedHint: string;
   readonly distributionNote: string;
   readonly paymentNote: string;
+  readonly parcelStateReport: string;
+  readonly allMerchants: string;
+  readonly exportCsv: string;
+  readonly codPending: string;
   readonly expenses: string;
   readonly recordExpense: string;
   readonly spentOn: string;
@@ -440,6 +444,10 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     ticketClosedHint: "هذه التذكرة مغلقة. افتح تذكرة جديدة.",
     distributionNote: "وصل التوزيع",
     paymentNote: "وصل الدفع",
+    parcelStateReport: "حالة الطرود",
+    allMerchants: "كل التجار",
+    exportCsv: "تصدير CSV",
+    codPending: "قيد التحصيل",
     expenses: "المصاريف",
     recordExpense: "تسجيل مصروف",
     spentOn: "تاريخ الصرف",
@@ -684,6 +692,10 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     ticketClosedHint: "Ce ticket est clôturé. Ouvrez-en un nouveau.",
     distributionNote: "Bon de distribution",
     paymentNote: "Bon de paiement",
+    parcelStateReport: "État colis",
+    allMerchants: "Tous les expéditeurs",
+    exportCsv: "Exporter CSV",
+    codPending: "À encaisser",
     expenses: "Les dépenses",
     recordExpense: "Enregistrer une dépense",
     spentOn: "Date de la dépense",
@@ -927,6 +939,10 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     ticketClosedHint: "This ticket is closed. Open a new one instead.",
     distributionNote: "Distribution note",
     paymentNote: "Payment note",
+    parcelStateReport: "Parcel state",
+    allMerchants: "All merchants",
+    exportCsv: "Export CSV",
+    codPending: "Outstanding",
     expenses: "Expenses",
     recordExpense: "Record an expense",
     spentOn: "Spent on",

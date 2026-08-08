@@ -87,4 +87,5 @@ export type {
   RequestAmendmentInput,
   RejectAmendmentInput,
   ListAmendmentsInput,
+  ParcelStateQueryInput,
 } from "./domain/dtos.js";

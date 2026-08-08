@@ -108,6 +108,7 @@ export const NAV_GATES = {
   inventory: P.INVENTORY_READ,
   finance: P.LEDGER_READ,
   support: P.SUPPORT_READ,
+  reports: P.SHIPMENT_READ,
   remarks: P.NOTE_READ,
   complaints: P.COMPLAINT_READ,
   users: P.USER_READ,

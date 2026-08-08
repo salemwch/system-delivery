@@ -13,6 +13,7 @@ import { DocumentService } from "./application/document.service.js";
 import { LabelService } from "./application/label.service.js";
 import { ShipmentAmendmentService } from "./application/shipment-amendment.service.js";
 import { ShipmentEventService } from "./application/shipment-event.service.js";
+import { ParcelStateService } from "./application/parcel-state.service.js";
 import { ShipmentStatsService } from "./application/shipment-stats.service.js";
 import { ShipmentService } from "./application/shipment.service.js";
 import { ShipmentTraceabilityService } from "./application/traceability.service.js";
@@ -43,6 +44,7 @@ import { TrackingService } from "./application/tracking.service.js";
     ShipmentAmendmentService,
     ShipmentEventService,
     ShipmentStatsService,
+    ParcelStateService,
     BulkShipmentService,
     AddressBookService,
     TrackingService,

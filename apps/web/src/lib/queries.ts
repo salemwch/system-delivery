@@ -885,3 +885,36 @@ export async function fetchMovements(
 ): Promise<PaginatedResult<MovementRow>> {
   return fetchPage<MovementRow>("/v1/inventory/movements", cursor, 50, filters);
 }
+
+/** One merchant's parcels over a period — reachable via ParcelStateReport. */
+interface ParcelStateRow {
+  readonly merchantId: string;
+  readonly merchantName: string;
+  readonly total: number;
+  /** Count per status; every status present, zero included. */
+  readonly byStatus: Readonly<Record<string, number>>;
+  readonly deliveryRate: number;
+  /** Minor units as decimal STRINGS — bigints a JSON number would round. */
+  readonly codCollectedMinor: string;
+  readonly codPendingMinor: string;
+  readonly currency: string;
+  readonly currencyExponent: number;
+}
+
+export interface ParcelStateReport {
+  readonly from: string;
+  readonly to: string;
+  readonly rows: readonly ParcelStateRow[];
+}
+
+export async function fetchParcelState(
+  from: string,
+  to: string,
+  merchantId?: string,
+): Promise<ParcelStateReport> {
+  const query = new URLSearchParams({ from, to });
+  if (merchantId !== undefined && merchantId !== "") {
+    query.set("merchantId", merchantId);
+  }
+  return apiFetch<ParcelStateReport>(`/v1/shipments/parcel-state?${query.toString()}`);
+}
