@@ -19,7 +19,7 @@ const LAYERS = {
   0: ["platform", "identity"],
   1: ["directory", "network", "fleet"],
   2: ["shipment", "pickup", "dispatch", "custody"],
-  3: ["tracking", "finance", "notification", "fraud", "complaint", "note", "support"],
+  3: ["tracking", "finance", "notification", "fraud", "complaint", "note", "support", "inventory"],
 };
 
 /** Explicit per-module allow-list, derived from the layer rule. */
@@ -54,6 +54,10 @@ const MODULE_DEPENDENCIES = {
   // parcel, but the links are composite foreign keys in 0039, so this module
   // never imports directory or shipment.
   support: ["platform", "identity"],
+  // Layer 3. Stock lives AT a hub, but the link is a composite foreign key in
+  // 0041 rather than an import — the database proves the hub exists and is in
+  // the same tenant without inventory knowing what a hub is.
+  inventory: ["platform", "identity"],
 };
 
 const ALL_MODULES = Object.values(LAYERS).flat();

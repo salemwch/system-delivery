@@ -819,3 +819,69 @@ export async function fetchExpenseSummary(
   );
   return result.data;
 }
+
+/** A consumable a hub keeps on the shelf. NOT a parcel. */
+export interface InventoryItemRow {
+  readonly id: string;
+  readonly sku: string;
+  readonly name: string;
+  readonly unit: string;
+  readonly reorderLevel: number | null;
+  readonly active: boolean;
+}
+
+/**
+ * What is on one hub's shelf.
+ *
+ * ⚠️ `quantity` is DERIVED from the movement log, never a stored counter. A SKU
+ * with no movements at a hub has no row at all — its level is "never stocked
+ * here", not zero.
+ */
+export interface StockRow {
+  readonly hubId: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly name: string;
+  readonly unit: string;
+  readonly quantity: number;
+  readonly reorderLevel: number | null;
+  readonly low: boolean;
+}
+
+export interface MovementRow {
+  readonly id: string;
+  readonly itemId: string;
+  readonly hubId: string;
+  /** IN | OUT — quantity is always positive; this carries the sign. */
+  readonly direction: string;
+  readonly quantity: number;
+  readonly reason: string;
+  readonly counterpartHubId: string | null;
+  readonly note: string | null;
+  readonly occurredAt: string;
+}
+
+export async function fetchInventoryItems(
+  activeOnly = true,
+): Promise<readonly InventoryItemRow[]> {
+  const result = await apiFetch<{ data: readonly InventoryItemRow[] }>(
+    `/v1/inventory/items?activeOnly=${String(activeOnly)}`,
+  );
+  return result.data;
+}
+
+export async function fetchStock(
+  filters: Readonly<Record<string, string>> = {},
+): Promise<readonly StockRow[]> {
+  const query = new URLSearchParams(filters);
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  const result = await apiFetch<{ data: readonly StockRow[] }>(`/v1/inventory/stock${suffix}`);
+  return result.data;
+}
+
+export async function fetchMovements(
+  cursor?: string | null,
+  filters: Readonly<Record<string, string>> = {},
+): Promise<PaginatedResult<MovementRow>> {
+  return fetchPage<MovementRow>("/v1/inventory/movements", cursor, 50, filters);
+}

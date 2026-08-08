@@ -182,6 +182,16 @@ export const PERMISSIONS = [
   "support:write",
   "support:manage",
 
+  /**
+   * Gestion de stock — the consumables a hub runs on.
+   *
+   * A hub operator holds both: they are the person at the shelf. A merchant
+   * holds neither — what a courier keeps in its store room is not their
+   * business.
+   */
+  "inventory:read",
+  "inventory:manage",
+
   // Complaints
   "complaint:read",
   "complaint:create",
@@ -312,6 +322,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "support:read",
     "support:write",
     "support:manage",
+    "inventory:read",
     "complaint:read",
     "complaint:create",
     "complaint:assign",
@@ -336,6 +347,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     // A hub operator pays for fuel out of the till; approving it is not theirs.
     "expense:read",
     "expense:record",
+    "inventory:read",
+    "inventory:manage",
     "note:read",
     "note:manage",
     "complaint:read",

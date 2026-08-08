@@ -64,6 +64,9 @@ export const P = {
   SETTLEMENT_READ: "settlement:read",
   SETTLEMENT_APPROVE: "settlement:approve",
 
+  INVENTORY_READ: "inventory:read",
+  INVENTORY_MANAGE: "inventory:manage",
+
   EXPENSE_READ: "expense:read",
   EXPENSE_RECORD: "expense:record",
   /** Posts the ledger transaction. Never the same person as the recorder. */
@@ -102,6 +105,7 @@ export const NAV_GATES = {
   amendments: P.SHIPMENT_READ,
   pickups: P.PICKUP_READ,
   custody: P.MANIFEST_READ,
+  inventory: P.INVENTORY_READ,
   finance: P.LEDGER_READ,
   support: P.SUPPORT_READ,
   remarks: P.NOTE_READ,

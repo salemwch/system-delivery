@@ -204,6 +204,23 @@ interface Messages {
   readonly spendThisMonth: string;
   readonly expenseCashWarning: string;
   readonly expenseCategoriesEmpty: string;
+  readonly inventory: string;
+  readonly item: string;
+  readonly unit: string;
+  readonly onHand: string;
+  readonly movements: string;
+  readonly recordMovement: string;
+  readonly transferStock: string;
+  readonly transferFrom: string;
+  readonly transferTo: string;
+  readonly newItem: string;
+  readonly reorderLevel: string;
+  readonly reorderLevelHint: string;
+  readonly lowStock: string;
+  readonly stockIn: string;
+  readonly stockOut: string;
+  readonly direction: string;
+  readonly allHubs: string;
   /** The sidebar section and page title. */
   readonly remarks: string;
   /** The panel heading on a subject's page — distinguishes it from the section. */
@@ -432,6 +449,23 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     spendThisMonth: "مصاريف الشهر",
     expenseCashWarning: "سيُخصم المبلغ من رصيد صندوق المركز.",
     expenseCategoriesEmpty: "أنشئ صنفا أولا حتى تتمكن من تسجيل المصاريف.",
+    inventory: "المخزون",
+    item: "المادة",
+    unit: "الوحدة",
+    onHand: "المتوفر",
+    movements: "الحركات",
+    recordMovement: "تسجيل حركة",
+    transferStock: "تحويل مخزون",
+    transferFrom: "من",
+    transferTo: "إلى",
+    newItem: "مادة جديدة",
+    reorderLevel: "حد التنبيه",
+    reorderLevelHint: "اتركه فارغا لعدم التنبيه",
+    lowStock: "مخزون منخفض",
+    stockIn: "دخول",
+    stockOut: "خروج",
+    direction: "الاتجاه",
+    allHubs: "كل المراكز",
     remarks: "الملاحظات",
     internalRemarks: "ملاحظات داخلية",
     noRemarks: "لا توجد ملاحظات",
@@ -657,6 +691,23 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     spendThisMonth: "Dépenses du mois",
     expenseCashWarning: "Le montant sera déduit du solde de la caisse du hub.",
     expenseCategoriesEmpty: "Créez d'abord une catégorie pour pouvoir enregistrer des dépenses.",
+    inventory: "Gestion de stock",
+    item: "Article",
+    unit: "Unité",
+    onHand: "En stock",
+    movements: "Mouvements",
+    recordMovement: "Enregistrer un mouvement",
+    transferStock: "Transférer",
+    transferFrom: "Depuis",
+    transferTo: "Vers",
+    newItem: "Nouvel article",
+    reorderLevel: "Seuil d'alerte",
+    reorderLevelHint: "Vide = jamais d'alerte",
+    lowStock: "Stock bas",
+    stockIn: "Entrée",
+    stockOut: "Sortie",
+    direction: "Sens",
+    allHubs: "Tous les hubs",
     remarks: "Remarques",
     internalRemarks: "Remarques internes",
     noRemarks: "Aucune remarque",
@@ -881,6 +932,23 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     spendThisMonth: "Spend this month",
     expenseCashWarning: "The amount will be deducted from that hub's cash balance.",
     expenseCategoriesEmpty: "Create a category first so expenses can be recorded.",
+    inventory: "Stock",
+    item: "Item",
+    unit: "Unit",
+    onHand: "On hand",
+    movements: "Movements",
+    recordMovement: "Record a movement",
+    transferStock: "Transfer",
+    transferFrom: "From",
+    transferTo: "To",
+    newItem: "New item",
+    reorderLevel: "Reorder level",
+    reorderLevelHint: "Empty = never warn",
+    lowStock: "Low stock",
+    stockIn: "In",
+    stockOut: "Out",
+    direction: "Direction",
+    allHubs: "All hubs",
     remarks: "Remarks",
     internalRemarks: "Internal remarks",
     noRemarks: "No remarks",

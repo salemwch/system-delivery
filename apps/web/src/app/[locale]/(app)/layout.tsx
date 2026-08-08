@@ -40,6 +40,7 @@ export default async function AppLayout({
     applications: "✚",
     pickups: "◨",
     custody: "⊡",
+    inventory: "▣",
     finance: "⊠",
     support: "☎",
     remarks: "✎",
