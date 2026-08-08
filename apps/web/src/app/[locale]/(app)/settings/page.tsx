@@ -13,9 +13,8 @@ import { hasPermission, requireSession } from "@/lib/session";
  * here changes behaviour for the whole company: the copy every customer reads,
  * and the territories dispatch routes against.
  *
- * Two sections, not the six a mature product carries. Cities, general options
- * and email are not modelled yet; an empty page promising them would be worse
- * than their absence.
+ * Only the sections that are modelled appear. General options and email are not
+ * yet; an empty page promising them would be worse than their absence.
  */
 export default async function SettingsPage({
   params,
@@ -51,6 +50,16 @@ export default async function SettingsPage({
           : locale === "fr"
             ? "Les territoires de livraison"
             : "Delivery territories",
+    },
+    {
+      href: `/${locale}/settings/cities`,
+      title: messages.cities,
+      hint:
+        locale === "ar"
+          ? "المدن المغطاة وتعريفة كل واحدة"
+          : locale === "fr"
+            ? "Les villes desservies et leur tarif"
+            : "Cities you serve and what each costs",
     },
   ];
 

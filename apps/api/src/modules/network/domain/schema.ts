@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   customType,
   index,
@@ -123,9 +124,61 @@ export const geofences = pgTable(
   (table) => [index("geofences_tenant_active_idx").on(table.tenantId, table.active)],
 );
 
+/**
+ * Villes — the coverage list and its tariff (migration `0034_cities.sql`).
+ *
+ * Sits in `network` because it is topology, not directory data: a city is what
+ * the operator charges to deliver to, and it points at the zone that serves it.
+ */
+export const cities = pgTable(
+  "cities",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    /** Operational code as printed on a manifest, e.g. TUN-ARIANA. */
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    nameAr: text("name_ar"),
+    governorate: text("governorate").notNull(),
+    postalCode: text("postal_code"),
+    zoneId: uuid("zone_id"),
+    currency: text("currency").notNull(),
+    deliveryFeeMinor: bigint("delivery_fee_minor", { mode: "bigint" }).notNull(),
+    returnFeeMinor: bigint("return_fee_minor", { mode: "bigint" }).notNull(),
+    /** Working days from pickup to the promised delivery; 0 = same day. */
+    deliveryDelayDays: integer("delivery_delay_days").notNull().default(1),
+    /** Spellings as the operator entered them. */
+    aliases: text("aliases")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** The same set through `searchKeysFor` — never written by hand. */
+    searchKeys: text("search_keys")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("cities_tenant_code_uq").on(table.tenantId, table.code),
+    index("cities_tenant_active_idx").on(
+      table.tenantId,
+      table.active,
+      table.governorate,
+      table.name,
+    ),
+  ],
+);
+
 export type Zone = typeof zones.$inferSelect;
 export type NewZone = typeof zones.$inferInsert;
 export type Hub = typeof hubs.$inferSelect;
 export type NewHub = typeof hubs.$inferInsert;
 export type Geofence = typeof geofences.$inferSelect;
 export type NewGeofence = typeof geofences.$inferInsert;
+export type City = typeof cities.$inferSelect;
+export type NewCity = typeof cities.$inferInsert;

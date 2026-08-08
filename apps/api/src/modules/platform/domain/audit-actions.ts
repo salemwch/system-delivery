@@ -73,6 +73,13 @@ export const AUDIT_ACTIONS = [
   "invoice.cancelled",
   "credit_note.drafted",
 
+  // ── Tariffs ────────────────────────────────────────────────────────────────
+  // What a city costs to deliver to is a price list. Changing it re-prices every
+  // shipment created afterwards, and the question a billing dispute asks is
+  // "what was the tariff on the 3rd, and who changed it?" — which only a trail
+  // can answer, because the table itself holds only the current value.
+  "city.tariff_changed",
+
   // ── Privacy (§10) ──────────────────────────────────────────────────────────
   "pii.exported",
   "tracking_token.bulk_issued",

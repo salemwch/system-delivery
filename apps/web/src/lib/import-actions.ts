@@ -9,6 +9,7 @@ import { parseCsv } from "./csv";
 import { INITIAL_IMPORT_STATE } from "./import-state";
 import type { ImportRowError, ImportState } from "./import-state";
 import { toE164 } from "./phone";
+import { fetchCities, resolveCities } from "./queries";
 
 /**
  * Bulk shipment import from a CSV a merchant exported.
@@ -94,6 +95,8 @@ export async function importShipments(
   // whole file with line numbers is recoverable in one edit.
   const items: { idempotencyKey: string; data: unknown }[] = [];
   const rowErrors: ImportRowError[] = [];
+  /** Destination city per line, so an unserved one can be reported by line. */
+  const cityLines: { line: number; city: string }[] = [];
 
   for (const [index, cells] of table.rows.entries()) {
     const record = Object.fromEntries(
@@ -112,6 +115,10 @@ export async function importShipments(
     if (cod === null) {
       rowErrors.push({ line, message: "codAmount is not a valid amount" });
       continue;
+    }
+
+    if (parsed.data.city !== undefined) {
+      cityLines.push({ line, city: parsed.data.city });
     }
 
     const address = {
@@ -147,6 +154,16 @@ export async function importShipments(
     return { ...INITIAL_IMPORT_STATE, error: "rowErrors", failed: rowErrors.length, rowErrors };
   }
 
+  const coverage = await unservedRows(cityLines);
+  if (coverage.length > 0) {
+    return {
+      ...INITIAL_IMPORT_STATE,
+      error: "unservedCities",
+      failed: coverage.length,
+      rowErrors: coverage,
+    };
+  }
+
   try {
     const result = await apiFetch<BulkResult>("/v1/shipments/bulk", {
       method: "POST",
@@ -172,6 +189,45 @@ export async function importShipments(
 
 /** Without these there is nothing to deliver, or nobody to deliver it to. */
 const REQUIRED_COLUMNS = ["recipientName", "recipientPhone", "address"] as const;
+
+/**
+ * Lines bound for a city the courier does not serve.
+ *
+ * Checked BEFORE anything is created: a parcel addressed to a city with no
+ * tariff has no price and no route, and it is far cheaper to fix in the
+ * spreadsheet the merchant still has open than at the hub three days later.
+ *
+ * ⚠️ Skipped entirely when the tenant has not configured a coverage list. A
+ * courier who has never opened Paramètres → Villes must not have every import
+ * refused by a feature they have not adopted, so the empty list means "no
+ * opinion", not "nothing is served".
+ *
+ * The happy path costs ONE request: the coverage-configured check runs only
+ * after something has already failed to match.
+ */
+async function unservedRows(
+  cityLines: readonly { line: number; city: string }[],
+): Promise<ImportRowError[]> {
+  const names = [...new Set(cityLines.map((entry) => entry.city))];
+  if (names.length === 0) {
+    return [];
+  }
+
+  const { unmatched } = await resolveCities(names);
+  if (unmatched.length === 0) {
+    return [];
+  }
+
+  const configured = await fetchCities(null, { active: "true" });
+  if (configured.data.length === 0) {
+    return [];
+  }
+
+  const unserved = new Set(unmatched);
+  return cityLines
+    .filter((entry) => unserved.has(entry.city))
+    .map((entry) => ({ line: entry.line, message: `${entry.city}` }));
+}
 
 function valueOf(
   headers: readonly string[],

@@ -124,6 +124,8 @@ function importErrorMessage(code: string, detail: string | undefined, locale: Lo
       return `${messages.importMissingColumns}: ${detail ?? ""}`;
     case "rowErrors":
       return messages.importRowErrors;
+    case "unservedCities":
+      return messages.unservedCities;
     case "partial":
       return messages.importPartial;
     default:

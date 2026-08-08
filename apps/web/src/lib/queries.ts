@@ -440,6 +440,58 @@ export async function fetchZones(cursor?: string | null): Promise<PaginatedResul
 }
 
 /**
+ * A served city and what it costs to deliver to.
+ *
+ * Fees are decimal STRINGS of minor units for the same reason invoice amounts
+ * are: they are bigints on the wire, and `formatMoney` takes a bigint. A tariff
+ * parsed as a JavaScript number is the exact bug this whole convention exists
+ * to prevent.
+ */
+export interface CitySummary {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly nameAr: string | null;
+  readonly governorate: string;
+  readonly postalCode: string | null;
+  readonly zoneId: string | null;
+  readonly currency: string;
+  readonly currencyExponent: number;
+  readonly deliveryFeeMinor: string;
+  readonly returnFeeMinor: string;
+  readonly deliveryDelayDays: number;
+  readonly aliases: readonly string[];
+  readonly active: boolean;
+}
+
+export async function fetchCities(
+  cursor?: string | null,
+  filters: Readonly<Record<string, string>> = {},
+): Promise<PaginatedResult<CitySummary>> {
+  return fetchPage<CitySummary>("/v1/cities", cursor, 200, filters);
+}
+
+/**
+ * Free-text destinations → the tariff that applies, for a whole CSV at once.
+ *
+ * One request for every row in the file. The alternative — a request per row —
+ * turns a 500-line import into 500 round trips before a single shipment is
+ * created.
+ */
+export async function resolveCities(
+  names: readonly string[],
+): Promise<{ readonly unmatched: readonly string[] }> {
+  if (names.length === 0) {
+    return { unmatched: [] };
+  }
+  const result = await apiFetch<{ readonly unmatched: readonly string[] }>("/v1/cities/resolve", {
+    method: "POST",
+    body: { names: [...names] },
+  });
+  return { unmatched: result.unmatched };
+}
+
+/**
  * An invoice or credit note, as `GET /v1/invoices` returns it.
  *
  * ⚠️ Every amount is a decimal STRING of minor units, not a number. An invoice

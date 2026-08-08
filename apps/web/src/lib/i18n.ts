@@ -146,6 +146,21 @@ interface Messages {
   readonly returnNote: string;
   readonly smsTemplates: string;
   readonly zones: string;
+  readonly cities: string;
+  readonly governorate: string;
+  readonly postalCode: string;
+  readonly deliveryFee: string;
+  readonly returnFee: string;
+  readonly deliveryDelay: string;
+  readonly aliasesLabel: string;
+  readonly aliasesHint: string;
+  readonly nameArabic: string;
+  readonly addCity: string;
+  readonly retire: string;
+  readonly restore: string;
+  readonly searchCity: string;
+  readonly unservedCities: string;
+  readonly loadMore: string;
   readonly importShipments: string;
   readonly templateDefault: string;
   readonly templateOverridden: string;
@@ -303,6 +318,21 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     returnNote: "وصل الإرجاع",
     smsTemplates: "قوالب الرسائل",
     zones: "المناطق",
+    cities: "المدن",
+    governorate: "الولاية",
+    postalCode: "الترقيم البريدي",
+    deliveryFee: "تعريفة التوصيل",
+    returnFee: "تعريفة الإرجاع",
+    deliveryDelay: "مدة التوصيل",
+    aliasesLabel: "تسميات أخرى",
+    aliasesHint: "اسم في كل سطر",
+    nameArabic: "الاسم بالعربية",
+    addCity: "إضافة مدينة",
+    retire: "إيقاف",
+    restore: "تفعيل",
+    searchCity: "ابحث عن مدينة",
+    unservedCities: "مدن غير مغطاة",
+    loadMore: "المزيد",
     importShipments: "استيراد الطرود",
     templateDefault: "افتراضي",
     templateOverridden: "مُعدّل",
@@ -459,6 +489,21 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     returnNote: "Bon de retour",
     smsTemplates: "Modèles SMS",
     zones: "Zones",
+    cities: "Villes",
+    governorate: "Gouvernorat",
+    postalCode: "Code postal",
+    deliveryFee: "Tarif livraison",
+    returnFee: "Tarif retour",
+    deliveryDelay: "Délai",
+    aliasesLabel: "Autres appellations",
+    aliasesHint: "Une par ligne",
+    nameArabic: "Nom en arabe",
+    addCity: "Ajouter une ville",
+    retire: "Désactiver",
+    restore: "Réactiver",
+    searchCity: "Rechercher une ville",
+    unservedCities: "Villes non desservies",
+    loadMore: "Voir plus",
     importShipments: "Import colis",
     templateDefault: "Par défaut",
     templateOverridden: "Personnalisé",
@@ -614,6 +659,21 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     returnNote: "Return note",
     smsTemplates: "SMS templates",
     zones: "Zones",
+    cities: "Cities",
+    governorate: "Governorate",
+    postalCode: "Postal code",
+    deliveryFee: "Delivery fee",
+    returnFee: "Return fee",
+    deliveryDelay: "Lead time",
+    aliasesLabel: "Also known as",
+    aliasesHint: "One per line",
+    nameArabic: "Arabic name",
+    addCity: "Add a city",
+    retire: "Retire",
+    restore: "Restore",
+    searchCity: "Search a city",
+    unservedCities: "Cities not served",
+    loadMore: "Load more",
     importShipments: "Import shipments",
     templateDefault: "Default",
     templateOverridden: "Customised",

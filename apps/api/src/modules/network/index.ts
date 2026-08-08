@@ -9,10 +9,15 @@ export { NetworkModule } from "./network.module.js";
 export { HubService } from "./application/hub.service.js";
 export { ZoneService } from "./application/zone.service.js";
 export { GeofenceService } from "./application/geofence.service.js";
+export { CityService } from "./application/city.service.js";
 
 export type { HubView, HubPage } from "./application/hub.service.js";
 export type { ZoneView, ZonePage } from "./application/zone.service.js";
 export type { GeofenceView } from "./application/geofence.service.js";
+export type { CityPage, CityMatch } from "./application/city.service.js";
+
+export { normaliseCityKey, searchKeysFor } from "./domain/city-key.js";
+export type { CityNames } from "./domain/city-key.js";
 
 export { evaluateGeofences, isInside } from "./domain/geofence-eval.js";
 export type {
@@ -22,8 +27,17 @@ export type {
 } from "./domain/geofence-eval.js";
 export type { LatLng } from "./domain/geo.js";
 
-export { hubs, zones, geofences } from "./domain/schema.js";
-export type { Hub, NewHub, Zone, NewZone, Geofence, NewGeofence } from "./domain/schema.js";
+export { hubs, zones, geofences, cities } from "./domain/schema.js";
+export type {
+  Hub,
+  NewHub,
+  Zone,
+  NewZone,
+  Geofence,
+  NewGeofence,
+  City,
+  NewCity,
+} from "./domain/schema.js";
 
 export type {
   CreateHubInput,
@@ -33,4 +47,8 @@ export type {
   UpdateZoneInput,
   ListZonesInput,
   CreateGeofenceInput,
+  CreateCityInput,
+  UpdateCityInput,
+  ListCitiesInput,
+  ResolveCitiesInput,
 } from "./domain/dtos.js";
