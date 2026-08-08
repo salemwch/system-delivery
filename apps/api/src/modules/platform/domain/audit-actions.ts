@@ -63,6 +63,16 @@ export const AUDIT_ACTIONS = [
   "settlement.marked_paid",
   "cod.amount_changed",
 
+  // ── Invoicing ─────────────────────────────────────────────────────────────
+  // An invoice is a tax document. Issuing one creates a legal obligation and
+  // consumes a number that can never be reused, so the trail records who did
+  // it and what number it took.
+  "invoice.drafted",
+  "invoice.issued",
+  "invoice.paid",
+  "invoice.cancelled",
+  "credit_note.drafted",
+
   // ── Privacy (§10) ──────────────────────────────────────────────────────────
   "pii.exported",
   "tracking_token.bulk_issued",

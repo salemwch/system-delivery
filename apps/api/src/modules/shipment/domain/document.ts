@@ -19,6 +19,8 @@
  * Pure — no I/O, no framework. Everything it needs arrives in {@link DocumentData}.
  */
 
+import { escapeHtml } from "../../../shared/http/index.js";
+
 const DOCUMENT_TYPES = ["DELIVERY_NOTE", "CONSIGNMENT_NOTE", "RETURN_NOTE"] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
@@ -185,22 +187,6 @@ function directionOf(locale: DocumentLocale): "rtl" | "ltr" {
   return locale === "ar" ? "rtl" : "ltr";
 }
 
-/**
- * Escapes text for HTML.
- *
- * ⚠️ EVERY interpolated value goes through this. A recipient name, an address line
- * and a return reason are all operator- or merchant-supplied free text, so a name
- * containing `<script>` would otherwise execute in whatever browser opens the
- * document. `&` first, or the other replacements get double-escaped.
- */
-export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/gu, "&amp;")
-    .replace(/</gu, "&lt;")
-    .replace(/>/gu, "&gt;")
-    .replace(/"/gu, "&quot;")
-    .replace(/'/gu, "&#39;");
-}
 
 /**
  * The document's local date and time.

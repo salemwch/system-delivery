@@ -204,3 +204,111 @@ export type Settlement = typeof settlements.$inferSelect;
 export type NewSettlement = typeof settlements.$inferInsert;
 export type SettlementShipment = typeof settlementShipments.$inferSelect;
 export type NewSettlementShipment = typeof settlementShipments.$inferInsert;
+
+// ── Invoicing ────────────────────────────────────────────────────────────────
+//
+// Authoritative DDL — gapless numbering, the immutability triggers, and RLS —
+// lives in migration 0032_invoices.sql. These give the query builder its types.
+
+export const billingSettings = pgTable("billing_settings", {
+  tenantId: uuid("tenant_id").primaryKey(),
+  /** TVA in basis points: 1900 = 19.00%. An integer, never a float. */
+  vatRateBp: integer("vat_rate_bp").notNull().default(1900),
+  /** Timbre fiscal, charged once per invoice. Minor units. */
+  stampDutyMinor: bigint("stamp_duty_minor", { mode: "bigint" }).notNull().default(1000n),
+  legalName: text("legal_name"),
+  taxIdentifier: text("tax_identifier"),
+  legalAddress: text("legal_address"),
+  paymentTermsDays: integer("payment_terms_days").notNull().default(30),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Gapless counters, one row per (tenant, kind, year).
+ *
+ * Not a Postgres sequence: `nextval()` does not roll back, and a gap in a tax
+ * number series reads as a destroyed invoice.
+ */
+export const invoiceSequences = pgTable("invoice_sequences", {
+  tenantId: uuid("tenant_id").notNull(),
+  kind: text("kind").notNull(),
+  year: integer("year").notNull(),
+  lastNumber: integer("last_number").notNull().default(0),
+});
+
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    merchantId: uuid("merchant_id").notNull(),
+    /** INVOICE | CREDIT_NOTE — separate legal series sharing no numbers. */
+    kind: text("kind").notNull().default("INVOICE"),
+    /** NULL until issued: an abandoned draft consumes no number. */
+    number: text("number"),
+    numberYear: integer("number_year"),
+    /** DRAFT | ISSUED | PAID | CANCELLED. Never deleted. */
+    status: text("status").notNull().default("DRAFT"),
+    periodFrom: date("period_from").notNull(),
+    periodTo: date("period_to").notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    currency: text("currency").notNull(),
+    subtotalMinor: bigint("subtotal_minor", { mode: "bigint" }).notNull().default(0n),
+    vatRateBp: integer("vat_rate_bp").notNull(),
+    vatAmountMinor: bigint("vat_amount_minor", { mode: "bigint" }).notNull().default(0n),
+    stampDutyMinor: bigint("stamp_duty_minor", { mode: "bigint" }).notNull().default(0n),
+    totalMinor: bigint("total_minor", { mode: "bigint" }).notNull().default(0n),
+    /** Snapshot at issue: the document must still print correctly in five years. */
+    sellerName: text("seller_name"),
+    sellerTaxId: text("seller_tax_id"),
+    sellerAddress: text("seller_address"),
+    buyerName: text("buyer_name"),
+    buyerTaxId: text("buyer_tax_id"),
+    buyerAddress: text("buyer_address"),
+    correctsInvoiceId: uuid("corrects_invoice_id"),
+    notes: text("notes"),
+    createdByUserId: uuid("created_by_user_id").notNull(),
+    issuedByUserId: uuid("issued_by_user_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("invoices_tenant_number_uq")
+      .on(table.tenantId, table.kind, table.number)
+      .where(sql`number IS NOT NULL`),
+    index("invoices_tenant_merchant_idx").on(table.tenantId, table.merchantId, table.createdAt),
+    index("invoices_tenant_status_idx").on(table.tenantId, table.status, table.createdAt),
+  ],
+);
+
+export const invoiceLines = pgTable(
+  "invoice_lines",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    invoiceId: uuid("invoice_id").notNull(),
+    /** 1-based: it is printed on the document. */
+    position: integer("position").notNull(),
+    description: text("description").notNull(),
+    quantity: integer("quantity").notNull().default(1),
+    unitPriceMinor: bigint("unit_price_minor", { mode: "bigint" }).notNull(),
+    lineTotalMinor: bigint("line_total_minor", { mode: "bigint" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("invoice_lines_position_uq").on(table.invoiceId, table.position),
+    index("invoice_lines_invoice_idx").on(table.invoiceId),
+  ],
+);
+
+export type BillingSettings = typeof billingSettings.$inferSelect;
+export type Invoice = typeof invoices.$inferSelect;
+export type NewInvoice = typeof invoices.$inferInsert;
+export type InvoiceLine = typeof invoiceLines.$inferSelect;
+export type NewInvoiceLine = typeof invoiceLines.$inferInsert;

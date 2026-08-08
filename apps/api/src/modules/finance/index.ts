@@ -19,6 +19,8 @@ export { RemittanceService } from "./application/remittance.service.js";
 export type { RemittanceContext } from "./application/remittance.service.js";
 export { SettlementService } from "./application/settlement.service.js";
 export type { SettlementContext } from "./application/settlement.service.js";
+export { InvoiceService } from "./application/invoice.service.js";
+export type { InvoiceView, InvoicePage } from "./application/invoice.service.js";
 export { ReconciliationService } from "./application/reconciliation.service.js";
 export type {
   CashInField,
@@ -31,6 +33,11 @@ export {
   disputeRemittanceSchema,
   createSettlementSchema,
   markSettlementPaidSchema,
+  createInvoiceSchema,
+  addInvoiceLineSchema,
+  createCreditNoteSchema,
+  listInvoicesSchema,
+  updateBillingSettingsSchema,
 } from "./domain/dtos.js";
 export type {
   SubmitRemittanceDto,
@@ -39,6 +46,13 @@ export type {
   CreateSettlementDto,
   MarkSettlementPaidDto,
 } from "./domain/dtos.js";
+
+export {
+  computeInvoiceTotals,
+  formatDocumentNumber,
+  NUMBER_PREFIX,
+} from "./domain/invoice-totals.js";
+export type { InvoiceLineInput, InvoiceTotals } from "./domain/invoice-totals.js";
 
 export {
   ACCOUNT_TYPES,
@@ -63,6 +77,10 @@ export {
   codRemittances,
   settlements,
   settlementShipments,
+  billingSettings,
+  invoiceSequences,
+  invoices,
+  invoiceLines,
 } from "./domain/schema.js";
 export type {
   LedgerAccount,
@@ -75,4 +93,9 @@ export type {
   NewSettlement,
   SettlementShipment,
   NewSettlementShipment,
+  BillingSettings,
+  Invoice,
+  NewInvoice,
+  InvoiceLine,
+  NewInvoiceLine,
 } from "./domain/schema.js";

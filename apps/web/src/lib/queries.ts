@@ -438,3 +438,78 @@ export interface ZoneSummary {
 export async function fetchZones(cursor?: string | null): Promise<PaginatedResult<ZoneSummary>> {
   return fetchPage<ZoneSummary>("/v1/zones", cursor, 100);
 }
+
+/**
+ * An invoice or credit note, as `GET /v1/invoices` returns it.
+ *
+ * ⚠️ Every amount is a decimal STRING of minor units, not a number. An invoice
+ * total in millimes exceeds `Number.MAX_SAFE_INTEGER` long before the amount
+ * becomes implausible, and `formatMoney` takes `bigint` for exactly this reason.
+ *
+ * `currencyExponent` comes from the API, never from a constant here: TND has
+ * THREE decimals and a hardcoded ÷100 misprices every Tunisian invoice tenfold.
+ */
+export interface InvoiceSummary {
+  readonly id: string;
+  /** INVOICE | CREDIT_NOTE. */
+  readonly kind: string;
+  /** NULL while a draft — an abandoned draft consumes no number. */
+  readonly number: string | null;
+  /** DRAFT | ISSUED | PAID | CANCELLED. */
+  readonly status: string;
+  readonly merchantId: string;
+  readonly periodFrom: string;
+  readonly periodTo: string;
+  readonly issuedAt: string | null;
+  readonly dueAt: string | null;
+  readonly currency: string;
+  readonly currencyExponent: number;
+  readonly subtotalMinor: string;
+  /** Basis points: 1900 = 19.00%. */
+  readonly vatRateBp: number;
+  readonly vatAmountMinor: string;
+  readonly stampDutyMinor: string;
+  readonly totalMinor: string;
+  readonly sellerName: string | null;
+  readonly sellerTaxId: string | null;
+  readonly buyerName: string | null;
+  readonly correctsInvoiceId: string | null;
+  readonly notes: string | null;
+  readonly createdAt: string;
+  readonly lines: readonly InvoiceLineRow[];
+}
+
+/** One invoice line. Reachable through {@link InvoiceSummary}. */
+interface InvoiceLineRow {
+  readonly id: string;
+  readonly position: number;
+  readonly description: string;
+  readonly quantity: number;
+  readonly unitPriceMinor: string;
+  readonly lineTotalMinor: string;
+}
+
+/** The tenant's billing configuration. Amounts in minor units, as strings. */
+export interface BillingSettings {
+  readonly vatRateBp: number;
+  readonly stampDutyMinor: string;
+  readonly paymentTermsDays: number;
+  readonly legalName: string | null;
+  readonly taxIdentifier: string | null;
+  readonly legalAddress: string | null;
+}
+
+export async function fetchInvoices(
+  cursor?: string | null,
+  filters: Readonly<Record<string, string>> = {},
+): Promise<PaginatedResult<InvoiceSummary>> {
+  return fetchPage<InvoiceSummary>("/v1/invoices", cursor, 25, filters);
+}
+
+export async function fetchInvoice(id: string): Promise<InvoiceSummary> {
+  return apiFetch<InvoiceSummary>(`/v1/invoices/${encodeURIComponent(id)}`);
+}
+
+export async function fetchBillingSettings(): Promise<BillingSettings> {
+  return apiFetch<BillingSettings>("/v1/invoices/settings");
+}

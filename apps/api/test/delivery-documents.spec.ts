@@ -13,7 +13,8 @@ import { TenantService } from "../src/modules/platform/application/tenant.servic
 import { DocumentService } from "../src/modules/shipment/application/document.service.js";
 import { ShipmentEventService } from "../src/modules/shipment/application/shipment-event.service.js";
 import { ShipmentService } from "../src/modules/shipment/application/shipment.service.js";
-import { escapeHtml, renderDocument } from "../src/modules/shipment/domain/document.js";
+import { renderDocument } from "../src/modules/shipment/domain/document.js";
+import { escapeHtml } from "../src/shared/http/index.js";
 import type { DocumentData } from "../src/modules/shipment/domain/document.js";
 import { parcelQrSvg } from "../src/modules/shipment/domain/parcel-qr.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";

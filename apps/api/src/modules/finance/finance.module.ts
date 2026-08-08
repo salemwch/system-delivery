@@ -1,10 +1,13 @@
 import { Module } from "@nestjs/common";
 
+import { MoneyModule } from "../../shared/money/money.module.js";
 import { PlatformModule } from "../platform/index.js";
 import { FinanceController } from "./api/finance.controller.js";
+import { InvoiceController } from "./api/invoice.controller.js";
 import { LedgerService } from "./application/ledger.service.js";
 import { LedgerEventHandler } from "./application/ledger-event.handler.js";
 import { ReconciliationService } from "./application/reconciliation.service.js";
+import { InvoiceService } from "./application/invoice.service.js";
 import { RemittanceService } from "./application/remittance.service.js";
 import { SettlementService } from "./application/settlement.service.js";
 
@@ -20,14 +23,15 @@ import { SettlementService } from "./application/settlement.service.js";
  * lower-layer or self-contained; finance never reads up.
  */
 @Module({
-  imports: [PlatformModule],
-  controllers: [FinanceController],
+  imports: [PlatformModule, MoneyModule],
+  controllers: [FinanceController, InvoiceController],
   providers: [
     LedgerService,
     LedgerEventHandler,
     RemittanceService,
     SettlementService,
     ReconciliationService,
+    InvoiceService,
   ],
   exports: [
     LedgerService,
@@ -35,6 +39,7 @@ import { SettlementService } from "./application/settlement.service.js";
     RemittanceService,
     SettlementService,
     ReconciliationService,
+    InvoiceService,
   ],
 })
 export class FinanceModule {}

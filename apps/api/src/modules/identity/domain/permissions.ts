@@ -107,6 +107,18 @@ export const PERMISSIONS = [
   "settlement:read",
   "settlement:approve",
   "settlement:mark_paid",
+  /** Draft an invoice. Drafting is not issuing — a draft has no legal weight. */
+  "invoice:read",
+  "invoice:draft",
+  /**
+   * ISSUE an invoice or credit note.
+   *
+   * Separate from drafting because this is the irreversible one: it consumes a
+   * number from a gapless legal series and freezes the document. Whoever
+   * prepares an invoice should not necessarily be the one who commits the
+   * company to it.
+   */
+  "invoice:issue",
 
   // Complaints
   "complaint:read",
@@ -272,6 +284,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "settlement:read",
     "settlement:approve",
     "settlement:mark_paid",
+    "invoice:read",
+    "invoice:draft",
+    "invoice:issue",
     "complaint:read",
     "complaint:resolve",
     "pii:export",
@@ -347,6 +362,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     // "How is my client doing?" — the two numbers a salesperson is asked for.
     "cod:read_amount",
     "settlement:read",
+    // Their portfolio's invoices, narrowed by RLS (I25).
+    "invoice:read",
     // Raise, and follow, a problem on behalf of their merchant.
     "complaint:read",
     "complaint:create",
@@ -400,6 +417,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     // "How much am I owed?" — the question a merchant asks most.
     "cod:read_amount",
     "settlement:read",
+    // Their own invoices. RLS narrows the rows to this merchant (I24).
+    "invoice:read",
     // Raise a problem with their own parcel.
     "complaint:create",
     "complaint:read",

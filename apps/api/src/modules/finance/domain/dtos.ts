@@ -75,3 +75,77 @@ export const markSettlementPaidSchema = z.strictObject({
   paymentReference: z.string().trim().min(1).max(200).optional(),
 });
 export type MarkSettlementPaidDto = z.infer<typeof markSettlementPaidSchema>;
+
+// ── Invoicing ────────────────────────────────────────────────────────────────
+
+/**
+ * An amount in MINOR UNITS.
+ *
+ * Accepts a number, a digit string, or a bigint and normalises to bigint. The
+ * three-branch union is the same defence as `amountMinor` in the shipment DTOs:
+ * a schema parsed twice (once by the controller pipe, once by the service) sees
+ * a bigint the second time, and a union without that branch fails with
+ * INVALID_UNION on every HTTP request while every direct-call test passes.
+ */
+const invoiceAmountMinor = z
+  .union([
+    z.number().int().nonnegative(),
+    z.string().regex(/^\d+$/u, "must be a whole amount"),
+    z.bigint().nonnegative(),
+  ])
+  .transform((value) => BigInt(value));
+
+const invoiceLineInput = z.strictObject({
+  description: z.string().trim().min(1, "description is required").max(500),
+  quantity: z.number().int().min(1).max(1_000_000),
+  unitPriceMinor: invoiceAmountMinor,
+});
+
+export const createInvoiceSchema = z
+  .strictObject({
+    merchantId: z.uuid(),
+    periodFrom: isoDate,
+    periodTo: isoDate,
+    currency: z.string().trim().length(3).transform((value) => value.toUpperCase()),
+    /** Optional: a draft may be opened empty and filled in afterwards. */
+    lines: z.array(invoiceLineInput).max(500).optional(),
+    notes: z.string().trim().max(2000).optional(),
+  })
+  .refine((value) => value.periodTo >= value.periodFrom, {
+    path: ["periodTo"],
+    message: "periodTo must not be before periodFrom",
+  });
+
+export const addInvoiceLineSchema = z.strictObject({
+  /** Replaces every line: positions are contiguous, so a partial edit renumbers. */
+  lines: z.array(invoiceLineInput).min(1).max(500),
+});
+
+export const createCreditNoteSchema = z.strictObject({
+  correctsInvoiceId: z.uuid(),
+  /** Omitted credits the original in full, which is the common case. */
+  lines: z.array(invoiceLineInput).max(500).optional(),
+  reason: z.string().trim().min(1).max(2000).optional(),
+});
+
+export const listInvoicesSchema = z.strictObject({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  cursor: z.uuid().optional(),
+  status: z.enum(["DRAFT", "ISSUED", "PAID", "CANCELLED"]).optional(),
+  kind: z.enum(["INVOICE", "CREDIT_NOTE"]).optional(),
+  merchantId: z.uuid().optional(),
+});
+
+export const updateBillingSettingsSchema = z
+  .strictObject({
+    /** Basis points: 1900 = 19.00%. */
+    vatRateBp: z.number().int().min(0).max(10_000).optional(),
+    stampDutyMinor: invoiceAmountMinor.optional(),
+    legalName: z.string().trim().min(1).max(200).nullable().optional(),
+    taxIdentifier: z.string().trim().min(1).max(50).nullable().optional(),
+    legalAddress: z.string().trim().min(1).max(500).nullable().optional(),
+    paymentTermsDays: z.number().int().min(0).max(365).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "at least one field must be provided",
+  });

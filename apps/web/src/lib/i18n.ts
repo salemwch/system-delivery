@@ -86,6 +86,38 @@ interface Messages {
   readonly pickupWindow: string;
   readonly claimPickup: string;
   readonly pickupNotClaimable: string;
+  readonly invoices: string;
+  readonly invoice: string;
+  readonly creditNote: string;
+  readonly newInvoice: string;
+  readonly billingSettings: string;
+  readonly invoiceNumber: string;
+  readonly period: string;
+  readonly issueDate: string;
+  readonly dueDate: string;
+  readonly subtotalHt: string;
+  readonly vat: string;
+  readonly stampDuty: string;
+  readonly totalTtc: string;
+  readonly description: string;
+  readonly quantity: string;
+  readonly unitPrice: string;
+  readonly amount: string;
+  readonly addLine: string;
+  readonly issueInvoice: string;
+  readonly markPaid: string;
+  readonly cancelDraft: string;
+  readonly createCreditNote: string;
+  readonly printInvoice: string;
+  readonly reason: string;
+  readonly vatRate: string;
+  readonly paymentTerms: string;
+  readonly legalName: string;
+  readonly taxIdentifier: string;
+  readonly legalAddress: string;
+  readonly issueWarning: string;
+  readonly correctsInvoice: string;
+  readonly invoiceActionFailed: string;
   readonly assignedToYou: string;
   readonly pickupAddress: string;
   readonly pickupAddressHint: string;
@@ -210,6 +242,38 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     parcels: "الطرود",
     pickupWindow: "الموعد",
     claimPickup: "أتكفّل بها",
+    invoices: "الفواتير",
+    invoice: "فاتورة",
+    creditNote: "إشعار دائن",
+    newInvoice: "فاتورة جديدة",
+    billingSettings: "إعدادات الفوترة",
+    invoiceNumber: "رقم الفاتورة",
+    period: "الفترة",
+    issueDate: "تاريخ الإصدار",
+    dueDate: "تاريخ الاستحقاق",
+    subtotalHt: "المجموع دون أداء",
+    vat: "الأداء على القيمة المضافة",
+    stampDuty: "الطابع الجبائي",
+    totalTtc: "المجموع بالأداء",
+    description: "البيان",
+    quantity: "الكمية",
+    unitPrice: "سعر الوحدة",
+    amount: "المبلغ",
+    addLine: "إضافة سطر",
+    issueInvoice: "إصدار الفاتورة",
+    markPaid: "تسجيل الخلاص",
+    cancelDraft: "إلغاء المسودة",
+    createCreditNote: "إنشاء إشعار دائن",
+    printInvoice: "طباعة",
+    reason: "السبب",
+    vatRate: "نسبة الأداء (%)",
+    paymentTerms: "أجل الخلاص (أيام)",
+    legalName: "الاسم القانوني",
+    taxIdentifier: "المعرف الجبائي",
+    legalAddress: "العنوان القانوني",
+    issueWarning: "الإصدار نهائي: يستهلك رقمًا لا يمكن استرجاعه، وتصبح الفاتورة غير قابلة للتعديل.",
+    correctsInvoice: "يلغي ويعوض الفاتورة",
+    invoiceActionFailed: "تعذّر تنفيذ العملية.",
     pickupNotClaimable: "لم تعد متاحة",
     assignedToYou: "مُسندة إليك",
     pickupAddress: "عنوان الاستلام",
@@ -334,6 +398,38 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     parcels: "Colis",
     pickupWindow: "Créneau",
     claimPickup: "Je m'en charge",
+    invoices: "Factures",
+    invoice: "Facture",
+    creditNote: "Avoir",
+    newInvoice: "Nouvelle facture",
+    billingSettings: "Paramètres de facturation",
+    invoiceNumber: "N° de facture",
+    period: "Période",
+    issueDate: "Date d'émission",
+    dueDate: "Échéance",
+    subtotalHt: "Total HT",
+    vat: "TVA",
+    stampDuty: "Timbre fiscal",
+    totalTtc: "Total TTC",
+    description: "Désignation",
+    quantity: "Qté",
+    unitPrice: "P.U. HT",
+    amount: "Montant",
+    addLine: "Ajouter une ligne",
+    issueInvoice: "Émettre la facture",
+    markPaid: "Marquer payée",
+    cancelDraft: "Annuler le brouillon",
+    createCreditNote: "Créer un avoir",
+    printInvoice: "Imprimer",
+    reason: "Motif",
+    vatRate: "Taux de TVA (%)",
+    paymentTerms: "Délai de paiement (jours)",
+    legalName: "Raison sociale",
+    taxIdentifier: "Matricule fiscal",
+    legalAddress: "Adresse légale",
+    issueWarning: "L'émission est définitive : elle consomme un numéro non réutilisable et fige la facture.",
+    correctsInvoice: "Annule et remplace la facture",
+    invoiceActionFailed: "L'opération n'a pas pu aboutir.",
     pickupNotClaimable: "Plus disponible",
     assignedToYou: "Qui vous est attribué",
     pickupAddress: "Adresse de ramassage",
@@ -457,6 +553,38 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     parcels: "Parcels",
     pickupWindow: "Window",
     claimPickup: "I'll take it",
+    invoices: "Invoices",
+    invoice: "Invoice",
+    creditNote: "Credit note",
+    newInvoice: "New invoice",
+    billingSettings: "Billing settings",
+    invoiceNumber: "Invoice no.",
+    period: "Period",
+    issueDate: "Issue date",
+    dueDate: "Due date",
+    subtotalHt: "Subtotal",
+    vat: "VAT",
+    stampDuty: "Stamp duty",
+    totalTtc: "Total",
+    description: "Description",
+    quantity: "Qty",
+    unitPrice: "Unit price",
+    amount: "Amount",
+    addLine: "Add line",
+    issueInvoice: "Issue invoice",
+    markPaid: "Mark paid",
+    cancelDraft: "Cancel draft",
+    createCreditNote: "Create credit note",
+    printInvoice: "Print",
+    reason: "Reason",
+    vatRate: "VAT rate (%)",
+    paymentTerms: "Payment terms (days)",
+    legalName: "Legal name",
+    taxIdentifier: "Tax ID",
+    legalAddress: "Legal address",
+    issueWarning: "Issuing is final: it consumes a number that cannot be reused and freezes the invoice.",
+    correctsInvoice: "Cancels and replaces invoice",
+    invoiceActionFailed: "The operation could not be completed.",
     pickupNotClaimable: "No longer available",
     assignedToYou: "Assigned to you",
     pickupAddress: "Pickup address",
