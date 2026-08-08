@@ -13,7 +13,14 @@ import { MESSAGES, toLocale } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 import { P } from "@/lib/permissions";
 import { hasPermission, requireSession } from "@/lib/session";
-import { fetchCommercials, fetchMerchant, fetchMerchantStats } from "@/lib/queries";
+import { NotePanel } from "@/components/note-panel";
+import { formatDateTime } from "@/lib/format";
+import {
+  fetchCommercials,
+  fetchMerchant,
+  fetchMerchantStats,
+  fetchNotesFor,
+} from "@/lib/queries";
 import type { MerchantDetail, MerchantStats } from "@/lib/queries";
 
 /**
@@ -39,12 +46,17 @@ export default async function MerchantDetailPage({
 
   const session = await requireSession(locale);
   const canAssign = hasPermission(session, P.MERCHANT_ASSIGN_MANAGER);
+  const canReadNotes = hasPermission(session, P.NOTE_READ);
+  const canWriteNotes = hasPermission(session, P.NOTE_MANAGE);
 
-  const [merchant, stats, commercials] = await Promise.all([
+  const [merchant, stats, commercials, notes] = await Promise.all([
     fetchMerchant(id),
     fetchMerchantStats(id),
     // Only an OWNER can reassign, so only an OWNER pays for the user lookup.
     canAssign ? fetchCommercials() : Promise.resolve({ data: [], cursor: null }),
+    // Likewise: a COMMERCIAL holds neither note permission, so their page makes
+    // one fewer request rather than fetching something they may not see.
+    canReadNotes ? fetchNotesFor("MERCHANT", id) : Promise.resolve([]),
   ]);
 
   const defaultWindow = nextWorkingWindow(timezone());
@@ -135,6 +147,23 @@ export default async function MerchantDetailPage({
             locale={locale}
           />
         </section>
+      ) : null}
+
+      {canReadNotes ? (
+        <NotePanel
+          locale={locale}
+          subjectType="MERCHANT"
+          subjectId={id}
+          canWrite={canWriteNotes}
+          notes={notes.map((note) => ({
+            id: note.id,
+            body: note.body,
+            authorName: note.authorName,
+            pinned: note.pinned,
+            resolvedAt: note.resolvedAt,
+            writtenAt: formatDateTime(note.createdAt, locale, timezone()),
+          }))}
+        />
       ) : null}
     </div>
   );

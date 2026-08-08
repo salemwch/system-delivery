@@ -161,6 +161,19 @@ interface Messages {
   readonly searchCity: string;
   readonly unservedCities: string;
   readonly loadMore: string;
+  /** The sidebar section and page title. */
+  readonly remarks: string;
+  /** The panel heading on a subject's page — distinguishes it from the section. */
+  readonly internalRemarks: string;
+  readonly noRemarks: string;
+  readonly addRemark: string;
+  readonly pin: string;
+  readonly unpin: string;
+  readonly resolveRemark: string;
+  readonly reopen: string;
+  readonly openRemarks: string;
+  readonly resolvedRemarks: string;
+  readonly subject: string;
   readonly importShipments: string;
   readonly templateDefault: string;
   readonly templateOverridden: string;
@@ -333,6 +346,17 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     searchCity: "ابحث عن مدينة",
     unservedCities: "مدن غير مغطاة",
     loadMore: "المزيد",
+    remarks: "الملاحظات",
+    internalRemarks: "ملاحظات داخلية",
+    noRemarks: "لا توجد ملاحظات",
+    addRemark: "أضف ملاحظة",
+    pin: "تثبيت",
+    unpin: "إلغاء التثبيت",
+    resolveRemark: "معالجة",
+    reopen: "إعادة فتح",
+    openRemarks: "قيد المعالجة",
+    resolvedRemarks: "تمت معالجتها",
+    subject: "الموضوع",
     importShipments: "استيراد الطرود",
     templateDefault: "افتراضي",
     templateOverridden: "مُعدّل",
@@ -504,6 +528,17 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     searchCity: "Rechercher une ville",
     unservedCities: "Villes non desservies",
     loadMore: "Voir plus",
+    remarks: "Remarques",
+    internalRemarks: "Remarques internes",
+    noRemarks: "Aucune remarque",
+    addRemark: "Ajouter une remarque",
+    pin: "Épingler",
+    unpin: "Détacher",
+    resolveRemark: "Traiter",
+    reopen: "Rouvrir",
+    openRemarks: "À traiter",
+    resolvedRemarks: "Traitées",
+    subject: "Objet",
     importShipments: "Import colis",
     templateDefault: "Par défaut",
     templateOverridden: "Personnalisé",
@@ -674,6 +709,17 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     searchCity: "Search a city",
     unservedCities: "Cities not served",
     loadMore: "Load more",
+    remarks: "Remarks",
+    internalRemarks: "Internal remarks",
+    noRemarks: "No remarks",
+    addRemark: "Add a remark",
+    pin: "Pin",
+    unpin: "Unpin",
+    resolveRemark: "Resolve",
+    reopen: "Reopen",
+    openRemarks: "Open",
+    resolvedRemarks: "Resolved",
+    subject: "Subject",
     importShipments: "Import shipments",
     templateDefault: "Default",
     templateOverridden: "Customised",

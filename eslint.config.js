@@ -19,7 +19,7 @@ const LAYERS = {
   0: ["platform", "identity"],
   1: ["directory", "network", "fleet"],
   2: ["shipment", "pickup", "dispatch", "custody"],
-  3: ["tracking", "finance", "notification", "fraud", "complaint"],
+  3: ["tracking", "finance", "notification", "fraud", "complaint", "note"],
 };
 
 /** Explicit per-module allow-list, derived from the layer rule. */
@@ -45,6 +45,11 @@ const MODULE_DEPENDENCIES = {
   // their context and, for COD_DISPUTE, posts a reversing ledger transaction.
   complaint: ["platform", "identity", "directory", "shipment", "finance"],
   fraud: ["platform", "identity", "tracking"],
+  // Layer 3, and imports NOTHING above layer 0 on purpose. A note is ABOUT a
+  // shipment, a merchant or a driver, but it never reads them: the link is three
+  // foreign keys in migration 0035, so the database guarantees the subject exists
+  // without this module knowing anything about those contexts.
+  note: ["platform", "identity"],
 };
 
 const ALL_MODULES = Object.values(LAYERS).flat();

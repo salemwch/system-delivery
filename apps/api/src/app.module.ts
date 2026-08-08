@@ -9,6 +9,7 @@ import { FinanceModule, LedgerEventHandler } from "./modules/finance/index.js";
 import { FleetModule } from "./modules/fleet/index.js";
 import { IdentityModule } from "./modules/identity/index.js";
 import { NetworkModule } from "./modules/network/index.js";
+import { NoteModule } from "./modules/note/index.js";
 import { NotificationEventHandler, NotificationModule } from "./modules/notification/index.js";
 import { PickupModule } from "./modules/pickup/index.js";
 import { PlatformModule, REPLAY_HANDLERS } from "./modules/platform/index.js";
@@ -51,6 +52,7 @@ import { DatabaseModule } from "./shared/database/database.module.js";
     FinanceModule,
     TrackingModule,
     ComplaintModule,
+    NoteModule,
     NotificationModule,
     LoggerModule.forRootAsync({
       imports: [AppConfigModule],

@@ -120,6 +120,17 @@ export const PERMISSIONS = [
    */
   "invoice:issue",
 
+  /**
+   * Internal remarks on a parcel, a merchant or a driver.
+   *
+   * Deliberately NOT granted to MERCHANT or COMMERCIAL, and this is the whole
+   * design: a note is what staff tell each other. The moment the subject can
+   * read it, people stop writing the thing worth writing, and the log becomes a
+   * second, blander copy of the status history.
+   */
+  "note:read",
+  "note:manage",
+
   // Complaints
   "complaint:read",
   "complaint:create",
@@ -243,6 +254,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "vehicle:read",
     "hub:read",
     "manifest:read",
+    "note:read",
+    "note:manage",
     "complaint:read",
     "complaint:create",
     "complaint:assign",
@@ -264,6 +277,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "manifest:seal",
     "manifest:receive",
     "cod:remit_receive",
+    "note:read",
+    "note:manage",
     "complaint:read",
     "complaint:create",
   ],
@@ -287,6 +302,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "invoice:read",
     "invoice:draft",
     "invoice:issue",
+    // Read-only on remarks, like everything else operational: finance reads the
+    // context behind a disputed parcel without being able to write into it.
+    "note:read",
     "complaint:read",
     "complaint:resolve",
     "pii:export",

@@ -440,6 +440,52 @@ export async function fetchZones(cursor?: string | null): Promise<PaginatedResul
 }
 
 /**
+ * An internal staff remark on a parcel, a merchant or a driver.
+ *
+ * `body` is immutable once written (migration 0035), so there is no edit form
+ * anywhere in this app — only pin, resolve, and write a new one.
+ */
+export interface NoteSummary {
+  readonly id: string;
+  /** SHIPMENT | MERCHANT | DRIVER. */
+  readonly subjectType: string;
+  readonly subjectId: string;
+  readonly body: string;
+  readonly authorUserId: string;
+  readonly authorName: string | null;
+  readonly pinned: boolean;
+  readonly resolvedAt: string | null;
+  readonly createdAt: string;
+}
+
+export async function fetchNotes(
+  cursor?: string | null,
+  filters: Readonly<Record<string, string>> = {},
+): Promise<PaginatedResult<NoteSummary>> {
+  return fetchPage<NoteSummary>("/v1/notes", cursor, 50, filters);
+}
+
+/**
+ * A subject's own remarks.
+ *
+ * Both halves of the filter or neither — the API refuses one alone rather than
+ * quietly listing every subject's notes, which on a detail page would mean
+ * showing another parcel's remarks.
+ */
+export async function fetchNotesFor(
+  subjectType: "SHIPMENT" | "MERCHANT" | "DRIVER",
+  subjectId: string,
+  resolved = false,
+): Promise<readonly NoteSummary[]> {
+  const page = await fetchNotes(null, {
+    subjectType,
+    subjectId,
+    resolved: String(resolved),
+  });
+  return page.data;
+}
+
+/**
  * A served city and what it costs to deliver to.
  *
  * Fees are decimal STRINGS of minor units for the same reason invoice amounts

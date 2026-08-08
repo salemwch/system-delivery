@@ -7,7 +7,8 @@ import { MESSAGES, toLocale } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 import { hasPermission, readSession } from "@/lib/session";
 import { P } from "@/lib/permissions";
-import { fetchShipment, fetchShipmentEvents } from "@/lib/queries";
+import { NotePanel } from "@/components/note-panel";
+import { fetchNotesFor, fetchShipment, fetchShipmentEvents } from "@/lib/queries";
 
 export default async function ShipmentDetailPage({
   params,
@@ -21,9 +22,17 @@ export default async function ShipmentDetailPage({
   const messages = MESSAGES[locale];
   const canReadCod = session !== null && hasPermission(session, P.COD_READ_AMOUNT);
   const canPrint = session !== null && hasPermission(session, P.SHIPMENT_LABEL);
+  const canReadNotes = session !== null && hasPermission(session, P.NOTE_READ);
+  const canWriteNotes = session !== null && hasPermission(session, P.NOTE_MANAGE);
 
-  // Two calls, in parallel: the detail response never embedded its events.
-  const [shipment, events] = await Promise.all([fetchShipment(id), fetchShipmentEvents(id)]);
+  // Three calls, in parallel: the detail response never embedded its events,
+  // and remarks are a separate context entirely. Sequential awaits here would
+  // add a round trip to every parcel a dispatcher opens.
+  const [shipment, events, notes] = await Promise.all([
+    fetchShipment(id),
+    fetchShipmentEvents(id),
+    canReadNotes ? fetchNotesFor("SHIPMENT", id) : Promise.resolve([]),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -98,6 +107,25 @@ export default async function ShipmentDetailPage({
           ))}
         </ol>
       </Section>
+
+      {canReadNotes ? (
+        <NotePanel
+          locale={locale}
+          subjectType="SHIPMENT"
+          subjectId={id}
+          canWrite={canWriteNotes}
+          notes={notes.map((note) => ({
+            id: note.id,
+            body: note.body,
+            authorName: note.authorName,
+            pinned: note.pinned,
+            resolvedAt: note.resolvedAt,
+            // Formatted here: the panel is a client component and has no
+            // tenant timezone to format against.
+            writtenAt: formatDateTime(note.createdAt, locale, tz),
+          }))}
+        />
+      ) : null}
     </div>
   );
 }
