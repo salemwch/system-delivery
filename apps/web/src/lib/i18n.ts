@@ -161,6 +161,17 @@ interface Messages {
   readonly searchCity: string;
   readonly unservedCities: string;
   readonly loadMore: string;
+  readonly applications: string;
+  readonly approveApplication: string;
+  readonly rejectApplication: string;
+  readonly logLead: string;
+  readonly expectedVolume: string;
+  readonly source: string;
+  readonly sourcePublic: string;
+  readonly sourceStaff: string;
+  readonly pending: string;
+  readonly approved: string;
+  readonly rejected: string;
   /** The sidebar section and page title. */
   readonly remarks: string;
   /** The panel heading on a subject's page — distinguishes it from the section. */
@@ -346,6 +357,17 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     searchCity: "ابحث عن مدينة",
     unservedCities: "مدن غير مغطاة",
     loadMore: "المزيد",
+    applications: "عملاء جدد",
+    approveApplication: "قبول",
+    rejectApplication: "رفض",
+    logLead: "تسجيل عميل محتمل",
+    expectedVolume: "الحجم المتوقع",
+    source: "المصدر",
+    sourcePublic: "استمارة",
+    sourceStaff: "تسجيل داخلي",
+    pending: "في الانتظار",
+    approved: "مقبول",
+    rejected: "مرفوض",
     remarks: "الملاحظات",
     internalRemarks: "ملاحظات داخلية",
     noRemarks: "لا توجد ملاحظات",
@@ -528,6 +550,17 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     searchCity: "Rechercher une ville",
     unservedCities: "Villes non desservies",
     loadMore: "Voir plus",
+    applications: "Nouveaux clients",
+    approveApplication: "Accepter",
+    rejectApplication: "Refuser",
+    logLead: "Enregistrer un prospect",
+    expectedVolume: "Volume estimé",
+    source: "Origine",
+    sourcePublic: "Formulaire",
+    sourceStaff: "Saisie interne",
+    pending: "En attente",
+    approved: "Acceptés",
+    rejected: "Refusés",
     remarks: "Remarques",
     internalRemarks: "Remarques internes",
     noRemarks: "Aucune remarque",
@@ -709,6 +742,17 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     searchCity: "Search a city",
     unservedCities: "Cities not served",
     loadMore: "Load more",
+    applications: "New clients",
+    approveApplication: "Approve",
+    rejectApplication: "Reject",
+    logLead: "Log a lead",
+    expectedVolume: "Expected volume",
+    source: "Source",
+    sourcePublic: "Form",
+    sourceStaff: "Logged by staff",
+    pending: "Pending",
+    approved: "Approved",
+    rejected: "Rejected",
     remarks: "Remarks",
     internalRemarks: "Internal remarks",
     noRemarks: "No remarks",

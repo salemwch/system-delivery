@@ -440,6 +440,40 @@ export async function fetchZones(cursor?: string | null): Promise<PaginatedResul
 }
 
 /**
+ * A shipper asking to be taken on — nouveaux clients.
+ *
+ * Not a merchant. Approving one CREATES a merchant and sets `merchantId`; until
+ * then this is a stranger who filled in a form, which is why nothing in the
+ * merchant surface ever sees these rows.
+ */
+export interface MerchantApplicationSummary {
+  readonly id: string;
+  readonly businessName: string;
+  readonly contactName: string;
+  readonly contactPhone: string;
+  readonly contactEmail: string | null;
+  readonly city: string | null;
+  readonly addressLine: string | null;
+  readonly expectedVolume: number | null;
+  readonly message: string | null;
+  /** PUBLIC_FORM | STAFF. */
+  readonly source: string;
+  /** PENDING | APPROVED | REJECTED. */
+  readonly status: string;
+  readonly merchantId: string | null;
+  readonly decidedAt: string | null;
+  readonly decisionReason: string | null;
+  readonly createdAt: string;
+}
+
+export async function fetchApplications(
+  cursor?: string | null,
+  status = "PENDING",
+): Promise<PaginatedResult<MerchantApplicationSummary>> {
+  return fetchPage<MerchantApplicationSummary>("/v1/merchant-applications", cursor, 50, { status });
+}
+
+/**
  * An internal staff remark on a parcel, a merchant or a driver.
  *
  * `body` is immutable once written (migration 0035), so there is no edit form

@@ -60,6 +60,18 @@ export const PERMISSIONS = [
   "merchant:onboard",
   /** Hand an account to a commercial, or take it back. Owner-only. */
   "merchant:assign_manager",
+  /**
+   * Decide a merchant application — approve it into a real merchant, or reject
+   * it with a reason.
+   *
+   * Deliberately NOT folded into `merchant:create`. Creating a merchant is
+   * ordinary data entry; deciding an application is answering someone who
+   * applied, and a courier may well want the salesperson who can enter accounts
+   * to be a different person from the one who accepts strangers. Anyone holding
+   * this can be given `merchant:create` too — the reverse is the one that must
+   * not be automatic.
+   */
+  "merchant:decide_application",
 
   // Recipients (the address book — never called "customer", invariant I18)
   "recipient:read",
@@ -240,6 +252,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "merchant:read",
     "merchant:create",
     "merchant:update",
+    "merchant:decide_application",
     "recipient:read",
     "recipient:create",
     "recipient:update",
@@ -365,6 +378,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "merchant:create",
     "merchant:update",
     "merchant:onboard",
+    // Taking a lead is the salesperson's job, and approving one makes them its
+    // account manager automatically — the merchant is created under their
+    // ambient context, so `merchants.account_manager_id` is theirs (I25).
+    "merchant:decide_application",
     // The collection run: request it, take it on, take it OUT themselves, and
     // scan the parcels in. `pickup:claim` rather than `pickup:assign` — see the
     // permission's own note; a commercial routes nobody's work but their own.

@@ -136,9 +136,54 @@ export const recipients = pgTable(
   ],
 );
 
+/**
+ * Nouveaux clients — shippers asking to be taken on (migration 0037).
+ *
+ * Deliberately NOT a status on `merchants`: an applicant is a stranger who
+ * filled in a form, and giving them the same table would mean every merchant
+ * query ever written has to remember to exclude them. Approving an application
+ * CREATES a merchant and links it here.
+ */
+export const merchantApplications = pgTable(
+  "merchant_applications",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    businessName: text("business_name").notNull(),
+    contactName: text("contact_name").notNull(),
+    /** E.164. In Tunisia the phone is the applicant's identity; email often absent. */
+    contactPhone: text("contact_phone").notNull(),
+    contactEmail: text("contact_email"),
+    city: text("city"),
+    addressLine: text("address_line"),
+    /** Parcels per month, as claimed. Unverified by definition. */
+    expectedVolume: integer("expected_volume"),
+    message: text("message"),
+    /** PUBLIC_FORM | STAFF — an anonymous form is not the same risk as a vouched lead. */
+    source: text("source").notNull().default("PUBLIC_FORM"),
+    /** PENDING | APPROVED | REJECTED. */
+    status: text("status").notNull().default("PENDING"),
+    /** The merchant this became. Set only on approval, never cleared. */
+    merchantId: uuid("merchant_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedByUserId: uuid("decided_by_user_id"),
+    decisionReason: text("decision_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("merchant_applications_pending_phone_uq").on(table.tenantId, table.contactPhone),
+    index("merchant_applications_tenant_created_idx").on(table.tenantId, table.createdAt),
+  ],
+);
+
 export type Address = typeof addresses.$inferSelect;
 export type NewAddress = typeof addresses.$inferInsert;
 export type Merchant = typeof merchants.$inferSelect;
 export type NewMerchant = typeof merchants.$inferInsert;
 export type Recipient = typeof recipients.$inferSelect;
 export type NewRecipient = typeof recipients.$inferInsert;
+export type MerchantApplication = typeof merchantApplications.$inferSelect;
+export type NewMerchantApplication = typeof merchantApplications.$inferInsert;

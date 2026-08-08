@@ -51,8 +51,10 @@ export default function proxy(request: NextRequest): NextResponse {
     return goTo(`/${DEFAULT_LOCALE}`);
   }
 
-  // The destination of this redirect; sending it here too would loop.
-  if (segments[1] === "login") {
+  // The destination of the redirect below — sending it there too would loop —
+  // and the application form, which is unauthenticated BY DESIGN: it is how a
+  // shipper who has no account asks for one.
+  if (segments[1] === "login" || segments[1] === "register") {
     return proceed();
   }
 

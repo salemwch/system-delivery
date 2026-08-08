@@ -183,3 +183,55 @@ export const correctAddressSchema = z.strictObject({
   accessNotes: z.string().trim().min(1).optional(),
 });
 export type CorrectAddressInput = z.infer<typeof correctAddressSchema>;
+
+// ── Merchant applications (nouveaux clients) ─────────────────────────────────
+//
+// ⚠️ THIS IS AN UNAUTHENTICATED WRITE PATH. Everything an anonymous caller can
+// put in the database passes through `submitApplicationSchema`, so every field
+// is bounded and the object is strict. A generous `message` field is the sort of
+// thing that becomes a storage-exhaustion vector; 2000 characters is more than
+// any real applicant writes.
+
+export const submitApplicationSchema = z.strictObject({
+  businessName: nonEmpty("businessName").max(200),
+  contactName: nonEmpty("contactName").max(200),
+  contactPhone: e164,
+  contactEmail: z.email().max(254).optional(),
+  city: nonEmpty("city").max(120).optional(),
+  addressLine: nonEmpty("addressLine").max(500).optional(),
+  expectedVolume: z.number().int().min(0).max(1_000_000).optional(),
+  message: z.string().trim().min(1).max(2000).optional(),
+});
+export type SubmitApplicationInput = z.infer<typeof submitApplicationSchema>;
+
+export const listApplicationsSchema = z.strictObject({
+  limit: z.number().int().min(1).max(200).optional(),
+  cursor: z.uuid().optional(),
+  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
+});
+export type ListApplicationsInput = z.infer<typeof listApplicationsSchema>;
+
+/**
+ * Approving an application creates the merchant.
+ *
+ * The code is asked for HERE rather than generated, because a merchant code is
+ * written on paper manifests and every courier has its own scheme. Everything
+ * else is copied from what the applicant submitted — retyping it would be a
+ * second chance to get the phone number wrong.
+ */
+export const approveApplicationSchema = z.strictObject({
+  code: nonEmpty("code").max(50).optional(),
+  /** Overrides the applied-for name when the legal name differs. */
+  name: nonEmpty("name").max(200).optional(),
+});
+export type ApproveApplicationInput = z.infer<typeof approveApplicationSchema>;
+
+export const rejectApplicationSchema = z.strictObject({
+  /**
+   * Mandatory. `merchant_applications_decision_chk` enforces it in the database
+   * too: a rejection nobody can explain is not reviewable, and an applicant who
+   * telephones deserves better than a shrug.
+   */
+  reason: nonEmpty("reason").max(1000),
+});
+export type RejectApplicationInput = z.infer<typeof rejectApplicationSchema>;

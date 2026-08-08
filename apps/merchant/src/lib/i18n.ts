@@ -104,6 +104,22 @@ interface Messages {
   readonly notFound: string;
 
   // ── Address book ─────────────────────────────────────────────────────────
+  // ── Application (nouveaux clients) ─────────────────────────────────────────
+  readonly register: string;
+  readonly registerTitle: string;
+  readonly registerSubtitle: string;
+  readonly businessName: string;
+  readonly contactName: string;
+  readonly contactPhone: string;
+  readonly expectedVolume: string;
+  readonly expectedVolumeHint: string;
+  readonly tellUsMore: string;
+  readonly submitApplication: string;
+  readonly applicationReceived: string;
+  readonly applicationReceivedHint: string;
+  readonly backToSignIn: string;
+  readonly haveNoAccount: string;
+
   readonly addressBookEmpty: string;
   readonly addressBookHint: string;
   readonly lastUsed: string;
@@ -188,6 +204,20 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     sender: "Expéditeur",
     notFound: "Colis introuvable",
 
+    register: "Devenir client",
+    registerTitle: "Demande d’ouverture de compte",
+    registerSubtitle: "Remplissez ce formulaire, nous vous rappelons.",
+    businessName: "Nom de l’entreprise",
+    contactName: "Personne à contacter",
+    contactPhone: "Téléphone",
+    expectedVolume: "Colis par mois",
+    expectedVolumeHint: "Une estimation suffit",
+    tellUsMore: "Que livrez-vous ?",
+    submitApplication: "Envoyer la demande",
+    applicationReceived: "Demande reçue",
+    applicationReceivedHint: "Nous vous contactons sous 48 heures.",
+    backToSignIn: "Retour à la connexion",
+    haveNoAccount: "Pas encore client ?",
     addressBookEmpty: "Votre carnet est vide",
     addressBookHint: "Les destinataires apparaissent ici après leur premier colis.",
     lastUsed: "Dernier envoi",
@@ -270,6 +300,20 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     sender: "المرسل",
     notFound: "الطرد غير موجود",
 
+    register: "كن عميلا",
+    registerTitle: "طلب فتح حساب",
+    registerSubtitle: "املأ هذه الاستمارة وسنتصل بك.",
+    businessName: "اسم المؤسسة",
+    contactName: "الشخص المسؤول",
+    contactPhone: "الهاتف",
+    expectedVolume: "عدد الطرود شهريا",
+    expectedVolumeHint: "تقدير تقريبي يكفي",
+    tellUsMore: "ماذا توصّل؟",
+    submitApplication: "إرسال الطلب",
+    applicationReceived: "تم استلام الطلب",
+    applicationReceivedHint: "سنتصل بك في ظرف 48 ساعة.",
+    backToSignIn: "العودة إلى تسجيل الدخول",
+    haveNoAccount: "لست عميلا بعد؟",
     addressBookEmpty: "دفترك فارغ",
     addressBookHint: "يظهر المرسل إليهم هنا بعد أول طرد.",
     lastUsed: "آخر إرسال",
@@ -352,6 +396,20 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     sender: "Sender",
     notFound: "Parcel not found",
 
+    register: "Become a client",
+    registerTitle: "Account application",
+    registerSubtitle: "Fill this in and we will call you back.",
+    businessName: "Business name",
+    contactName: "Contact person",
+    contactPhone: "Phone",
+    expectedVolume: "Parcels per month",
+    expectedVolumeHint: "An estimate is fine",
+    tellUsMore: "What do you ship?",
+    submitApplication: "Send application",
+    applicationReceived: "Application received",
+    applicationReceivedHint: "We will be in touch within 48 hours.",
+    backToSignIn: "Back to sign in",
+    haveNoAccount: "Not a client yet?",
     addressBookEmpty: "Your address book is empty",
     addressBookHint: "Recipients appear here after their first parcel.",
     lastUsed: "Last sent",

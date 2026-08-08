@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/login-form";
@@ -39,6 +40,15 @@ export default async function LoginPage({
         <p className="mt-1 text-sm text-slate-600">{messages.signInSubtitle}</p>
 
         <LoginForm locale={locale} />
+
+        {/* The only route out of here for someone who has no account. Without
+            it the application form exists but nobody can find it. */}
+        <p className="mt-6 border-t border-slate-200 pt-4 text-center text-sm text-slate-600">
+          {messages.haveNoAccount}{" "}
+          <Link href={`/${locale}/register`} className="font-medium text-brand hover:underline">
+            {messages.register}
+          </Link>
+        </p>
       </div>
     </main>
   );

@@ -4,9 +4,11 @@ import { PinoLogger } from "nestjs-pino";
 import { AppConfigService } from "../../shared/config/index.js";
 
 import { PlatformModule } from "../platform/index.js";
+import { MerchantApplicationController } from "./api/merchant-application.controller.js";
 import { MerchantController } from "./api/merchant.controller.js";
 import { RecipientController } from "./api/recipient.controller.js";
 import { AddressService } from "./application/address.service.js";
+import { MerchantApplicationService } from "./application/merchant-application.service.js";
 import { MerchantService } from "./application/merchant.service.js";
 import { RecipientService } from "./application/recipient.service.js";
 import { GEOCODING_PROVIDER } from "./domain/geocoding.js";
@@ -24,9 +26,10 @@ import { NominatimGeocodingProvider } from "./infrastructure/nominatim-geocoding
  */
 @Module({
   imports: [PlatformModule],
-  controllers: [MerchantController, RecipientController],
+  controllers: [MerchantController, RecipientController, MerchantApplicationController],
   providers: [
     MerchantService,
+    MerchantApplicationService,
     RecipientService,
     AddressService,
     ManualGeocodingProvider,
@@ -55,6 +58,6 @@ import { NominatimGeocodingProvider } from "./infrastructure/nominatim-geocoding
       inject: [AppConfigService, ManualGeocodingProvider, NominatimGeocodingProvider, PinoLogger],
     },
   ],
-  exports: [MerchantService, RecipientService, AddressService],
+  exports: [MerchantService, MerchantApplicationService, RecipientService, AddressService],
 })
 export class DirectoryModule {}

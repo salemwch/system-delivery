@@ -41,6 +41,14 @@ export const AUDIT_ACTIONS = [
   // data changed.
   "merchant.account_manager_assigned",
 
+  // Deciding who becomes a customer. An approval creates a merchant and, when a
+  // commercial makes it, hands them the account; a rejection turns a business
+  // away. Both are commercial decisions someone will eventually be asked to
+  // justify, and neither leaves a trace anywhere else — a rejected application
+  // produces no merchant, no shipment, and no ledger entry.
+  "merchant.application_approved",
+  "merchant.application_rejected",
+
   // ── Tenant lifecycle and configuration (§10) ───────────────────────────────
   "tenant.provisioned",
   "tenant.updated",

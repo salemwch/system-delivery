@@ -36,6 +36,7 @@ export default async function AppLayout({
     fleet: "⊟",
     network: "◉",
     merchants: "◧",
+    applications: "✚",
     pickups: "◨",
     custody: "⊡",
     finance: "⊠",

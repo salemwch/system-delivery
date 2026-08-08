@@ -31,6 +31,8 @@ export const P = {
   MERCHANT_ONBOARD: "merchant:onboard",
   /** Move an account between commercials. OWNER only. */
   MERCHANT_ASSIGN_MANAGER: "merchant:assign_manager",
+  /** Decide a merchant application. Separate from creating one outright. */
+  MERCHANT_DECIDE_APPLICATION: "merchant:decide_application",
 
   RECIPIENT_READ: "recipient:read",
 
@@ -83,6 +85,7 @@ export const NAV_GATES = {
   fleet: P.DRIVER_READ,
   network: P.HUB_READ,
   merchants: P.MERCHANT_READ,
+  applications: P.MERCHANT_READ,
   pickups: P.PICKUP_READ,
   custody: P.MANIFEST_READ,
   finance: P.LEDGER_READ,
