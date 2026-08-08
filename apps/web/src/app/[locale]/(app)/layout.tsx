@@ -39,6 +39,7 @@ export default async function AppLayout({
     finance: "⊠",
     complaints: "◬",
     users: "◯",
+    settings: "⚙",
     audit: "◷",
   };
 

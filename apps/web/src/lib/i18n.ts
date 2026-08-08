@@ -108,6 +108,32 @@ interface Messages {
   readonly pickupWindowTo: string;
   readonly notes: string;
   readonly pickupCreated: string;
+  readonly documents: string;
+  readonly deliveryNote: string;
+  readonly consignmentNote: string;
+  readonly returnNote: string;
+  readonly smsTemplates: string;
+  readonly zones: string;
+  readonly importShipments: string;
+  readonly templateDefault: string;
+  readonly templateOverridden: string;
+  readonly templateRevert: string;
+  readonly smsSegments: string;
+  readonly zoneRadius: string;
+  readonly active: string;
+  readonly inactive: string;
+  readonly importFile: string;
+  readonly importColumns: string;
+  readonly importDelimiter: string;
+  readonly importDelimiterHint: string;
+  readonly importRowsReady: string;
+  readonly importSucceeded: string;
+  readonly importLine: string;
+  readonly importEmpty: string;
+  readonly importTooMany: string;
+  readonly importMissingColumns: string;
+  readonly importRowErrors: string;
+  readonly importPartial: string;
 }
 
 export const MESSAGES: Readonly<Record<Locale, Messages>> = {
@@ -204,6 +230,32 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pickupWindowTo: "إلى",
     notes: "ملاحظات",
     pickupCreated: "تم إنشاء طلب الاستلام. اقبله ثم تكفّل به.",
+    documents: "الوثائق",
+    deliveryNote: "وصل التسليم",
+    consignmentNote: "وصل الإرسال",
+    returnNote: "وصل الإرجاع",
+    smsTemplates: "قوالب الرسائل",
+    zones: "المناطق",
+    importShipments: "استيراد الطرود",
+    templateDefault: "افتراضي",
+    templateOverridden: "مُعدّل",
+    templateRevert: "استعادة الافتراضي",
+    smsSegments: "عدد الرسائل",
+    zoneRadius: "نطاق السياج",
+    active: "نشط",
+    inactive: "غير نشط",
+    importFile: "ملف CSV",
+    importColumns: "الأعمدة المطلوبة: recipientName, recipientPhone, address — واختياريًا city, codAmount, weightGrams, parcelCount, reference",
+    importDelimiter: "الفاصل",
+    importDelimiterHint: "تستعمل بعض ملفات إكسل الفرنسية الفاصلة المنقوطة",
+    importRowsReady: "صفوف جاهزة",
+    importSucceeded: "تم إنشاء الطرود",
+    importLine: "السطر",
+    importEmpty: "الملف لا يحتوي على صفوف",
+    importTooMany: "الحد الأقصى 100 صف لكل ملف",
+    importMissingColumns: "أعمدة ناقصة",
+    importRowErrors: "صحّح الأسطر التالية ثم أعد المحاولة — لم يتم استيراد أي صف",
+    importPartial: "تم استيراد بعض الصفوف فقط",
   },
   fr: {
     title: "Tableau de bord",
@@ -226,7 +278,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     complaints: "Réclamations",
     users: "Utilisateurs",
     settings: "Paramètres",
-    audit: "Journal d'audit",
+    audit: "Journal d’audit",
     search: "Rechercher",
     loading: "Chargement…",
     noResults: "Aucun résultat",
@@ -299,6 +351,32 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pickupWindowTo: "À",
     notes: "Notes",
     pickupCreated: "Demande de ramassage créée. Acceptez-la puis prenez-la en charge.",
+    documents: "Documents",
+    deliveryNote: "Bon de livraison",
+    consignmentNote: "Bon d’envoi",
+    returnNote: "Bon de retour",
+    smsTemplates: "Modèles SMS",
+    zones: "Zones",
+    importShipments: "Import colis",
+    templateDefault: "Par défaut",
+    templateOverridden: "Personnalisé",
+    templateRevert: "Rétablir le défaut",
+    smsSegments: "Segments SMS",
+    zoneRadius: "Rayon geofence",
+    active: "Actif",
+    inactive: "Inactif",
+    importFile: "Fichier CSV",
+    importColumns: "Colonnes requises : recipientName, recipientPhone, address — facultatives : city, codAmount, weightGrams, parcelCount, reference",
+    importDelimiter: "Séparateur",
+    importDelimiterHint: "Excel en français exporte souvent avec des points-virgules",
+    importRowsReady: "Lignes prêtes",
+    importSucceeded: "Colis créés",
+    importLine: "Ligne",
+    importEmpty: "Le fichier ne contient aucune ligne",
+    importTooMany: "100 lignes maximum par fichier",
+    importMissingColumns: "Colonnes manquantes",
+    importRowErrors: "Corrigez les lignes ci-dessous puis réessayez — aucune ligne n a été importée",
+    importPartial: "Certaines lignes seulement ont été importées",
   },
   en: {
     title: "Dashboard",
@@ -393,6 +471,32 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pickupWindowTo: "To",
     notes: "Notes",
     pickupCreated: "Pickup request created. Accept it, then claim it.",
+    documents: "Documents",
+    deliveryNote: "Delivery note",
+    consignmentNote: "Consignment note",
+    returnNote: "Return note",
+    smsTemplates: "SMS templates",
+    zones: "Zones",
+    importShipments: "Import shipments",
+    templateDefault: "Default",
+    templateOverridden: "Customised",
+    templateRevert: "Revert to default",
+    smsSegments: "SMS segments",
+    zoneRadius: "Geofence radius",
+    active: "Active",
+    inactive: "Inactive",
+    importFile: "CSV file",
+    importColumns: "Required columns: recipientName, recipientPhone, address — optional: city, codAmount, weightGrams, parcelCount, reference",
+    importDelimiter: "Delimiter",
+    importDelimiterHint: "French Excel often exports with semicolons",
+    importRowsReady: "Rows ready",
+    importSucceeded: "Shipments created",
+    importLine: "Line",
+    importEmpty: "The file contains no rows",
+    importTooMany: "100 rows maximum per file",
+    importMissingColumns: "Missing columns",
+    importRowErrors: "Fix the lines below and try again — nothing was imported",
+    importPartial: "Only some rows were imported",
   },
 };
 

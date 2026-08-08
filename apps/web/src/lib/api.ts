@@ -94,6 +94,29 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 }
 
 /**
+ * Fetches a non-JSON body — currently the printable delivery dockets.
+ *
+ * Separate from {@link apiFetch} because that one parses JSON and would throw
+ * on the HTML these endpoints return. The session handling is identical, so a
+ * document request cannot skip the auth path.
+ */
+export async function apiFetchText(path: string): Promise<string> {
+  const session = await currentSession();
+  const response = await fetch(`${apiBaseUrl()}${path}`, {
+    headers: {
+      accept: "text/html",
+      authorization: `Bearer ${session.accessToken}`,
+    },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+  return response.text();
+}
+
+/**
  * The live session, or a redirect. NEVER refreshes here.
  *
  * ─────────────────────────────────────────────────────────────────────────────

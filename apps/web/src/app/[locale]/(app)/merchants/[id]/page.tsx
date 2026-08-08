@@ -67,7 +67,17 @@ export default async function MerchantDetailPage({
       ) : null}
 
       <PageHeader title={merchant.name}>
-        <StatusBadge status={merchant.status} locale={locale} />
+        <div className="flex items-center gap-3">
+          {hasPermission(session, P.SHIPMENT_CREATE) ? (
+            <Link
+              href={`/${locale}/merchants/${merchant.id}/import`}
+              className="inline-flex min-h-9 items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 transition hover:bg-slate-50"
+            >
+              {messages.importShipments}
+            </Link>
+          ) : null}
+          <StatusBadge status={merchant.status} locale={locale} />
+        </div>
       </PageHeader>
 
       <Identity merchant={merchant} locale={locale} />

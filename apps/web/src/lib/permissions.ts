@@ -82,5 +82,6 @@ export const NAV_GATES = {
   finance: P.LEDGER_READ,
   complaints: P.COMPLAINT_READ,
   users: P.USER_READ,
+  settings: P.FEATURE_MANAGE,
   audit: P.AUDIT_READ,
 } as const;

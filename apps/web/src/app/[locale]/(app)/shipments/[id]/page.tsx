@@ -3,7 +3,8 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/ui";
 import { timezone } from "@/lib/config";
 import { formatDateTime, formatMoney } from "@/lib/format";
-import { toLocale } from "@/lib/i18n";
+import { MESSAGES, toLocale } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n";
 import { hasPermission, readSession } from "@/lib/session";
 import { P } from "@/lib/permissions";
 import { fetchShipment, fetchShipmentEvents } from "@/lib/queries";
@@ -17,7 +18,9 @@ export default async function ShipmentDetailPage({
   const locale = toLocale(raw);
   const tz = timezone();
   const session = await readSession();
+  const messages = MESSAGES[locale];
   const canReadCod = session !== null && hasPermission(session, P.COD_READ_AMOUNT);
+  const canPrint = session !== null && hasPermission(session, P.SHIPMENT_LABEL);
 
   // Two calls, in parallel: the detail response never embedded its events.
   const [shipment, events] = await Promise.all([fetchShipment(id), fetchShipmentEvents(id)]);
@@ -37,6 +40,25 @@ export default async function ShipmentDetailPage({
         <h1 className="font-mono text-xl font-bold ltr-isolate">{shipment.trackingNumber}</h1>
         <StatusBadge status={shipment.status} locale={locale} />
       </div>
+
+      {/*
+        The printable dockets. `target="_blank"` because they open as a
+        standalone A4 page the operator prints with Ctrl-P — navigating away
+        from the shipment to print it and back again is the wrong flow for
+        someone working through a stack of parcels.
+
+        The return note is offered only once a return exists; on an ordinary
+        delivery it would print an empty reason and confuse the driver.
+      */}
+      {canPrint ? (
+        <div className="flex flex-wrap gap-2">
+          <DocumentLink locale={locale} id={shipment.id} type="delivery-note" label={messages.deliveryNote} />
+          <DocumentLink locale={locale} id={shipment.id} type="consignment-note" label={messages.consignmentNote} />
+          {RETURN_STATUSES.has(shipment.status) ? (
+            <DocumentLink locale={locale} id={shipment.id} type="return-note" label={messages.returnNote} />
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Section title={locale === "ar" ? "المستلم" : locale === "fr" ? "Destinataire" : "Recipient"}>
@@ -95,5 +117,36 @@ function InfoRow({ label, value, ltr }: { label: string; value: string; ltr?: bo
       <span className="text-slate-500">{label}</span>
       <span className={`font-medium text-slate-900 ${ltr === true ? "ltr-isolate" : ""}`}>{value}</span>
     </div>
+  );
+}
+
+/**
+ * Statuses where a return note is meaningful.
+ *
+ * Printing one for a parcel that was delivered normally hands the driver a
+ * docket with no return reason on it.
+ */
+const RETURN_STATUSES: ReadonlySet<string> = new Set(["RETURN_PENDING", "RETURNED"]);
+
+function DocumentLink({
+  locale,
+  id,
+  type,
+  label,
+}: {
+  locale: Locale;
+  id: string;
+  type: string;
+  label: string;
+}) {
+  return (
+    <a
+      href={`/${locale}/documents/${id}/${type}`}
+      target="_blank"
+      rel="noopener"
+      className="inline-flex min-h-9 items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 transition hover:bg-slate-50"
+    >
+      {label}
+    </a>
   );
 }

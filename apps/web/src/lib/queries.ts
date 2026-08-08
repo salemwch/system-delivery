@@ -397,3 +397,44 @@ export async function fetchAudit(cursor?: string | null, limit = 25): Promise<Pa
 export async function fetchPickups(cursor?: string | null, limit = 25): Promise<PaginatedResult<PickupSummary>> {
   return fetchPage<PickupSummary>("/v1/pickups", cursor, limit);
 }
+
+/**
+ * A notification template — one row per key × locale × channel.
+ *
+ * `isDefault` distinguishes the built-in copy from a tenant override, which is
+ * what makes "revert" meaningful. `estimatedSegments` is surfaced because an
+ * Arabic body is UCS-2 at 70 characters per segment: a template that reads
+ * naturally can silently cost three segments on every delivery.
+ */
+export interface NotificationTemplate {
+  readonly key: string;
+  readonly locale: string;
+  readonly channel: string;
+  readonly body: string;
+  readonly active: boolean;
+  readonly isDefault: boolean;
+  readonly estimatedSegments: number;
+}
+
+export async function fetchTemplates(): Promise<readonly NotificationTemplate[]> {
+  const result = await apiFetch<{ data: readonly NotificationTemplate[] }>(
+    "/v1/notification-templates",
+  );
+  return result.data;
+}
+
+/** A delivery zone. `boundary` is GeoJSON and is not rendered — there is no map yet. */
+export interface ZoneSummary {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly defaultGeofenceRadiusM: number;
+  readonly active: boolean;
+  readonly centroidLat: number;
+  readonly centroidLng: number;
+  readonly createdAt: string;
+}
+
+export async function fetchZones(cursor?: string | null): Promise<PaginatedResult<ZoneSummary>> {
+  return fetchPage<ZoneSummary>("/v1/zones", cursor, 100);
+}
