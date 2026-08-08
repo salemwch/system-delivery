@@ -74,6 +74,11 @@ export const AUDIT_ACTIONS = [
   "settlement.approved",
   "settlement.marked_paid",
   "cod.amount_changed",
+  // Approving a dépense moves real money out of a cash box or a bank account and
+  // posts a ledger transaction. A rejection produces nothing anywhere else, so
+  // without this entry there is no record that a claim was ever refused.
+  "expense.approved",
+  "expense.rejected",
 
   // ── Invoicing ─────────────────────────────────────────────────────────────
   // An invoice is a tax document. Issuing one creates a legal obligation and

@@ -744,3 +744,78 @@ export async function fetchInvoice(id: string): Promise<InvoiceSummary> {
 export async function fetchBillingSettings(): Promise<BillingSettings> {
   return apiFetch<BillingSettings>("/v1/invoices/settings");
 }
+
+/**
+ * A dépense — what the courier spent.
+ *
+ * ⚠️ `paidFrom: "HUB_CASH"` means the money left a hub's cash box, and approving
+ * it posts a ledger transaction that reduces what that box holds. This is not a
+ * bookkeeping label; it moves a balance that cash reconciliation reads.
+ */
+export interface ExpenseSummary {
+  readonly id: string;
+  readonly reference: string;
+  readonly categoryId: string;
+  /** Minor units as a decimal STRING — a bigint; parsing as a number rounds. */
+  readonly amountMinor: string;
+  readonly currency: string;
+  readonly currencyExponent: number;
+  readonly spentOn: string;
+  readonly description: string;
+  readonly supplierReference: string | null;
+  readonly vehicleId: string | null;
+  readonly hubId: string | null;
+  /** HUB_CASH | BANK. */
+  readonly paidFrom: string;
+  readonly paidFromHubId: string | null;
+  /** DRAFT | APPROVED | REJECTED. */
+  readonly status: string;
+  readonly transactionId: string | null;
+  readonly decisionReason: string | null;
+  readonly createdAt: string;
+}
+
+export interface ExpenseCategoryRow {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+  readonly active: boolean;
+}
+
+/** One line of the spend report. */
+export interface ExpenseSummaryRow {
+  readonly categoryId: string;
+  readonly categoryCode: string;
+  readonly categoryName: string;
+  readonly currency: string;
+  readonly currencyExponent: number;
+  readonly totalMinor: string;
+  readonly count: number;
+}
+
+export async function fetchExpenses(
+  cursor?: string | null,
+  filters: Readonly<Record<string, string>> = {},
+): Promise<PaginatedResult<ExpenseSummary>> {
+  return fetchPage<ExpenseSummary>("/v1/expenses", cursor, 50, filters);
+}
+
+export async function fetchExpenseCategories(
+  activeOnly = true,
+): Promise<readonly ExpenseCategoryRow[]> {
+  const result = await apiFetch<{ data: readonly ExpenseCategoryRow[] }>(
+    `/v1/expenses/categories?activeOnly=${String(activeOnly)}`,
+  );
+  return result.data;
+}
+
+export async function fetchExpenseSummary(
+  from: string,
+  to: string,
+): Promise<readonly ExpenseSummaryRow[]> {
+  const query = new URLSearchParams({ from, to });
+  const result = await apiFetch<{ data: readonly ExpenseSummaryRow[] }>(
+    `/v1/expenses/summary?${query.toString()}`,
+  );
+  return result.data;
+}

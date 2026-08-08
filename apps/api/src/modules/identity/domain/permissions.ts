@@ -146,6 +146,17 @@ export const PERMISSIONS = [
    * company to it.
    */
   "invoice:issue",
+  /**
+   * Les dépenses — record what was spent, and approve it into the ledger.
+   *
+   * `expense:record` is the person holding the receipt; `expense:approve` is the
+   * one who answers for the month's numbers, and approving is what actually
+   * posts a double-entry transaction against a cash box. Separate for the same
+   * reason drafting and issuing an invoice are.
+   */
+  "expense:read",
+  "expense:record",
+  "expense:approve",
 
   /**
    * Internal remarks on a parcel, a merchant or a driver.
@@ -322,6 +333,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "manifest:seal",
     "manifest:receive",
     "cod:remit_receive",
+    // A hub operator pays for fuel out of the till; approving it is not theirs.
+    "expense:read",
+    "expense:record",
     "note:read",
     "note:manage",
     "complaint:read",
@@ -347,6 +361,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "invoice:read",
     "invoice:draft",
     "invoice:issue",
+    "expense:read",
+    "expense:record",
+    "expense:approve",
     // Read-only on remarks, like everything else operational: finance reads the
     // context behind a disputed parcel without being able to write into it.
     "note:read",

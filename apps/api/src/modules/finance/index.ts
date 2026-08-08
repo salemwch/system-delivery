@@ -20,6 +20,28 @@ export type { RemittanceContext } from "./application/remittance.service.js";
 export { SettlementService } from "./application/settlement.service.js";
 export type { SettlementContext } from "./application/settlement.service.js";
 export { InvoiceService } from "./application/invoice.service.js";
+export { ExpenseService } from "./application/expense.service.js";
+export type { ExpensePage, ExpenseSummaryRow } from "./application/expense.service.js";
+
+export { expenses, expenseCategories, expenseSequences } from "./domain/expense-schema.js";
+export type {
+  Expense,
+  NewExpense,
+  ExpenseCategory,
+  NewExpenseCategory,
+} from "./domain/expense-schema.js";
+
+export { PAYMENT_SOURCES, EXPENSE_STATUSES } from "./domain/expense-dtos.js";
+export type {
+  PaymentSource,
+  ExpenseStatus,
+  CreateExpenseInput,
+  CreateExpenseCategoryInput,
+  UpdateExpenseCategoryInput,
+  RejectExpenseInput,
+  ListExpensesInput,
+  ExpenseSummaryInput,
+} from "./domain/expense-dtos.js";
 export type { InvoiceView, InvoicePage } from "./application/invoice.service.js";
 export { ReconciliationService } from "./application/reconciliation.service.js";
 export type {

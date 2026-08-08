@@ -64,6 +64,11 @@ export const P = {
   SETTLEMENT_READ: "settlement:read",
   SETTLEMENT_APPROVE: "settlement:approve",
 
+  EXPENSE_READ: "expense:read",
+  EXPENSE_RECORD: "expense:record",
+  /** Posts the ledger transaction. Never the same person as the recorder. */
+  EXPENSE_APPROVE: "expense:approve",
+
   SUPPORT_READ: "support:read",
   SUPPORT_WRITE: "support:write",
   /** Assign, recategorise, close, and write internal notes. Never a merchant. */

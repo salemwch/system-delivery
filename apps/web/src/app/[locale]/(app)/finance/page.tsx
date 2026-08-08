@@ -16,6 +16,7 @@ export default async function FinancePage({
 
       <div className="grid gap-4 lg:grid-cols-3">
         <FinanceCard title={messages.invoices} href={`/${locale}/finance/invoices`} />
+        <FinanceCard title={messages.expenses} href={`/${locale}/finance/expenses`} />
         <FinanceCard
           title={locale === "ar" ? "دفتر الأستاذ" : locale === "fr" ? "Grand livre" : "Ledger"}
           href={`/${locale}/finance/ledger`}

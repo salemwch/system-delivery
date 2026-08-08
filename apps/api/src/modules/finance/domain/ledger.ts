@@ -12,6 +12,14 @@ export const ACCOUNT_TYPES = [
   "BANK",
   "WRITE_OFF",
   "CUSTOMER_RECEIVABLE",
+  /**
+   * What the courier SPENDS — les dépenses (migration 0040).
+   *
+   * Owned by the TENANT even when an expense is attributed to a driver, vehicle
+   * or hub: the attribution is a reporting dimension, not a balance anybody
+   * holds. A driver does not owe the business the fuel they put in the van.
+   */
+  "EXPENSE",
 ] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
@@ -29,6 +37,7 @@ export const ENTRY_TYPES = [
   "ADJUSTMENT",
   "WRITE_OFF",
   "REVERSAL",
+  "EXPENSE",
 ] as const;
 export type EntryType = (typeof ENTRY_TYPES)[number];
 
@@ -47,6 +56,9 @@ const NORMAL_BALANCE: Record<AccountType, NormalBalance> = {
   BANK: "DEBIT",
   CUSTOMER_RECEIVABLE: "DEBIT",
   WRITE_OFF: "DEBIT",
+  // Spending RISES on a debit, exactly like an asset. Crediting it means money
+  // came back — a refunded expense.
+  EXPENSE: "DEBIT",
   MERCHANT_PAYABLE: "CREDIT",
   PLATFORM_REVENUE: "CREDIT",
 };

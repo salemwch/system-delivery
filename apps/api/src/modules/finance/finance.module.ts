@@ -3,10 +3,12 @@ import { Module } from "@nestjs/common";
 import { MoneyModule } from "../../shared/money/money.module.js";
 import { PlatformModule } from "../platform/index.js";
 import { FinanceController } from "./api/finance.controller.js";
+import { ExpenseController } from "./api/expense.controller.js";
 import { InvoiceController } from "./api/invoice.controller.js";
 import { LedgerService } from "./application/ledger.service.js";
 import { LedgerEventHandler } from "./application/ledger-event.handler.js";
 import { ReconciliationService } from "./application/reconciliation.service.js";
+import { ExpenseService } from "./application/expense.service.js";
 import { InvoiceService } from "./application/invoice.service.js";
 import { RemittanceService } from "./application/remittance.service.js";
 import { SettlementService } from "./application/settlement.service.js";
@@ -24,7 +26,7 @@ import { SettlementService } from "./application/settlement.service.js";
  */
 @Module({
   imports: [PlatformModule, MoneyModule],
-  controllers: [FinanceController, InvoiceController],
+  controllers: [FinanceController, InvoiceController, ExpenseController],
   providers: [
     LedgerService,
     LedgerEventHandler,
@@ -32,6 +34,7 @@ import { SettlementService } from "./application/settlement.service.js";
     SettlementService,
     ReconciliationService,
     InvoiceService,
+    ExpenseService,
   ],
   exports: [
     LedgerService,
@@ -40,6 +43,7 @@ import { SettlementService } from "./application/settlement.service.js";
     SettlementService,
     ReconciliationService,
     InvoiceService,
+    ExpenseService,
   ],
 })
 export class FinanceModule {}

@@ -191,6 +191,19 @@ interface Messages {
   readonly closeTicket: string;
   readonly markResolved: string;
   readonly ticketClosedHint: string;
+  readonly expenses: string;
+  readonly recordExpense: string;
+  readonly spentOn: string;
+  readonly paidFrom: string;
+  readonly paidFromBank: string;
+  readonly paidFromHubCash: string;
+  readonly paidFromHub: string;
+  readonly paidFromHubHint: string;
+  readonly supplierReference: string;
+  readonly supplierReferenceHint: string;
+  readonly spendThisMonth: string;
+  readonly expenseCashWarning: string;
+  readonly expenseCategoriesEmpty: string;
   /** The sidebar section and page title. */
   readonly remarks: string;
   /** The panel heading on a subject's page — distinguishes it from the section. */
@@ -406,6 +419,19 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     closeTicket: "إغلاق",
     markResolved: "تمت المعالجة",
     ticketClosedHint: "هذه التذكرة مغلقة. افتح تذكرة جديدة.",
+    expenses: "المصاريف",
+    recordExpense: "تسجيل مصروف",
+    spentOn: "تاريخ الصرف",
+    paidFrom: "مصدر الدفع",
+    paidFromBank: "تحويل بنكي",
+    paidFromHubCash: "صندوق المركز",
+    paidFromHub: "المركز",
+    paidFromHubHint: "الصندوق الذي خرج منه المال",
+    supplierReference: "مرجع المزود",
+    supplierReferenceHint: "يمنع التسجيل مرتين",
+    spendThisMonth: "مصاريف الشهر",
+    expenseCashWarning: "سيُخصم المبلغ من رصيد صندوق المركز.",
+    expenseCategoriesEmpty: "أنشئ صنفا أولا حتى تتمكن من تسجيل المصاريف.",
     remarks: "الملاحظات",
     internalRemarks: "ملاحظات داخلية",
     noRemarks: "لا توجد ملاحظات",
@@ -618,6 +644,19 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     closeTicket: "Clôturer",
     markResolved: "Marquer résolu",
     ticketClosedHint: "Ce ticket est clôturé. Ouvrez-en un nouveau.",
+    expenses: "Les dépenses",
+    recordExpense: "Enregistrer une dépense",
+    spentOn: "Date de la dépense",
+    paidFrom: "Payée par",
+    paidFromBank: "Virement",
+    paidFromHubCash: "Caisse du hub",
+    paidFromHub: "Hub",
+    paidFromHubHint: "La caisse d'où l'argent est sorti",
+    supplierReference: "Réf. fournisseur",
+    supplierReferenceHint: "Empêche le double enregistrement",
+    spendThisMonth: "Dépenses du mois",
+    expenseCashWarning: "Le montant sera déduit du solde de la caisse du hub.",
+    expenseCategoriesEmpty: "Créez d'abord une catégorie pour pouvoir enregistrer des dépenses.",
     remarks: "Remarques",
     internalRemarks: "Remarques internes",
     noRemarks: "Aucune remarque",
@@ -829,6 +868,19 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     closeTicket: "Close",
     markResolved: "Mark resolved",
     ticketClosedHint: "This ticket is closed. Open a new one instead.",
+    expenses: "Expenses",
+    recordExpense: "Record an expense",
+    spentOn: "Spent on",
+    paidFrom: "Paid from",
+    paidFromBank: "Bank transfer",
+    paidFromHubCash: "Hub cash box",
+    paidFromHub: "Hub",
+    paidFromHubHint: "The box the money left",
+    supplierReference: "Supplier ref.",
+    supplierReferenceHint: "Prevents double entry",
+    spendThisMonth: "Spend this month",
+    expenseCashWarning: "The amount will be deducted from that hub's cash balance.",
+    expenseCategoriesEmpty: "Create a category first so expenses can be recorded.",
     remarks: "Remarks",
     internalRemarks: "Internal remarks",
     noRemarks: "No remarks",
