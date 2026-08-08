@@ -64,6 +64,11 @@ export const P = {
   SETTLEMENT_READ: "settlement:read",
   SETTLEMENT_APPROVE: "settlement:approve",
 
+  SUPPORT_READ: "support:read",
+  SUPPORT_WRITE: "support:write",
+  /** Assign, recategorise, close, and write internal notes. Never a merchant. */
+  SUPPORT_MANAGE: "support:manage",
+
   /** Internal remarks. Staff-only — no MERCHANT or COMMERCIAL holds either. */
   NOTE_READ: "note:read",
   NOTE_MANAGE: "note:manage",
@@ -93,6 +98,7 @@ export const NAV_GATES = {
   pickups: P.PICKUP_READ,
   custody: P.MANIFEST_READ,
   finance: P.LEDGER_READ,
+  support: P.SUPPORT_READ,
   remarks: P.NOTE_READ,
   complaints: P.COMPLAINT_READ,
   users: P.USER_READ,

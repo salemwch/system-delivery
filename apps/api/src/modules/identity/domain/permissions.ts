@@ -158,6 +158,19 @@ export const PERMISSIONS = [
   "note:read",
   "note:manage",
 
+  /**
+   * Support — the merchant/back-office conversation.
+   *
+   * `support:read` and `support:write` are held by BOTH sides, and the narrowing
+   * does the work: a merchant sees their own tickets (I24) and never an INTERNAL
+   * message, both enforced by RLS. `support:manage` is the staff-only half —
+   * assigning, recategorising, closing — which a merchant must not have, or they
+   * could close a ticket the courier has not answered.
+   */
+  "support:read",
+  "support:write",
+  "support:manage",
+
   // Complaints
   "complaint:read",
   "complaint:create",
@@ -285,6 +298,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "manifest:read",
     "note:read",
     "note:manage",
+    "support:read",
+    "support:write",
+    "support:manage",
     "complaint:read",
     "complaint:create",
     "complaint:assign",
@@ -470,6 +486,11 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "settlement:read",
     // Their own invoices. RLS narrows the rows to this merchant (I24).
     "invoice:read",
+    // Ask the courier a question. RLS narrows to their own tickets, and an
+    // INTERNAL note is invisible to them. No `support:manage` — closing a
+    // ticket the courier has not answered is not the merchant's call.
+    "support:read",
+    "support:write",
     // Raise a problem with their own parcel.
     "complaint:create",
     "complaint:read",

@@ -179,6 +179,18 @@ interface Messages {
   readonly amendHint: string;
   readonly applied: string;
   readonly destination: string;
+  readonly support: string;
+  readonly category: string;
+  readonly reply: string;
+  readonly internalNote: string;
+  readonly internalNoteHint: string;
+  readonly sideCourier: string;
+  readonly sideMerchant: string;
+  readonly awaitingMerchant: string;
+  readonly closed: string;
+  readonly closeTicket: string;
+  readonly markResolved: string;
+  readonly ticketClosedHint: string;
   /** The sidebar section and page title. */
   readonly remarks: string;
   /** The panel heading on a subject's page — distinguishes it from the section. */
@@ -382,6 +394,18 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     amendHint: "املأ الحقول التي تريد تغييرها فقط",
     applied: "مطبّق",
     destination: "الوجهة",
+    support: "الدعم",
+    category: "الصنف",
+    reply: "رد",
+    internalNote: "ملاحظة داخلية",
+    internalNoteHint: "لن يراها التاجر.",
+    sideCourier: "الناقل",
+    sideMerchant: "التاجر",
+    awaitingMerchant: "في انتظار التاجر",
+    closed: "مغلقة",
+    closeTicket: "إغلاق",
+    markResolved: "تمت المعالجة",
+    ticketClosedHint: "هذه التذكرة مغلقة. افتح تذكرة جديدة.",
     remarks: "الملاحظات",
     internalRemarks: "ملاحظات داخلية",
     noRemarks: "لا توجد ملاحظات",
@@ -582,6 +606,18 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     amendHint: "Remplissez uniquement ce qui doit changer",
     applied: "Appliquée",
     destination: "Destination",
+    support: "Support",
+    category: "Catégorie",
+    reply: "Répondre",
+    internalNote: "Note interne",
+    internalNoteHint: "Le commerçant ne la verra pas.",
+    sideCourier: "Transporteur",
+    sideMerchant: "Commerçant",
+    awaitingMerchant: "En attente du commerçant",
+    closed: "Clôturées",
+    closeTicket: "Clôturer",
+    markResolved: "Marquer résolu",
+    ticketClosedHint: "Ce ticket est clôturé. Ouvrez-en un nouveau.",
     remarks: "Remarques",
     internalRemarks: "Remarques internes",
     noRemarks: "Aucune remarque",
@@ -781,6 +817,18 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     amendHint: "Fill in only what should change",
     applied: "Applied",
     destination: "Destination",
+    support: "Support",
+    category: "Category",
+    reply: "Reply",
+    internalNote: "Internal note",
+    internalNoteHint: "The merchant will not see it.",
+    sideCourier: "Courier",
+    sideMerchant: "Merchant",
+    awaitingMerchant: "Awaiting merchant",
+    closed: "Closed",
+    closeTicket: "Close",
+    markResolved: "Mark resolved",
+    ticketClosedHint: "This ticket is closed. Open a new one instead.",
     remarks: "Remarks",
     internalRemarks: "Internal remarks",
     noRemarks: "No remarks",

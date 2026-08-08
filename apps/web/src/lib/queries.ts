@@ -440,6 +440,58 @@ export async function fetchZones(cursor?: string | null): Promise<PaginatedResul
 }
 
 /**
+ * A support ticket — the merchant/back-office conversation.
+ *
+ * A ticket is a QUESTION; a complaint is a CLAIM. They are separate surfaces
+ * for the same reason they are separate tables.
+ */
+export interface SupportTicketSummary {
+  readonly id: string;
+  /** Quotable down the phone: `S-2026-00042`. */
+  readonly reference: string;
+  readonly subject: string;
+  /** OPEN | PENDING_MERCHANT | RESOLVED | CLOSED. */
+  readonly status: string;
+  readonly category: string;
+  readonly merchantId: string;
+  readonly shipmentId: string | null;
+  readonly assignedToUserId: string | null;
+  readonly lastMessageAt: string;
+  readonly closedAt: string | null;
+  readonly createdAt: string;
+}
+
+/**
+ * One message in the thread.
+ *
+ * ⚠️ A merchant login never receives an INTERNAL row at all — RLS removes it, so
+ * this app cannot leak one by forgetting to filter. `visibility` is here to
+ * STYLE the staff view, never to decide who sees what.
+ */
+interface SupportMessageRow {
+  readonly id: string;
+  readonly body: string;
+  readonly visibility: string;
+  readonly authorSide: string;
+  readonly createdAt: string;
+}
+
+export interface SupportTicketDetail extends SupportTicketSummary {
+  readonly messages: readonly SupportMessageRow[];
+}
+
+export async function fetchTickets(
+  cursor?: string | null,
+  filters: Readonly<Record<string, string>> = {},
+): Promise<PaginatedResult<SupportTicketSummary>> {
+  return fetchPage<SupportTicketSummary>("/v1/support-tickets", cursor, 50, filters);
+}
+
+export async function fetchTicket(id: string): Promise<SupportTicketDetail> {
+  return apiFetch<SupportTicketDetail>(`/v1/support-tickets/${encodeURIComponent(id)}`);
+}
+
+/**
  * A requested change to a parcel — modification colis.
  *
  * NULL on a field means "leave it alone", so a request that touches the phone

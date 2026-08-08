@@ -19,7 +19,7 @@ const LAYERS = {
   0: ["platform", "identity"],
   1: ["directory", "network", "fleet"],
   2: ["shipment", "pickup", "dispatch", "custody"],
-  3: ["tracking", "finance", "notification", "fraud", "complaint", "note"],
+  3: ["tracking", "finance", "notification", "fraud", "complaint", "note", "support"],
 };
 
 /** Explicit per-module allow-list, derived from the layer rule. */
@@ -50,6 +50,10 @@ const MODULE_DEPENDENCIES = {
   // foreign keys in migration 0035, so the database guarantees the subject exists
   // without this module knowing anything about those contexts.
   note: ["platform", "identity"],
+  // Layer 3, same shape as `note`: a ticket is ABOUT a merchant and sometimes a
+  // parcel, but the links are composite foreign keys in 0039, so this module
+  // never imports directory or shipment.
+  support: ["platform", "identity"],
 };
 
 const ALL_MODULES = Object.values(LAYERS).flat();

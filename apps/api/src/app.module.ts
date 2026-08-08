@@ -14,6 +14,7 @@ import { NotificationEventHandler, NotificationModule } from "./modules/notifica
 import { PickupModule } from "./modules/pickup/index.js";
 import { PlatformModule, REPLAY_HANDLERS } from "./modules/platform/index.js";
 import { PickupScanEventHandler, ShipmentModule } from "./modules/shipment/index.js";
+import { SupportModule } from "./modules/support/index.js";
 import { TrackingModule } from "./modules/tracking/index.js";
 import { AppConfigModule } from "./shared/config/config.module.js";
 import { AppConfigService } from "./shared/config/index.js";
@@ -53,6 +54,7 @@ import { DatabaseModule } from "./shared/database/database.module.js";
     TrackingModule,
     ComplaintModule,
     NoteModule,
+    SupportModule,
     NotificationModule,
     LoggerModule.forRootAsync({
       imports: [AppConfigModule],
