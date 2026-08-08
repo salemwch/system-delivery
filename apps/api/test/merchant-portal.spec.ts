@@ -261,8 +261,18 @@ describe("merchant portal", () => {
       const tenantB = await seedTenant("mp-i23-crossb");
       const merchantOfB = await seedMerchant(tenantB, "Theirs");
 
+      // TWO defences now, and the order is why this pattern is permissive.
+      //
+      // The I23 trigger has always caught this one case by comparing the two
+      // tenant_ids. Migration 0036 made `users.merchant_id` a COMPOSITE foreign
+      // key, which rejects the same row EARLIER — during the constraint check,
+      // before any trigger runs — so the message is the constraint's, not the
+      // trigger's.
+      //
+      // The trigger is deliberately kept: it states the invariant in the domain's
+      // own words, and it would still fire if the foreign key were ever dropped.
       await expect(provisionMerchantUser(tenantA, merchantOfB, "d@x.tn")).rejects.toThrow(
-        /different tenant/iu,
+        /different tenant|foreign key/iu,
       );
     });
   });
