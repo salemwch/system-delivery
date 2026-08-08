@@ -7,8 +7,15 @@ import { MESSAGES, toLocale } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n";
 import { hasPermission, readSession } from "@/lib/session";
 import { P } from "@/lib/permissions";
+import { AmendmentPanel } from "@/components/amendment-panel";
 import { NotePanel } from "@/components/note-panel";
-import { fetchNotesFor, fetchShipment, fetchShipmentEvents } from "@/lib/queries";
+import { amendmentLines } from "@/lib/amendment-lines";
+import {
+  fetchAmendmentsFor,
+  fetchNotesFor,
+  fetchShipment,
+  fetchShipmentEvents,
+} from "@/lib/queries";
 
 export default async function ShipmentDetailPage({
   params,
@@ -28,10 +35,14 @@ export default async function ShipmentDetailPage({
   // Three calls, in parallel: the detail response never embedded its events,
   // and remarks are a separate context entirely. Sequential awaits here would
   // add a round trip to every parcel a dispatcher opens.
-  const [shipment, events, notes] = await Promise.all([
+  const canAmend = session !== null && hasPermission(session, P.SHIPMENT_UPDATE);
+  const amendApplies = session !== null && hasPermission(session, P.SHIPMENT_AMEND_APPROVE);
+
+  const [shipment, events, notes, amendments] = await Promise.all([
     fetchShipment(id),
     fetchShipmentEvents(id),
     canReadNotes ? fetchNotesFor("SHIPMENT", id) : Promise.resolve([]),
+    fetchAmendmentsFor(id),
   ]);
 
   return (
@@ -107,6 +118,25 @@ export default async function ShipmentDetailPage({
           ))}
         </ol>
       </Section>
+
+      <AmendmentPanel
+        locale={locale}
+        shipmentId={id}
+        currency={shipment.currency}
+        exponent={shipment.currencyExponent}
+        canRequest={canAmend}
+        appliesImmediately={amendApplies}
+        amendments={amendments.map((amendment) => ({
+          id: amendment.id,
+          status: amendment.status,
+          reason: amendment.reason,
+          decisionReason: amendment.decisionReason,
+          lines: amendmentLines(amendment),
+          // Formatted here: the panel is a client component and has no tenant
+          // timezone to format against.
+          at: formatDateTime(amendment.createdAt, locale, tz),
+        }))}
+      />
 
       {canReadNotes ? (
         <NotePanel

@@ -205,6 +205,49 @@ export const pod = pgTable(
   ],
 );
 
+/**
+ * Modification Colis — requested changes to a parcel (migration 0038).
+ *
+ * A request, not an update: the person who wants the change is usually not the
+ * person who should decide it. Typed columns rather than a JSONB patch, because
+ * a patch cannot be CHECK-constrained and turns "what did they ask to change?"
+ * into a question only the application can answer.
+ */
+export const shipmentAmendments = pgTable(
+  "shipment_amendments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    tenantId: uuid("tenant_id").notNull(),
+    shipmentId: uuid("shipment_id").notNull(),
+    requestedByUserId: uuid("requested_by_user_id").notNull(),
+    /** PENDING | APPLIED | REJECTED. */
+    status: text("status").notNull().default("PENDING"),
+    reason: text("reason"),
+    /** NULL means "leave this field alone"; at least one must be set. */
+    recipientName: text("recipient_name"),
+    recipientPhone: text("recipient_phone"),
+    recipientPhoneAlt: text("recipient_phone_alt"),
+    /** Geocoded on APPLY, not on request — an unapproved address costs nothing. */
+    destinationRawInput: text("destination_raw_input"),
+    destinationCity: text("destination_city"),
+    codAmountMinor: bigint("cod_amount_minor", { mode: "bigint" }),
+    /** What the shipment held before this was applied. */
+    previous: jsonb("previous"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedByUserId: uuid("decided_by_user_id"),
+    decisionReason: text("decision_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("shipment_amendments_one_pending_uq").on(table.shipmentId),
+    index("shipment_amendments_queue_idx").on(table.tenantId, table.createdAt),
+    index("shipment_amendments_shipment_idx").on(table.shipmentId, table.createdAt),
+  ],
+);
+
 export type Shipment = typeof shipments.$inferSelect;
 export type NewShipment = typeof shipments.$inferInsert;
 export type ShipmentLeg = typeof shipmentLegs.$inferSelect;
@@ -213,3 +256,5 @@ export type ShipmentEvent = typeof shipmentEvents.$inferSelect;
 export type NewShipmentEvent = typeof shipmentEvents.$inferInsert;
 export type Pod = typeof pod.$inferSelect;
 export type NewPod = typeof pod.$inferInsert;
+export type ShipmentAmendment = typeof shipmentAmendments.$inferSelect;
+export type NewShipmentAmendment = typeof shipmentAmendments.$inferInsert;

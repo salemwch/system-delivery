@@ -32,7 +32,16 @@ export type {
   AppendResult,
 } from "./application/shipment-event.service.js";
 
-export { shipments, shipmentLegs, shipmentEvents, pod } from "./domain/schema.js";
+export { ShipmentAmendmentService } from "./application/shipment-amendment.service.js";
+export type { AmendmentPage } from "./application/shipment-amendment.service.js";
+
+export {
+  shipments,
+  shipmentLegs,
+  shipmentEvents,
+  pod,
+  shipmentAmendments,
+} from "./domain/schema.js";
 export type {
   Shipment,
   NewShipment,
@@ -42,6 +51,8 @@ export type {
   NewShipmentEvent,
   Pod,
   NewPod,
+  ShipmentAmendment,
+  NewShipmentAmendment,
 } from "./domain/schema.js";
 
 export {
@@ -73,4 +84,7 @@ export type {
   CancelShipmentInput,
   RecordEventInput,
   ListShipmentsInput,
+  RequestAmendmentInput,
+  RejectAmendmentInput,
+  ListAmendmentsInput,
 } from "./domain/dtos.js";

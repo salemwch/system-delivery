@@ -244,6 +244,56 @@ export const recordEventSchema = z.strictObject({
 });
 export type RecordEventInput = z.infer<typeof recordEventSchema>;
 
+// ── Amendments (modification colis) ──────────────────────────────────────────
+
+/**
+ * A requested change to a parcel already in the system.
+ *
+ * Every field optional and at least one required: an amendment names only what
+ * should change, so a request that touches the phone leaves the address exactly
+ * as it was rather than resubmitting it and risking a typo in a field nobody
+ * meant to edit.
+ */
+export const requestAmendmentSchema = z
+  .strictObject({
+    recipientName: nonEmpty("recipientName").max(200).optional(),
+    recipientPhone: e164.optional(),
+    recipientPhoneAlt: e164.optional(),
+    /** Free text; geocoded only if the amendment is approved. */
+    destinationRawInput: nonEmpty("destinationRawInput").max(500).optional(),
+    destinationCity: nonEmpty("destinationCity").max(120).optional(),
+    codAmountMinor: amountMinor.optional(),
+    /** Why. Shown to whoever decides — it is what separates yes from no. */
+    reason: nonEmpty("reason").max(1000).optional(),
+  })
+  .refine(
+    (value) =>
+      value.recipientName !== undefined ||
+      value.recipientPhone !== undefined ||
+      value.recipientPhoneAlt !== undefined ||
+      value.destinationRawInput !== undefined ||
+      value.codAmountMinor !== undefined,
+    { message: "an amendment must request at least one change" },
+  )
+  .refine((value) => value.destinationCity === undefined || value.destinationRawInput !== undefined, {
+    message: "destinationCity needs destinationRawInput",
+    path: ["destinationCity"],
+  });
+export type RequestAmendmentInput = z.infer<typeof requestAmendmentSchema>;
+
+export const rejectAmendmentSchema = z.strictObject({
+  reason: nonEmpty("reason").max(1000),
+});
+export type RejectAmendmentInput = z.infer<typeof rejectAmendmentSchema>;
+
+export const listAmendmentsSchema = z.strictObject({
+  limit: z.number().int().min(1).max(200).optional(),
+  cursor: z.uuid().optional(),
+  status: z.enum(["PENDING", "APPLIED", "REJECTED"]).optional(),
+  shipmentId: z.uuid().optional(),
+});
+export type ListAmendmentsInput = z.infer<typeof listAmendmentsSchema>;
+
 // ── Queries ──────────────────────────────────────────────────────────────────
 
 export const listShipmentsSchema = z.strictObject({

@@ -172,6 +172,13 @@ interface Messages {
   readonly pending: string;
   readonly approved: string;
   readonly rejected: string;
+  readonly amendments: string;
+  readonly noAmendments: string;
+  readonly requestChange: string;
+  readonly applyChange: string;
+  readonly amendHint: string;
+  readonly applied: string;
+  readonly destination: string;
   /** The sidebar section and page title. */
   readonly remarks: string;
   /** The panel heading on a subject's page — distinguishes it from the section. */
@@ -368,6 +375,13 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pending: "في الانتظار",
     approved: "مقبول",
     rejected: "مرفوض",
+    amendments: "تعديل الطرود",
+    noAmendments: "لا توجد تعديلات",
+    requestChange: "طلب تعديل",
+    applyChange: "تطبيق التعديل",
+    amendHint: "املأ الحقول التي تريد تغييرها فقط",
+    applied: "مطبّق",
+    destination: "الوجهة",
     remarks: "الملاحظات",
     internalRemarks: "ملاحظات داخلية",
     noRemarks: "لا توجد ملاحظات",
@@ -561,6 +575,13 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pending: "En attente",
     approved: "Acceptés",
     rejected: "Refusés",
+    amendments: "Modification colis",
+    noAmendments: "Aucune modification",
+    requestChange: "Demander une modification",
+    applyChange: "Appliquer la modification",
+    amendHint: "Remplissez uniquement ce qui doit changer",
+    applied: "Appliquée",
+    destination: "Destination",
     remarks: "Remarques",
     internalRemarks: "Remarques internes",
     noRemarks: "Aucune remarque",
@@ -753,6 +774,13 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pending: "Pending",
     approved: "Approved",
     rejected: "Rejected",
+    amendments: "Parcel changes",
+    noAmendments: "No changes requested",
+    requestChange: "Request a change",
+    applyChange: "Apply the change",
+    amendHint: "Fill in only what should change",
+    applied: "Applied",
+    destination: "Destination",
     remarks: "Remarks",
     internalRemarks: "Internal remarks",
     noRemarks: "No remarks",

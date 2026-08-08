@@ -62,6 +62,10 @@ export const AUDIT_ACTIONS = [
   // human asserting a status the custody chain did not produce.
   "shipment.status_overridden",
   "shipment.cancelled",
+  // A parcel changed after creation — modification colis. The shipment row only
+  // ever shows the current recipient and address, so "the driver called the
+  // wrong number" has no answer six weeks later without this.
+  "shipment.amended",
 
   // ── Money (§10: all ledger adjustments, variance, approvals) ───────────────
   "ledger.adjusted",

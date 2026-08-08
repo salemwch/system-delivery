@@ -440,6 +440,50 @@ export async function fetchZones(cursor?: string | null): Promise<PaginatedResul
 }
 
 /**
+ * A requested change to a parcel — modification colis.
+ *
+ * NULL on a field means "leave it alone", so a request that touches the phone
+ * shows only the phone. `previous` holds what the parcel carried before, for
+ * exactly the fields the amendment touched, and is set only once applied.
+ */
+export interface AmendmentSummary {
+  readonly id: string;
+  readonly shipmentId: string;
+  /** PENDING | APPLIED | REJECTED. */
+  readonly status: string;
+  readonly reason: string | null;
+  readonly recipientName: string | null;
+  readonly recipientPhone: string | null;
+  readonly recipientPhoneAlt: string | null;
+  readonly destinationRawInput: string | null;
+  readonly destinationCity: string | null;
+  /** Minor units as a decimal STRING — a bigint; parsing it as a number rounds. */
+  readonly codAmountMinor: string | null;
+  readonly previous: Readonly<Record<string, unknown>> | null;
+  readonly requestedByUserId: string;
+  readonly decidedAt: string | null;
+  readonly decisionReason: string | null;
+  readonly createdAt: string;
+}
+
+export async function fetchAmendments(
+  cursor?: string | null,
+  status = "PENDING",
+): Promise<PaginatedResult<AmendmentSummary>> {
+  return fetchPage<AmendmentSummary>("/v1/shipment-amendments", cursor, 50, { status });
+}
+
+/** One parcel's change history, newest first. */
+export async function fetchAmendmentsFor(
+  shipmentId: string,
+): Promise<readonly AmendmentSummary[]> {
+  const page = await apiFetch<ApiPage<AmendmentSummary>>(
+    `/v1/shipments/${encodeURIComponent(shipmentId)}/amendments`,
+  );
+  return page.data;
+}
+
+/**
  * A shipper asking to be taken on — nouveaux clients.
  *
  * Not a merchant. Approving one CREATES a merchant and sets `merchantId`; until

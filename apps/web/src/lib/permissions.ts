@@ -14,6 +14,9 @@ export const P = {
   SHIPMENT_FAIL: "shipment:fail",
   SHIPMENT_LABEL: "shipment:label",
   SHIPMENT_OVERRIDE: "shipment:override_status",
+  /** Decide a requested parcel change. Holding it applies your own on the spot. */
+  SHIPMENT_AMEND_APPROVE: "shipment:amend_approve",
+  SHIPMENT_UPDATE: "shipment:update",
 
   PICKUP_READ: "pickup:read",
   PICKUP_CREATE: "pickup:create",
@@ -86,6 +89,7 @@ export const NAV_GATES = {
   network: P.HUB_READ,
   merchants: P.MERCHANT_READ,
   applications: P.MERCHANT_READ,
+  amendments: P.SHIPMENT_READ,
   pickups: P.PICKUP_READ,
   custody: P.MANIFEST_READ,
   finance: P.LEDGER_READ,

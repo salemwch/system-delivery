@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { DirectoryModule } from "../directory/index.js";
 import { PlatformModule } from "../platform/index.js";
 import { AddressBookController } from "./api/address-book.controller.js";
+import { ShipmentAmendmentController } from "./api/shipment-amendment.controller.js";
 import { ShipmentController } from "./api/shipment.controller.js";
 import { TrackingController } from "./api/tracking.controller.js";
 import { AddressBookService } from "./application/address-book.service.js";
@@ -10,6 +11,7 @@ import { BulkShipmentService } from "./application/bulk-shipment.service.js";
 import { PickupScanEventHandler } from "./application/pickup-scan-event.handler.js";
 import { DocumentService } from "./application/document.service.js";
 import { LabelService } from "./application/label.service.js";
+import { ShipmentAmendmentService } from "./application/shipment-amendment.service.js";
 import { ShipmentEventService } from "./application/shipment-event.service.js";
 import { ShipmentStatsService } from "./application/shipment-stats.service.js";
 import { ShipmentService } from "./application/shipment.service.js";
@@ -30,9 +32,15 @@ import { TrackingService } from "./application/tracking.service.js";
  */
 @Module({
   imports: [PlatformModule, DirectoryModule],
-  controllers: [ShipmentController, TrackingController, AddressBookController],
+  controllers: [
+    ShipmentController,
+    TrackingController,
+    AddressBookController,
+    ShipmentAmendmentController,
+  ],
   providers: [
     ShipmentService,
+    ShipmentAmendmentService,
     ShipmentEventService,
     ShipmentStatsService,
     BulkShipmentService,
@@ -43,6 +51,12 @@ import { TrackingService } from "./application/tracking.service.js";
     DocumentService,
     PickupScanEventHandler,
   ],
-  exports: [ShipmentService, ShipmentEventService, TrackingService, PickupScanEventHandler],
+  exports: [
+    ShipmentService,
+    ShipmentAmendmentService,
+    ShipmentEventService,
+    TrackingService,
+    PickupScanEventHandler,
+  ],
 })
 export class ShipmentModule {}

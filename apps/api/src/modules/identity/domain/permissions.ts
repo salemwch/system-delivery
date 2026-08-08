@@ -18,6 +18,21 @@ export const PERMISSIONS = [
   "shipment:assign",
   "shipment:cancel",
   "shipment:override_status",
+  /**
+   * DECIDE a requested change to a parcel — modification colis.
+   *
+   * `shipment:update` asks; this one answers. A merchant lowering the COD on a
+   * parcel already out with a driver is asking the courier to collect less cash
+   * than the manifest says, and one moving the destination is asking for a
+   * different journey than the one that was routed. Both are reasonable and both
+   * are the courier's call, so a merchant never holds this.
+   *
+   * Holding it also means your OWN request is applied immediately — there is
+   * nobody left to ask, and making a dispatcher approve their own edit would be
+   * ceremony rather than control. The row still records both roles, which in
+   * that case is the same person.
+   */
+  "shipment:amend_approve",
   "shipment:deliver",
   "shipment:fail",
   /**
@@ -245,6 +260,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "shipment:assign",
     "shipment:cancel",
     "shipment:override_status",
+    "shipment:amend_approve",
     "pickup:read",
     "pickup:create",
     "pickup:accept",
