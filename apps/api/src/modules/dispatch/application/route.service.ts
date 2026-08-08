@@ -850,6 +850,17 @@ export class RouteService {
     return row;
   }
 
+  /**
+   * The route with its stops and load.
+   *
+   * Public so the bon de distribution can assemble a manifest without
+   * re-deriving the stop order — the paper must follow the order the driver
+   * actually drives, which only this method knows.
+   */
+  async getPlan(routeId: string): Promise<RoutePlan> {
+    return this.plan(routeId);
+  }
+
   private async plan(routeId: string): Promise<RoutePlan> {
     const route = await this.getById(routeId);
     const stops = await this.selectStops(routeId);

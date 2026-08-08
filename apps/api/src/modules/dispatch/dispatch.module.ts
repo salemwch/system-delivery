@@ -13,6 +13,7 @@ import {
   OPTIMIZATION_PROVIDER,
 } from "./application/optimization.provider.js";
 import type { OptimizationProvider } from "./application/optimization.provider.js";
+import { DistributionNoteService } from "./application/distribution-note.service.js";
 import { RouteService } from "./application/route.service.js";
 import { OsrmOptimizationProvider } from "./infrastructure/osrm-optimization.provider.js";
 import { OsrmClient } from "./infrastructure/osrm.client.js";
@@ -38,6 +39,7 @@ import { OsrmClient } from "./infrastructure/osrm.client.js";
   providers: [
     RouteService,
     AssignmentService,
+    DistributionNoteService,
     OsrmClient,
     HeuristicOptimizationProvider,
     OsrmOptimizationProvider,

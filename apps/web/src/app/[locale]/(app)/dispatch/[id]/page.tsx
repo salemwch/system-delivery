@@ -3,7 +3,7 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/ui";
 import { timezone } from "@/lib/config";
 import { formatDateTime } from "@/lib/format";
-import { toLocale } from "@/lib/i18n";
+import { MESSAGES, toLocale } from "@/lib/i18n";
 import { apiFetch } from "@/lib/api";
 
 interface RouteDetail {
@@ -37,6 +37,7 @@ export default async function RouteDetailPage({
 }) {
   const { locale: raw, id } = await params;
   const locale = toLocale(raw);
+  const messages = MESSAGES[locale];
   const tz = timezone();
 
   const route = await apiFetch<RouteDetail>(`/v1/routes/${encodeURIComponent(id)}`);
@@ -52,9 +53,27 @@ export default async function RouteDetailPage({
         </Link>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <h1 className="font-mono text-xl font-bold ltr-isolate">{route.id.slice(0, 8)}</h1>
         <StatusBadge status={route.status} locale={locale} />
+
+        {/*
+          Bon de distribution — the manifest the driver signs for.
+
+          Offered only once a driver is assigned: the API refuses otherwise,
+          because the document is a handover between two named people and one
+          with a blank driver line makes nobody accountable.
+        */}
+        {route.driverId === null ? null : (
+          <a
+            href={`//notes/distribution/`}
+            target="_blank"
+            rel="noopener"
+            className="inline-flex min-h-9 items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 transition hover:bg-slate-50"
+          >
+            {messages.distributionNote}
+          </a>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+} from "@nestjs/common";
 import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
@@ -12,6 +22,7 @@ import type {
   RoutePlan,
 } from "../application/route.service.js";
 import { AssignmentService } from "../application/assignment.service.js";
+import { DistributionNoteService } from "../application/distribution-note.service.js";
 import type { ScoredDriver } from "../application/assignment.service.js";
 import type { Route } from "../domain/schema.js";
 import {
@@ -70,12 +81,36 @@ function dispatchCtx(principal: Principal): DispatchContext {
   };
 }
 
+const documentQuerySchema = z.object({ locale: z.enum(["ar", "fr", "en"]).optional() });
+
 @Controller("v1/routes")
 export class RouteController {
   constructor(
     private readonly routes: RouteService,
     private readonly assignments: AssignmentService,
+    private readonly distributionNotes: DistributionNoteService,
   ) {}
+
+  /**
+   * Bon de distribution — the manifest the driver signs for.
+   *
+   * `route:read` rather than a new permission: whoever may look at a route may
+   * print the paper version of it, and a permission nobody can articulate the
+   * difference for is a permission that gets granted by accident.
+   */
+  @Get(":id/distribution-note")
+  @RequirePermissions("route:read")
+  @Header("content-type", "text/html; charset=utf-8")
+  // A manifest is a snapshot of a live route. Caching it means a driver leaves
+  // with yesterday's stop list after a parcel was added.
+  @Header("cache-control", "no-store")
+  async distributionNote(
+    @Param("id") id: string,
+    @Query() query: unknown,
+  ): Promise<string> {
+    const { locale } = documentQuerySchema.parse(query);
+    return (await this.distributionNotes.render(id, locale)).html;
+  }
 
   @Post()
   @RequirePermissions("route:create")

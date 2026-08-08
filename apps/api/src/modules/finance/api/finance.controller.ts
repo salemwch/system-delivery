@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+} from "@nestjs/common";
 import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
@@ -8,6 +18,7 @@ import { RemittanceService } from "../application/remittance.service.js";
 import type { RemittanceContext } from "../application/remittance.service.js";
 import { SettlementService } from "../application/settlement.service.js";
 import type { SettlementContext } from "../application/settlement.service.js";
+import { PaymentNoteService } from "../application/payment-note.service.js";
 import { ReconciliationService } from "../application/reconciliation.service.js";
 import type { CashInField, DailyReconciliation } from "../application/reconciliation.service.js";
 import type { CodRemittance, Settlement } from "../domain/schema.js";
@@ -89,13 +100,35 @@ function settlementCtx(principal: Principal): SettlementContext {
   return { actorUserId: principal.userId, role };
 }
 
+const noteQuerySchema = z.object({ locale: z.enum(["ar", "fr", "en"]).optional() });
+
 @Controller("v1/finance")
 export class FinanceController {
   constructor(
     private readonly remittances: RemittanceService,
     private readonly settlements: SettlementService,
     private readonly reconciliation: ReconciliationService,
+    private readonly paymentNotes: PaymentNoteService,
   ) {}
+
+  /**
+   * Bon de paiement — the receipt a merchant signs for their money.
+   *
+   * Declared BEFORE `settlements/:id`, or Nest matches "payment-note" as an id.
+   *
+   * `settlement:read` rather than a new permission: the receipt shows exactly
+   * what the settlement already shows, on paper.
+   */
+  @Get("settlements/:id/payment-note")
+  @RequirePermissions("settlement:read")
+  @Header("content-type", "text/html; charset=utf-8")
+  // A receipt is a snapshot of a live settlement; caching one means printing a
+  // figure that has since been adjusted.
+  @Header("cache-control", "no-store")
+  async paymentNote(@Param("id") id: string, @Query() query: unknown): Promise<string> {
+    const { locale } = noteQuerySchema.parse(query);
+    return (await this.paymentNotes.render(id, locale)).html;
+  }
 
   // ── Remittances ─────────────────────────────────────────────────────────────
 

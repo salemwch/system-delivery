@@ -22,22 +22,22 @@
  */
 
 import { escapeHtml } from "../../../shared/http/index.js";
-
-const INVOICE_LOCALES = ["ar", "fr", "en"] as const;
-export type InvoiceLocale = (typeof INVOICE_LOCALES)[number];
-
-const LOCALE_SET: ReadonlySet<string> = new Set<string>(INVOICE_LOCALES);
+import { BASE_PRINT_CSS, directionOf, toDocumentLocale } from "../../../shared/documents/index.js";
+import type { DocumentLocale } from "../../../shared/documents/index.js";
 
 /**
- * French by default, not English.
+ * An invoice's locale is a document locale — the same three, defaulting to
+ * French for the same reason. Aliased rather than redefined so the definition
+ * lives in one place now that four modules render printed pages.
  *
- * French is the working language of Tunisian courier accounting: an operator who
- * prints without choosing a language gets the document they would have chosen,
- * and it is the language their accountant expects.
+ * Not exported: callers that need the type import `DocumentLocale` from
+ * `shared/documents`, which is where it belongs. The alias exists so this
+ * file's own signatures still read in invoice terms.
  */
-export function toInvoiceLocale(value: string | undefined): InvoiceLocale {
-  return value !== undefined && LOCALE_SET.has(value) ? (value as InvoiceLocale) : "fr";
-}
+type InvoiceLocale = DocumentLocale;
+
+/** French by default: the language a Tunisian accountant expects. */
+export const toInvoiceLocale = toDocumentLocale;
 
 /** One printed line. Reachable through {@link InvoiceDocumentData}. */
 interface InvoiceDocumentLine {
@@ -190,10 +190,6 @@ const LABELS: Readonly<Record<InvoiceLocale, Labels>> = {
 };
 
 /** Arabic is the only RTL locale here. */
-function directionOf(locale: InvoiceLocale): "rtl" | "ltr" {
-  return locale === "ar" ? "rtl" : "ltr";
-}
-
 /**
  * A date in the tenant's zone.
  *
@@ -302,15 +298,8 @@ export function renderInvoiceDocument(data: InvoiceDocumentData): string {
     .no-print { display: none; }
     thead { display: table-header-group; }
   }
-  * { box-sizing: border-box; }
-  body {
-    font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
-    font-size: 11pt;
-    line-height: 1.45;
-    color: #111;
-    margin: 0;
-    padding: 8mm;
-  }
+${BASE_PRINT_CSS}
+  body { font-size: 11pt; line-height: 1.45; padding: 8mm; }
   h1 { font-size: 18pt; margin: 0 0 2mm; }
   h2 {
     font-size: 9pt;

@@ -9,6 +9,7 @@ import { LedgerService } from "./application/ledger.service.js";
 import { LedgerEventHandler } from "./application/ledger-event.handler.js";
 import { ReconciliationService } from "./application/reconciliation.service.js";
 import { ExpenseService } from "./application/expense.service.js";
+import { PaymentNoteService } from "./application/payment-note.service.js";
 import { InvoiceService } from "./application/invoice.service.js";
 import { RemittanceService } from "./application/remittance.service.js";
 import { SettlementService } from "./application/settlement.service.js";
@@ -35,6 +36,7 @@ import { SettlementService } from "./application/settlement.service.js";
     ReconciliationService,
     InvoiceService,
     ExpenseService,
+    PaymentNoteService,
   ],
   exports: [
     LedgerService,
@@ -44,6 +46,7 @@ import { SettlementService } from "./application/settlement.service.js";
     ReconciliationService,
     InvoiceService,
     ExpenseService,
+    PaymentNoteService,
   ],
 })
 export class FinanceModule {}

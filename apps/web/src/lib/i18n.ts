@@ -191,6 +191,8 @@ interface Messages {
   readonly closeTicket: string;
   readonly markResolved: string;
   readonly ticketClosedHint: string;
+  readonly distributionNote: string;
+  readonly paymentNote: string;
   readonly expenses: string;
   readonly recordExpense: string;
   readonly spentOn: string;
@@ -436,6 +438,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     closeTicket: "إغلاق",
     markResolved: "تمت المعالجة",
     ticketClosedHint: "هذه التذكرة مغلقة. افتح تذكرة جديدة.",
+    distributionNote: "وصل التوزيع",
+    paymentNote: "وصل الدفع",
     expenses: "المصاريف",
     recordExpense: "تسجيل مصروف",
     spentOn: "تاريخ الصرف",
@@ -678,6 +682,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     closeTicket: "Clôturer",
     markResolved: "Marquer résolu",
     ticketClosedHint: "Ce ticket est clôturé. Ouvrez-en un nouveau.",
+    distributionNote: "Bon de distribution",
+    paymentNote: "Bon de paiement",
     expenses: "Les dépenses",
     recordExpense: "Enregistrer une dépense",
     spentOn: "Date de la dépense",
@@ -919,6 +925,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     closeTicket: "Close",
     markResolved: "Mark resolved",
     ticketClosedHint: "This ticket is closed. Open a new one instead.",
+    distributionNote: "Distribution note",
+    paymentNote: "Payment note",
     expenses: "Expenses",
     recordExpense: "Record an expense",
     spentOn: "Spent on",

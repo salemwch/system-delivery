@@ -20,6 +20,14 @@
  */
 
 import { escapeHtml } from "../../../shared/http/index.js";
+import { BASE_PRINT_CSS, directionOf, toDocumentLocale } from "../../../shared/documents/index.js";
+import type { DocumentLocale } from "../../../shared/documents/index.js";
+
+// Re-exported so existing callers keep importing the locale helpers from the
+// document module they already use; the definitions now live in shared/documents
+// because three modules render printed pages.
+export { toDocumentLocale };
+export type { DocumentLocale };
 
 const DOCUMENT_TYPES = ["DELIVERY_NOTE", "CONSIGNMENT_NOTE", "RETURN_NOTE"] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
@@ -30,21 +38,6 @@ export function isDocumentType(value: string): value is DocumentType {
   return DOCUMENT_TYPE_SET.has(value);
 }
 
-const DOCUMENT_LOCALES = ["ar", "fr", "en"] as const;
-export type DocumentLocale = (typeof DOCUMENT_LOCALES)[number];
-
-const LOCALE_SET: ReadonlySet<string> = new Set<string>(DOCUMENT_LOCALES);
-
-/**
- * French by default, not English.
- *
- * French is the working language of Tunisian courier administration, so an
- * operator who prints without choosing a language gets the document they would
- * have chosen.
- */
-export function toDocumentLocale(value: string | undefined): DocumentLocale {
-  return value !== undefined && LOCALE_SET.has(value) ? (value as DocumentLocale) : "fr";
-}
 
 /** Everything a document prints. Assembled by the service; this module is pure. */
 export interface DocumentData {
@@ -183,9 +176,6 @@ const LABELS: Readonly<Record<DocumentLocale, Labels>> = {
 };
 
 /** Arabic is the only RTL locale here; French and English are LTR. */
-function directionOf(locale: DocumentLocale): "rtl" | "ltr" {
-  return locale === "ar" ? "rtl" : "ltr";
-}
 
 
 /**
@@ -283,20 +273,8 @@ export function renderDocument(data: DocumentData): string {
     .signatures, .parties { break-inside: avoid; }
     .no-print { display: none; }
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    /* System stack: no webfont, so nothing to fetch and nothing to fail. The OS
-       Arabic font shapes correctly wherever the document is opened. */
-    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans Arabic", Arial, sans-serif;
-    font-size: 11pt;
-    line-height: 1.45;
-    color: #111;
-  }
-  header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8mm;
-           border-block-end: 1.5pt solid #111; padding-block-end: 3mm; }
-  .courier { font-size: 13pt; font-weight: 700; }
-  .doctype { font-size: 15pt; font-weight: 700; margin-block-start: 1mm; }
+${BASE_PRINT_CSS}
+  body { font-size: 11pt; line-height: 1.45; }
   .qr { flex: 0 0 auto; text-align: center; }
   .qr svg { width: 24mm; height: 24mm; display: block; }
   .tracking { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
@@ -320,12 +298,7 @@ export function renderDocument(data: DocumentData): string {
   .cod { font-size: 13pt; }
   .cod-notice { margin-block-start: 2mm; padding: 2mm 3mm; border: 1pt solid #111;
                 font-weight: 700; }
-  .muted { color: #777; }
-  .signatures { display: flex; gap: 6mm; margin-block-start: 8mm; }
-  .sig { flex: 1 1 0; }
-  .sig .line { border-block-end: 0.6pt solid #111; height: 16mm; }
-  .sig .caption { font-size: 8.5pt; color: #555; margin-block-start: 1mm; }
-  .print-hint { margin-block-start: 6mm; font-size: 9pt; color: #666; }
+  @media print { .parties { break-inside: avoid; } }
 </style>
 </head>
 <body>
