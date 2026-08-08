@@ -3,10 +3,13 @@ import { eq, sql } from "drizzle-orm";
 
 import { DatabaseService, TenantContext, asTenantId } from "../../../shared/database/index.js";
 import type { TenantId, TenantTransaction } from "../../../shared/database/index.js";
-import { NotFoundError } from "../../../shared/errors/index.js";
+import { BusinessRuleError, NotFoundError } from "../../../shared/errors/index.js";
+import { parseWithZod } from "../../../shared/http/index.js";
 import { DEFAULT_FEATURES } from "../domain/feature-keys.js";
 import type { FeatureKey } from "../domain/feature-keys.js";
 import { tenantFeatures, tenants } from "../domain/schema.js";
+import { updateTenantProfileSchema } from "../domain/tenant-dtos.js";
+import { AuditService } from "./audit.service.js";
 import { OperatingConfigService } from "./operating-config.service.js";
 import { OutboxService } from "./outbox.service.js";
 
@@ -16,6 +19,10 @@ export interface TenantProfile {
   /** IANA zone. Dates render in the courier's own wall-clock time, never UTC. */
   readonly timezone: string;
   readonly defaultLocale: string;
+  /** The locales a courier actually offers. Never empty — see updateProfile. */
+  readonly supportedLocales: readonly string[];
+  readonly defaultCurrency: string;
+  readonly countryCode: string;
 }
 
 /** Everything needed to stand up a new courier company. */
@@ -38,6 +45,10 @@ export class TenantService {
     private readonly database: DatabaseService,
     private readonly outbox: OutboxService,
     private readonly operatingConfig: OperatingConfigService,
+    // §10 makes a tenant configuration change mandatory to audit: it alters
+    // behaviour for the whole company, and `tenant.updated` is already in the
+    // catalogue for exactly this.
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -139,6 +150,83 @@ export class TenantService {
    *
    * Scoped by `withTenant`, so a tenant can only ever resolve itself.
    */
+  /**
+   * Général — the courier's own name, timezone and languages.
+   *
+   * ⚠️ THE SLUG AND THE CURRENCY ARE NOT EDITABLE, and their absence is the
+   * design. The slug appears in every tracking URL a customer has been sent;
+   * changing it breaks every link already in the wild. The currency is stamped
+   * on every shipment, invoice and ledger entry ever written, and changing it
+   * would reinterpret historical amounts rather than convert them.
+   */
+  async updateProfile(input: unknown): Promise<TenantProfile> {
+    const dto = parseWithZod(updateTenantProfileSchema, input);
+
+    return this.database.withTenant(async (tx) => {
+      const tenantId = TenantContext.requireTenantId();
+
+      // ⚠️ The default locale must be one the courier offers, or every document
+      // renders in a language they do not publish. Checked against the NEW
+      // supported set when both change together.
+      const supported = dto.supportedLocales ?? (await this.currentLocales(tx, tenantId));
+      const nextDefault = dto.defaultLocale ?? (await this.currentDefault(tx, tenantId));
+      if (!supported.includes(nextDefault)) {
+        throw new BusinessRuleError(
+          "DEFAULT_LOCALE_NOT_SUPPORTED",
+          `The default language "${nextDefault}" is not one of the supported languages.`,
+        );
+      }
+
+      const updated = await tx
+        .update(tenants)
+        .set({
+          updatedAt: sql`now()`,
+          ...(dto.name === undefined ? {} : { name: dto.name }),
+          ...(dto.timezone === undefined ? {} : { defaultTimezone: dto.timezone }),
+          ...(dto.defaultLocale === undefined ? {} : { defaultLocale: dto.defaultLocale }),
+          ...(dto.supportedLocales === undefined
+            ? {}
+            : { supportedLocales: [...dto.supportedLocales] }),
+        })
+        .where(eq(tenants.id, tenantId))
+        .returning({ id: tenants.id });
+
+      if (updated[0] === undefined) {
+        throw new NotFoundError("Tenant");
+      }
+
+      await this.audit.record(tx, {
+        action: "tenant.updated",
+        resourceType: "tenant",
+        resourceId: tenantId,
+        changes: {
+          ...(dto.name === undefined ? {} : { name: { from: null, to: dto.name } }),
+          ...(dto.timezone === undefined ? {} : { timezone: { from: null, to: dto.timezone } }),
+        },
+      });
+
+      return this.profile();
+    });
+  }
+
+  private async currentLocales(tx: TenantTransaction, tenantId: string): Promise<string[]> {
+    const rows = await tx
+      .select({ locales: tenants.supportedLocales })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1);
+    return rows[0]?.locales ?? ["fr"];
+  }
+
+  private async currentDefault(tx: TenantTransaction, tenantId: string): Promise<string> {
+    const rows = await tx
+      .select({ locale: tenants.defaultLocale })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .limit(1);
+    return rows[0]?.locale ?? "fr";
+  }
+
   async profile(): Promise<TenantProfile> {
     return this.database.withTenant(async (tx) => {
       const tenantId = TenantContext.requireTenantId();
@@ -147,6 +235,9 @@ export class TenantService {
           name: tenants.name,
           timezone: tenants.defaultTimezone,
           defaultLocale: tenants.defaultLocale,
+          supportedLocales: tenants.supportedLocales,
+          defaultCurrency: tenants.defaultCurrency,
+          countryCode: tenants.countryCode,
         })
         .from(tenants)
         .where(eq(tenants.id, tenantId))

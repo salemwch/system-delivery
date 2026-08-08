@@ -19,6 +19,14 @@ export interface OutboundMessage {
   readonly channel: NotificationChannel;
   /** Registered sender id / short code, when the provider requires one. */
   readonly senderId?: string;
+  /**
+   * EMAIL only — the message subject.
+   *
+   * Optional because SMS and PUSH have no such thing, and forcing every caller
+   * to pass an empty string for a field two of the three channels ignore would
+   * be noise at every call site.
+   */
+  readonly subject?: string;
 }
 
 export interface DeliveryReceipt {

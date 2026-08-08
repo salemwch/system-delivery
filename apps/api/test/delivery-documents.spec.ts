@@ -144,7 +144,7 @@ describe("delivery documents", () => {
       addresses,
       operatingConfig,
     );
-    const tenants = new TenantService(db, outbox, operatingConfig);
+    const tenants = new TenantService(db, outbox, operatingConfig, new AuditService(db));
     documents = new DocumentService(shipments, addresses, tenants, new CurrencyService(db));
   }, 240_000);
 

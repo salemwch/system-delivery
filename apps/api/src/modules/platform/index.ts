@@ -34,6 +34,8 @@ export type {
   FieldChange,
 } from "./application/audit.service.js";
 export { AUDIT_ACTIONS, isAuditAction } from "./domain/audit-actions.js";
+export { updateTenantProfileSchema } from "./domain/tenant-dtos.js";
+export type { UpdateTenantProfileInput } from "./domain/tenant-dtos.js";
 export type { AuditAction } from "./domain/audit-actions.js";
 
 export {

@@ -13,8 +13,8 @@ import { hasPermission, requireSession } from "@/lib/session";
  * here changes behaviour for the whole company: the copy every customer reads,
  * and the territories dispatch routes against.
  *
- * Only the sections that are modelled appear. General options and email are not
- * yet; an empty page promising them would be worse than their absence.
+ * Every section here is backed by something real. A settings screen that lists
+ * a heading with nothing behind it teaches an operator that the menu lies.
  */
 export default async function SettingsPage({
   params,
@@ -31,6 +31,36 @@ export default async function SettingsPage({
   }
 
   const sections = [
+    {
+      href: `/${locale}/settings/general`,
+      title: messages.generalSettings,
+      hint:
+        locale === "ar"
+          ? "اسم الشركة والمنطقة الزمنية واللغات"
+          : locale === "fr"
+            ? "Nom, fuseau horaire et langues"
+            : "Name, timezone and languages",
+    },
+    {
+      href: `/${locale}/settings/options`,
+      title: messages.optionsSettings,
+      hint:
+        locale === "ar"
+          ? "تفعيل أو إيقاف الميزات"
+          : locale === "fr"
+            ? "Activer ou désactiver les fonctionnalités"
+            : "Turn features on or off",
+    },
+    {
+      href: `/${locale}/settings/email`,
+      title: messages.emailSettings,
+      hint:
+        locale === "ar"
+          ? "إرسال الوثائق للتجار"
+          : locale === "fr"
+            ? "Envoi des documents aux expéditeurs"
+            : "Sending documents to merchants",
+    },
     {
       href: `/${locale}/settings/templates`,
       title: messages.smsTemplates,

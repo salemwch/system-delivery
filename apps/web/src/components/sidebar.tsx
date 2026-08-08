@@ -10,6 +10,14 @@ export interface NavItem {
   readonly label: string;
   readonly href: string;
   readonly icon: string;
+  /**
+   * How many items are waiting in this section, or 0 for none.
+   *
+   * ⚠️ A ZERO RENDERS NOTHING. A badge showing "0" on eight sections is eight
+   * pieces of noise a reader learns to skip, which is precisely how the one
+   * section that DOES need attention stops being noticed.
+   */
+  readonly badge?: number;
 }
 
 export function Sidebar({
@@ -56,7 +64,17 @@ export function Sidebar({
                   aria-current={active ? "page" : undefined}
                 >
                   <span className="w-5 text-center" aria-hidden="true">{item.icon}</span>
-                  {item.label}
+                  <span className="flex-1">{item.label}</span>
+                  {item.badge === undefined || item.badge === 0 ? null : (
+                    <span
+                      // The count is announced to a screen reader as words, not
+                      // as a bare number floating beside a link.
+                      aria-label={`${String(item.badge)} ${item.label}`}
+                      className="min-w-5 rounded-full bg-brand px-1.5 py-0.5 text-center text-[11px] font-bold tabular-nums text-white"
+                    >
+                      {item.badge > 99 ? "99+" : item.badge}
+                    </span>
+                  )}
                 </Link>
               </li>
             );

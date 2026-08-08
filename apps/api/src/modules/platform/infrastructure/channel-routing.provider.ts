@@ -9,6 +9,7 @@ import type {
 } from "../domain/notification-provider.js";
 import { ConsoleNotificationProvider } from "./console-notification.provider.js";
 import { FcmPushProvider } from "./fcm-push.provider.js";
+import { SmtpEmailProvider } from "./smtp-email.provider.js";
 import { HttpSmsProvider } from "./http-sms.provider.js";
 
 /**
@@ -31,6 +32,7 @@ export class ChannelRoutingProvider implements NotificationProvider {
 
   private readonly sms: NotificationProvider;
   private readonly push: NotificationProvider;
+  private readonly email: NotificationProvider;
 
   constructor(
     config: AppConfigService,
@@ -52,7 +54,12 @@ export class ChannelRoutingProvider implements NotificationProvider {
     // Both channels resolving to the same console instance is normal in
     // development; the name reflects what is actually bound, not what is wired.
 
-    this.name = `${this.sms.name}+${this.push.name}`;
+    this.email =
+      config.get("NOTIFICATION_EMAIL_PROVIDER") === "smtp"
+        ? new SmtpEmailProvider(config, logger)
+        : consoleProvider;
+
+    this.name = `${this.sms.name}+${this.push.name}+${this.email.name}`;
   }
 
   async send(message: OutboundMessage): Promise<DeliveryReceipt> {
@@ -62,11 +69,13 @@ export class ChannelRoutingProvider implements NotificationProvider {
       case "PUSH":
         return this.push.send(message);
       case "EMAIL":
-        // No email transport at MVP — every customer-facing message is SMS and
-        // every driver message is push (docs/01 §4.6). Throwing rather than
-        // silently succeeding: a caller that reaches here has made a mistake, and
-        // a fake success would hide it.
-        throw new Error("EMAIL delivery is not configured at MVP");
+        // Merchant-facing documents only — a settlement receipt, an invoice. No
+        // customer message goes by email in this market: a Tunisian parcel
+        // recipient is reached by SMS and frequently has no address on file.
+        //
+        // Defaults to the console provider, like SMS and push, so a
+        // misconfigured staging box logs instead of reaching a real inbox.
+        return this.email.send(message);
     }
   }
 }

@@ -6,6 +6,7 @@ import postgres from "postgres";
 import type { Sql } from "postgres";
 
 import { DatabaseService } from "../shared/database/database.service.js";
+import { AuditService } from "../modules/platform/application/audit.service.js";
 import { OperatingConfigService } from "../modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../modules/platform/application/outbox.service.js";
 import { TenantService } from "../modules/platform/application/tenant.service.js";
@@ -92,7 +93,7 @@ async function main(): Promise<void> {
 
     const outbox = new OutboxService();
     const database = new DatabaseService(sql as never);
-    const tenantService = new TenantService(database, outbox, new OperatingConfigService(database));
+    const tenantService = new TenantService(database, outbox, new OperatingConfigService(database), new AuditService(database));
     const passwords = new PasswordService();
     const provisioning = new ProvisioningService(tenantService, passwords);
 

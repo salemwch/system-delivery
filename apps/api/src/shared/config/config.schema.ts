@@ -252,6 +252,25 @@ export const configSchema = z
     SMS_API_SECRET: z.string().default(""),
     SMS_BASE_URL: z.string().default(""),
 
+    /**
+     * Transactional email. `console` by default for the same reason as SMS and
+     * push: a misconfigured staging box must not reach a real merchant's inbox.
+     *
+     * ⚠️ Email is NOT a customer channel in this market — a parcel recipient is
+     * reached by SMS. This exists for the MERCHANT-facing documents a courier
+     * emails: a settlement receipt, an invoice, a monthly report. Building the
+     * port and the config structure now is what docs/01 §4.6 asks for; binding a
+     * vendor is a separate decision.
+     */
+    NOTIFICATION_EMAIL_PROVIDER: z.enum(["console", "smtp"]).default("console"),
+    SMTP_HOST: z.string().default(""),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+    SMTP_USERNAME: z.string().default(""),
+    SMTP_PASSWORD: z.string().default(""),
+    /** The From address. A courier's own domain, never a shared one. */
+    SMTP_FROM_ADDRESS: z.string().default(""),
+    SMTP_FROM_NAME: z.string().default(""),
+
     // ── Observability ────────────────────────────────────────────────────────
     OTEL_SERVICE_NAME: z.string().default("core-api"),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().default(""),
@@ -269,6 +288,19 @@ export const configSchema = z
       message:
         "NOTIFICATION_SMS_PROVIDER=http requires SMS_API_KEY, SMS_BASE_URL and SMS_SENDER_ID to be set",
       path: ["NOTIFICATION_SMS_PROVIDER"],
+    },
+  )
+  // Email, same reasoning: a merchant who never receives their settlement
+  // receipt has no way to tell a broken transport from a courier who did not
+  // send one.
+  .refine(
+    (config) =>
+      config.NOTIFICATION_EMAIL_PROVIDER !== "smtp" ||
+      (config.SMTP_HOST.length > 0 && config.SMTP_FROM_ADDRESS.length > 0),
+    {
+      message:
+        "NOTIFICATION_EMAIL_PROVIDER=smtp requires SMTP_HOST and SMTP_FROM_ADDRESS to be set",
+      path: ["NOTIFICATION_EMAIL_PROVIDER"],
     },
   )
   // Same reasoning for push: a driver app that silently receives nothing is

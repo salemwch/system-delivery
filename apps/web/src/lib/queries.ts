@@ -918,3 +918,68 @@ export async function fetchParcelState(
   }
   return apiFetch<ParcelStateReport>(`/v1/shipments/parcel-state?${query.toString()}`);
 }
+
+/** The courier's own identity — Général. */
+export interface TenantProfile {
+  readonly name: string;
+  readonly timezone: string;
+  readonly defaultLocale: string;
+  readonly supportedLocales: readonly string[];
+  /** Read-only: stamped on every shipment and ledger entry ever written. */
+  readonly defaultCurrency: string;
+  readonly countryCode: string;
+}
+
+export async function fetchTenantProfile(): Promise<TenantProfile> {
+  return apiFetch<TenantProfile>("/v1/tenant/profile");
+}
+
+/**
+ * What is waiting, per queue — the sidebar badges.
+ *
+ * ⚠️ ONE call, not six. The sidebar renders on every page, so six separate
+ * counts would be six round trips per navigation.
+ */
+export interface WorkloadCounts {
+  readonly remarks: number;
+  readonly applications: number;
+  readonly amendments: number;
+  readonly support: number;
+  readonly expenses: number;
+  readonly lowStock: number;
+}
+
+export async function fetchWorkload(): Promise<WorkloadCounts> {
+  return apiFetch<WorkloadCounts>("/v1/workload");
+}
+
+/** A feature flag and its current state — Options. */
+export interface FeatureRow {
+  readonly key: string;
+  readonly enabled: boolean;
+}
+
+export async function fetchFeatures(): Promise<readonly FeatureRow[]> {
+  const result = await apiFetch<{ data: readonly FeatureRow[] }>("/v1/features");
+  return result.data;
+}
+
+/**
+ * The email transport's state.
+ *
+ * ⚠️ Carries NO credential — not the username, and obviously not the password.
+ * Only the provider name, the From address that already appears in the header of
+ * every message sent, and the host.
+ */
+export interface EmailStatus {
+  /** `console` means messages are logged, never sent. */
+  readonly provider: string;
+  readonly configured: boolean;
+  readonly fromAddress: string;
+  readonly fromName: string;
+  readonly host: string;
+}
+
+export async function fetchEmailStatus(): Promise<EmailStatus> {
+  return apiFetch<EmailStatus>("/v1/tenant/email-status");
+}

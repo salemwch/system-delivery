@@ -194,6 +194,26 @@ interface Messages {
   readonly distributionNote: string;
   readonly paymentNote: string;
   readonly parcelStateReport: string;
+  readonly generalSettings: string;
+  readonly optionsSettings: string;
+  readonly emailSettings: string;
+  readonly courierName: string;
+  readonly timezoneLabel: string;
+  readonly timezoneHint: string;
+  readonly supportedLanguages: string;
+  readonly defaultLanguage: string;
+  readonly notEditable: string;
+  readonly notEditableHint: string;
+  readonly currency: string;
+  readonly country: string;
+  readonly enable: string;
+  readonly disable: string;
+  readonly emailConfigured: string;
+  readonly emailNotConfigured: string;
+  readonly emailNotConfiguredHint: string;
+  readonly emailSecretsHint: string;
+  readonly emailFrom: string;
+  readonly emailHost: string;
   readonly allMerchants: string;
   readonly exportCsv: string;
   readonly codPending: string;
@@ -445,6 +465,26 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     distributionNote: "وصل التوزيع",
     paymentNote: "وصل الدفع",
     parcelStateReport: "حالة الطرود",
+    generalSettings: "عام",
+    optionsSettings: "الخيارات",
+    emailSettings: "البريد الإلكتروني",
+    courierName: "اسم الشركة",
+    timezoneLabel: "المنطقة الزمنية",
+    timezoneHint: "تُطبع التواريخ بهذا التوقيت",
+    supportedLanguages: "اللغات المتاحة",
+    defaultLanguage: "اللغة الافتراضية",
+    notEditable: "غير قابل للتعديل",
+    notEditableHint: "العملة مسجلة على كل طرد وكل قيد محاسبي.",
+    currency: "العملة",
+    country: "البلد",
+    enable: "تفعيل",
+    disable: "إيقاف",
+    emailConfigured: "مُفعّل",
+    emailNotConfigured: "غير مُفعّل",
+    emailNotConfiguredHint: "تُسجَّل الرسائل في السجل ولا تُرسل.",
+    emailSecretsHint: "بيانات الاعتماد تُضبط في خادم النشر، لا من هنا.",
+    emailFrom: "المُرسِل",
+    emailHost: "الخادم",
     allMerchants: "كل التجار",
     exportCsv: "تصدير CSV",
     codPending: "قيد التحصيل",
@@ -693,6 +733,26 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     distributionNote: "Bon de distribution",
     paymentNote: "Bon de paiement",
     parcelStateReport: "État colis",
+    generalSettings: "Général",
+    optionsSettings: "Options",
+    emailSettings: "E-mail",
+    courierName: "Nom du transporteur",
+    timezoneLabel: "Fuseau horaire",
+    timezoneHint: "Les dates s'impriment dans ce fuseau",
+    supportedLanguages: "Langues proposées",
+    defaultLanguage: "Langue par défaut",
+    notEditable: "Non modifiable",
+    notEditableHint: "La devise est inscrite sur chaque colis et chaque écriture comptable.",
+    currency: "Devise",
+    country: "Pays",
+    enable: "Activer",
+    disable: "Désactiver",
+    emailConfigured: "Configuré",
+    emailNotConfigured: "Non configuré",
+    emailNotConfiguredHint: "Les messages sont écrits dans le journal, jamais envoyés.",
+    emailSecretsHint: "Les identifiants se règlent sur le serveur, pas depuis cette page — un mot de passe SMTP n'a pas sa place en base.",
+    emailFrom: "Expéditeur",
+    emailHost: "Serveur",
     allMerchants: "Tous les expéditeurs",
     exportCsv: "Exporter CSV",
     codPending: "À encaisser",
@@ -940,6 +1000,26 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     distributionNote: "Distribution note",
     paymentNote: "Payment note",
     parcelStateReport: "Parcel state",
+    generalSettings: "General",
+    optionsSettings: "Options",
+    emailSettings: "E-mail",
+    courierName: "Courier name",
+    timezoneLabel: "Timezone",
+    timezoneHint: "Dates print in this zone",
+    supportedLanguages: "Languages offered",
+    defaultLanguage: "Default language",
+    notEditable: "Not editable",
+    notEditableHint: "The currency is stamped on every parcel and every ledger entry.",
+    currency: "Currency",
+    country: "Country",
+    enable: "Enable",
+    disable: "Disable",
+    emailConfigured: "Configured",
+    emailNotConfigured: "Not configured",
+    emailNotConfiguredHint: "Messages are written to the log, never sent.",
+    emailSecretsHint: "Credentials are set on the server, not from this page — an SMTP password does not belong in the database.",
+    emailFrom: "From",
+    emailHost: "Host",
     allMerchants: "All merchants",
     exportCsv: "Export CSV",
     codPending: "Outstanding",

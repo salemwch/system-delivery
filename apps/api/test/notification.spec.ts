@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { EventStreamConsumer } from "../src/modules/platform/application/event-stream-consumer.js";
 import type { ConsumerLogger } from "../src/modules/platform/application/event-stream-consumer.js";
 import { ValkeyStreamEventPublisher } from "../src/modules/platform/infrastructure/valkey-stream.publisher.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { FeatureService } from "../src/modules/platform/application/feature.service.js";
 import type { ConsumedEvent, EventHandler } from "../src/modules/platform/index.js";
 import type { PublishableEvent } from "../src/modules/platform/domain/event-publisher.js";
@@ -179,7 +180,7 @@ describe("notification", () => {
     database = await createTestDatabase();
     valkey = await createTestValkey();
     db = new DatabaseService(database.app);
-    features = new FeatureService(db);
+    features = new FeatureService(db, new AuditService(db));
   }, 240_000);
 
   afterEach(async () => {

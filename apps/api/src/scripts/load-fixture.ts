@@ -12,6 +12,7 @@ import { configSchema } from "../shared/config/config.schema.js";
 import type { AppConfig } from "../shared/config/config.schema.js";
 import { DatabaseService } from "../shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../shared/database/tenant-context.js";
+import { AuditService } from "../modules/platform/application/audit.service.js";
 import { OperatingConfigService } from "../modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../modules/platform/application/outbox.service.js";
 import { TenantService } from "../modules/platform/application/tenant.service.js";
@@ -84,7 +85,7 @@ async function main(): Promise<void> {
     const outbox = new OutboxService();
     const database = new DatabaseService(sql as never);
     const operatingConfig = new OperatingConfigService(database);
-    const tenants = new TenantService(database, outbox, operatingConfig);
+    const tenants = new TenantService(database, outbox, operatingConfig, new AuditService(database));
     const tokens = new TokenService(config);
 
     const slug = `load-${Date.now().toString(36)}`;

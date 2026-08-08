@@ -154,7 +154,7 @@ describe("invoices", () => {
       db,
       outbox,
       audit,
-      new TenantService(db, outbox, new OperatingConfigService(db)),
+      new TenantService(db, outbox, new OperatingConfigService(db), new AuditService(db)),
       new CurrencyService(db),
     );
   }, 240_000);

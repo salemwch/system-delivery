@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { ConfigController } from "./api/config.controller.js";
+import { WorkloadController } from "./api/workload.controller.js";
 import { ConfigBootstrapService } from "./application/config-bootstrap.service.js";
 import { FeatureService } from "./application/feature.service.js";
 import { OutboxService } from "./application/outbox.service.js";
@@ -19,7 +20,7 @@ import { ConsoleNotificationProvider } from "./infrastructure/console-notificati
  * but shared infrastructure.
  */
 @Module({
-  controllers: [ConfigController],
+  controllers: [ConfigController, WorkloadController],
   providers: [
     OutboxService,
     FeatureService,

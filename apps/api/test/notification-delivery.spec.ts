@@ -6,6 +6,7 @@ import { NotificationEventHandler } from "../src/modules/notification/applicatio
 import { NotificationService } from "../src/modules/notification/application/notification.service.js";
 import { TemplateService } from "../src/modules/notification/application/template.service.js";
 import { estimateSegments } from "../src/modules/notification/domain/templates.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { FeatureService } from "../src/modules/platform/application/feature.service.js";
 import { ChannelRoutingProvider } from "../src/modules/platform/infrastructure/channel-routing.provider.js";
 import { ConsoleNotificationProvider } from "../src/modules/platform/infrastructure/console-notification.provider.js";
@@ -217,13 +218,13 @@ describe("notification delivery", () => {
   // ── Channel routing ────────────────────────────────────────────────────────
 
   describe("channel routing", () => {
-    it("defaults BOTH channels to console", () => {
+    it("defaults EVERY channel to console", () => {
       const console_ = new ConsoleNotificationProvider(testLogger(), providerConfig());
       const router = new ChannelRoutingProvider(providerConfig(), testLogger(), console_);
 
       // The fail-safe direction is "did not send", never "sent to production
-      // numbers from a staging box".
-      expect(router.name).toBe("console+console");
+      // numbers from a staging box" — and email joins SMS and push in that.
+      expect(router.name).toBe("console+console+console");
     });
 
     it("selects the http transport for SMS when configured", () => {
@@ -233,17 +234,34 @@ describe("notification delivery", () => {
         testLogger(),
         console_,
       );
-      expect(router.name).toBe("http+console");
+      expect(router.name).toBe("http+console+console");
     });
 
-    it("refuses EMAIL rather than pretending to send it", async () => {
+    it("routes EMAIL to the console transport by default", async () => {
       const console_ = new ConsoleNotificationProvider(testLogger(), providerConfig());
       const router = new ChannelRoutingProvider(providerConfig(), testLogger(), console_);
 
-      // A fake success would hide a caller's mistake.
-      await expect(router.send({ to: "a@b.tn", body: "x", channel: "EMAIL" })).rejects.toThrow(
-        /not configured/u,
+      // ⚠️ It no longer throws. Email became a real channel for MERCHANT-facing
+      // documents — a settlement receipt, an invoice — and like SMS and push it
+      // defaults to the console provider so a misconfigured staging box logs
+      // instead of reaching a real inbox.
+      const receipt = await router.send({ to: "a@b.tn", body: "x", channel: "EMAIL" });
+      expect(receipt.accepted).toBe(true);
+    });
+
+    it("selects the SMTP transport for EMAIL when configured", () => {
+      const console_ = new ConsoleNotificationProvider(testLogger(), providerConfig());
+      const router = new ChannelRoutingProvider(
+        providerConfig({
+          NOTIFICATION_EMAIL_PROVIDER: "smtp",
+          SMTP_HOST: "smtp.example.tn",
+          SMTP_FROM_ADDRESS: "no-reply@example.tn",
+        }),
+        testLogger(),
+        console_,
       );
+
+      expect(router.name).toContain("smtp");
     });
   });
 
@@ -255,7 +273,7 @@ describe("notification delivery", () => {
 
     beforeAll(() => {
       sms = new CapturingNotificationProvider();
-      const service = new NotificationService(db, new FeatureService(db), sms);
+      const service = new NotificationService(db, new FeatureService(db, new AuditService(db)), sms);
       handler = new NotificationEventHandler(service);
     });
 

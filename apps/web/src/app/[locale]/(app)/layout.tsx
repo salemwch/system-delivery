@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/sidebar";
 import type { NavItem } from "@/components/sidebar";
 import { signOut } from "@/lib/actions";
 import { courierName } from "@/lib/api";
+import { fetchWorkload } from "@/lib/queries";
 import { MESSAGES, toLocale } from "@/lib/i18n";
 import { NAV_GATES } from "@/lib/permissions";
 import { hasPermission, readSession } from "@/lib/session";
@@ -24,7 +25,25 @@ export default async function AppLayout({
     redirect(`/${locale}/login`);
   }
 
-  const courier = await courierName();
+  // ⚠️ ONE call for every badge, and it must NEVER break the shell. A failed
+  // count is a missing badge; a thrown error would be a blank application on
+  // every page, which is a far worse outcome than not knowing a number.
+  const [courier, workload] = await Promise.all([
+    courierName(),
+    fetchWorkload().catch(() => null),
+  ]);
+
+  /** Section key → its badge. Sections with no queue are simply absent. */
+  const BADGES: Readonly<Record<string, number>> =
+    workload === null
+      ? {}
+      : {
+          remarks: workload.remarks,
+          applications: workload.applications,
+          amendments: workload.amendments,
+          support: workload.support,
+          inventory: workload.lowStock,
+        };
   const base = `/${locale}`;
 
   const NAV_ICONS: Readonly<Record<string, string>> = {
@@ -64,6 +83,7 @@ export default async function AppLayout({
       label,
       href: key === "dashboard" ? base : `${base}/${key}`,
       icon: NAV_ICONS[key] ?? "•",
+      ...(BADGES[key] === undefined ? {} : { badge: BADGES[key] }),
     });
   }
 

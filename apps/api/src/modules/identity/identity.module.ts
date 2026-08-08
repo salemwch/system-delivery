@@ -11,6 +11,8 @@ import { MfaService } from "./application/mfa.service.js";
 import { OtpService } from "./application/otp.service.js";
 import { UserService } from "./application/user.service.js";
 import { AuditController } from "./api/audit.controller.js";
+import { FeatureController } from "./api/feature.controller.js";
+import { TenantSettingsController } from "./api/tenant-settings.controller.js";
 import { DeadLetterController } from "./api/dead-letter.controller.js";
 import { MfaController } from "./api/mfa.controller.js";
 import { TenantLookupController } from "./api/tenant-lookup.controller.js";
@@ -40,6 +42,8 @@ import { TenantContextInterceptor } from "./api/tenant-context.interceptor.js";
     AuditController,
     MfaController,
     DeadLetterController,
+    TenantSettingsController,
+    FeatureController,
   ],
   providers: [
     PasswordService,

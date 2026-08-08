@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { TenantService } from "../src/modules/platform/application/tenant.service.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { FeatureService } from "../src/modules/platform/application/feature.service.js";
 import { PasswordService } from "../src/modules/identity/application/password.service.js";
 import { ProvisioningService } from "../src/modules/identity/application/provisioning.service.js";
@@ -60,8 +61,8 @@ describe("platform provisioning", () => {
     const dbService = new DatabaseService(database.app);
     const outbox = new OutboxService();
     operatingConfig = new OperatingConfigService(dbService);
-    const tenantService = new TenantService(dbService, outbox, operatingConfig);
-    features = new FeatureService(dbService);
+    const tenantService = new TenantService(dbService, outbox, operatingConfig, new AuditService(dbService));
+    features = new FeatureService(dbService, new AuditService(dbService));
     provisioning = new ProvisioningService(tenantService, new PasswordService());
   });
 
