@@ -30,6 +30,8 @@ export default async function AppLayout({
   const NAV_ICONS: Readonly<Record<string, string>> = {
     dashboard: "◈",
     shipments: "◫",
+    documents: "▤",
+    import: "⇪",
     dispatch: "⊞",
     fleet: "⊟",
     network: "◉",

@@ -134,6 +134,9 @@ interface Messages {
   readonly importMissingColumns: string;
   readonly importRowErrors: string;
   readonly importPartial: string;
+  readonly import: string;
+  readonly importPickMerchant: string;
+  readonly print: string;
 }
 
 export const MESSAGES: Readonly<Record<Locale, Messages>> = {
@@ -256,6 +259,9 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     importMissingColumns: "أعمدة ناقصة",
     importRowErrors: "صحّح الأسطر التالية ثم أعد المحاولة — لم يتم استيراد أي صف",
     importPartial: "تم استيراد بعض الصفوف فقط",
+    import: "استيراد الطرود",
+    importPickMerchant: "اختر التاجر أولًا — الملف لا يحتوي على عمود التاجر.",
+    print: "طباعة",
   },
   fr: {
     title: "Tableau de bord",
@@ -377,6 +383,9 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     importMissingColumns: "Colonnes manquantes",
     importRowErrors: "Corrigez les lignes ci-dessous puis réessayez — aucune ligne n a été importée",
     importPartial: "Certaines lignes seulement ont été importées",
+    import: "Import colis",
+    importPickMerchant: "Choisissez d abord le commerçant — le fichier ne contient pas de colonne commerçant.",
+    print: "Imprimer",
   },
   en: {
     title: "Dashboard",
@@ -497,6 +506,9 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     importMissingColumns: "Missing columns",
     importRowErrors: "Fix the lines below and try again — nothing was imported",
     importPartial: "Only some rows were imported",
+    import: "Import shipments",
+    importPickMerchant: "Pick the merchant first — the file carries no merchant column.",
+    print: "Print",
   },
 };
 

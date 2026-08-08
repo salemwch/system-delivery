@@ -73,6 +73,8 @@ export const P = {
 export const NAV_GATES = {
   dashboard: null,
   shipments: P.SHIPMENT_READ,
+  documents: P.SHIPMENT_LABEL,
+  import: P.SHIPMENT_CREATE,
   dispatch: P.ROUTE_READ,
   fleet: P.DRIVER_READ,
   network: P.HUB_READ,
