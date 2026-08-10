@@ -5,6 +5,7 @@ import { PinoLogger } from "nestjs-pino";
 
 import { AppConfigModule } from "../config/config.module.js";
 import { AppConfigService } from "../config/index.js";
+import { ConnectionErrorLog } from "./connection-log.js";
 import { VALKEY_CLIENT } from "./valkey.tokens.js";
 
 /**
@@ -36,8 +37,18 @@ import { VALKEY_CLIENT } from "./valkey.tokens.js";
         // An ioredis client is an EventEmitter: an unhandled 'error' event would
         // crash the process. Surface reconnect/transport errors as structured
         // logs instead — never swallow them.
+        //
+        // ⚠️ Through ConnectionErrorLog, not straight to the logger. ioredis
+        // re-emits on every reconnect attempt, so a plain handler here wrote the
+        // same stack every two seconds for the length of an outage. See
+        // connection-log.ts for what is kept and what is collapsed.
+        const connectionLog = new ConnectionErrorLog(logger, "valkey");
         client.on("error", (error: Error) => {
-          logger.error({ err: error, component: "valkey" }, "Valkey client error");
+          connectionLog.record(error);
+        });
+        // The line that says the incident ended. Nothing logged this before.
+        client.on("ready", () => {
+          connectionLog.recovered();
         });
         return client;
       },

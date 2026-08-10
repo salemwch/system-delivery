@@ -6,6 +6,7 @@ import postgres from "postgres";
 import type { Sql } from "postgres";
 
 import { AppConfigService } from "../../shared/config/index.js";
+import { ConnectionErrorLog } from "../../shared/valkey/index.js";
 import { FleetModule } from "../fleet/index.js";
 import { IdentityModule } from "../identity/index.js";
 import { NetworkModule } from "../network/index.js";
@@ -63,8 +64,15 @@ import { REALTIME_SUBSCRIBER, TELEMETRY_POSTGRES_CLIENT } from "./tracking.token
       inject: [AppConfigService, PinoLogger],
       useFactory: (config: AppConfigService, logger: PinoLogger): Redis => {
         const client = new Redis(config.get("VALKEY_URL"), { maxRetriesPerRequest: null });
+        // ⚠️ Throttled like the shared client, and named DIFFERENTLY on purpose.
+        // Both connect to the same Valkey, so an outage fires both handlers at
+        // once; identical `component` values would make one outage read as two.
+        const connectionLog = new ConnectionErrorLog(logger, "realtime-subscriber");
         client.on("error", (error: Error) => {
-          logger.error({ err: error, component: "realtime-subscriber" }, "Valkey error");
+          connectionLog.record(error);
+        });
+        client.on("ready", () => {
+          connectionLog.recovered();
         });
         return client;
       },
