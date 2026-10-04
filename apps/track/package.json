@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "next": "16.2.12"
+    "next": "16.3.6"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
