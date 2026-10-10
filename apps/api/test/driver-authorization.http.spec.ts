@@ -6,6 +6,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
 import * as OTPAuth from "otpauth";
+import type { TransactionSql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AddressService } from "../src/modules/directory/application/address.service.js";
@@ -14,6 +15,9 @@ import { RecipientService } from "../src/modules/directory/application/recipient
 import { RecipientController } from "../src/modules/directory/api/recipient.controller.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
 import { FinanceController } from "../src/modules/finance/api/finance.controller.js";
+import { ShiftController } from "../src/modules/fleet/api/shift.controller.js";
+import { ShiftService } from "../src/modules/fleet/application/shift.service.js";
+import type { ShiftContext } from "../src/modules/fleet/application/shift.service.js";
 import { LedgerService } from "../src/modules/finance/application/ledger.service.js";
 import { PaymentNoteService } from "../src/modules/finance/application/payment-note.service.js";
 import { ReconciliationService } from "../src/modules/finance/application/reconciliation.service.js";
@@ -54,6 +58,7 @@ import { DatabaseService } from "../src/shared/database/database.service.js";
 import { POSTGRES_CLIENT } from "../src/shared/database/database.tokens.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
 import type { TenantId } from "../src/shared/database/tenant-context.js";
+import { ForbiddenError, NotFoundError } from "../src/shared/errors/index.js";
 import { ProblemDetailsFilter, createFastifyAdapter } from "../src/shared/http/index.js";
 import { CurrencyService } from "../src/shared/money/index.js";
 import { CapturingNotificationProvider } from "./auth.factory.js";
@@ -77,7 +82,9 @@ describe("driver authorization over HTTP", () => {
   let database: TestDatabase;
   let app: NestFastifyApplication;
   let tenant: TenantId;
+  let otherTenant: TenantId;
   let shipments: ShipmentService;
+  let shiftsSvc: ShiftService;
 
   // Generated, never a literal: a fixed credential in a test file is exactly
   // what a secret scanner is right to flag.
@@ -88,12 +95,17 @@ describe("driver authorization over HTTP", () => {
   const pod = { podType: "signature", signatureObjectKey: "pods/s.png", recipientName: "R" };
 
   interface Seeded {
+    readonly tenantId: TenantId;
     readonly email: string;
     readonly userId: string;
     readonly driverId: string | null;
   }
 
-  async function seedAccount(roles: string[], withDriverRecord: boolean): Promise<Seeded> {
+  async function seedAccount(
+    roles: string[],
+    withDriverRecord: boolean,
+    tenantId: TenantId = tenant,
+  ): Promise<Seeded> {
     const email = `u-${randomUUID().slice(0, 8)}@authz.tn`;
     const privileged = roles.includes("OWNER");
     const mfaSecret = privileged ? new OTPAuth.Secret({ size: 20 }).base32 : null;
@@ -102,30 +114,30 @@ describe("driver authorization over HTTP", () => {
     }
     const hash = await new PasswordService().hash(PASSWORD);
     return database.migrator.begin(async (tx) => {
-      await tx`select set_config('app.current_tenant_id', ${tenant}, true)`;
+      await tx`select set_config('app.current_tenant_id', ${tenantId}, true)`;
       const users = await tx<{ id: string }[]>`
         insert into users (tenant_id, email, password_hash, full_name, status,
                            mfa_enabled, mfa_secret, mfa_enrolled_at)
-        values (${tenant}, ${email}, ${hash}, 'Authz', 'ACTIVE', ${privileged},
+        values (${tenantId}, ${email}, ${hash}, 'Authz', 'ACTIVE', ${privileged},
                 ${mfaSecret === null ? null : cipher.encrypt(mfaSecret)},
                 ${privileged ? new Date() : null})
         returning id`;
       const user = users[0];
       if (user === undefined) throw new Error("seed failed");
       for (const role of roles) {
-        await tx`insert into user_roles (tenant_id, user_id, role) values (${tenant}, ${user.id}, ${role})`;
+        await tx`insert into user_roles (tenant_id, user_id, role) values (${tenantId}, ${user.id}, ${role})`;
       }
       let driverId: string | null = null;
       if (withDriverRecord) {
         const drivers = await tx<{ id: string }[]>`
           insert into drivers (tenant_id, user_id, employee_code, full_name, phone, status, employment_type)
-          values (${tenant}, ${user.id}, ${`D-${randomUUID().slice(0, 6)}`}, 'Driver',
+          values (${tenantId}, ${user.id}, ${`D-${randomUUID().slice(0, 6)}`}, 'Driver',
                   ${`+2162${String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0")}`},
                   'ACTIVE', 'EMPLOYEE')
           returning id`;
         driverId = drivers[0]?.id ?? null;
       }
-      return { email, userId: user.id, driverId };
+      return { tenantId, email, userId: user.id, driverId };
     });
   }
 
@@ -147,7 +159,7 @@ describe("driver authorization over HTTP", () => {
       method: "POST",
       url: "/v1/auth/login",
       payload: {
-        tenantId: tenant,
+        tenantId: account.tenantId,
         email: account.email,
         password: PASSWORD,
         ...(mfaCode === undefined ? {} : { mfaCode }),
@@ -208,6 +220,7 @@ describe("driver authorization over HTTP", () => {
   beforeAll(async () => {
     database = await createTestDatabase();
     tenant = asTenantId(await createTenant(database.migrator, "authz-http"));
+    otherTenant = asTenantId(await createTenant(database.migrator, "authz-http-2"));
 
     const db = new DatabaseService(database.app);
     const outbox = new OutboxService();
@@ -223,15 +236,22 @@ describe("driver authorization over HTTP", () => {
       new OperatingConfigService(db),
       new AuditService(db),
     );
+    shiftsSvc = new ShiftService(db, outbox);
 
     // Routes under test use only ShipmentService, RecipientService,
-    // RemittanceService and CurrencyService. The controllers' other
+    // RemittanceService, ShiftService and CurrencyService. The controllers' other
     // collaborators back routes this spec never calls, so they are inert
     // placeholders, never invoked.
     const unused = (token: InjectionToken): Provider => ({ provide: token, useValue: {} });
 
     @Module({
-      controllers: [AuthController, ShipmentController, RecipientController, FinanceController],
+      controllers: [
+        AuthController,
+        ShipmentController,
+        RecipientController,
+        FinanceController,
+        ShiftController,
+      ],
       providers: [
         { provide: AppConfigService, useValue: stubConfig() },
         { provide: POSTGRES_CLIENT, useValue: database.app },
@@ -249,6 +269,7 @@ describe("driver authorization over HTTP", () => {
         { provide: ShipmentService, useValue: shipments },
         { provide: RecipientService, useValue: recipients },
         { provide: AddressService, useValue: addresses },
+        { provide: ShiftService, useValue: shiftsSvc },
         OutboxService,
         LedgerService,
         RemittanceService,
@@ -279,7 +300,7 @@ describe("driver authorization over HTTP", () => {
 
   afterAll(async () => {
     await app.close();
-    await deleteTenants(database.migrator, [tenant]);
+    await deleteTenants(database.migrator, [tenant, otherTenant]);
     await database.close();
   });
 
@@ -442,6 +463,285 @@ describe("driver authorization over HTTP", () => {
       const { id } = JSON.parse(own.body) as { id: string };
       // Reading, confirming or disputing a remittance is staff work.
       expect((await call("GET", `/v1/finance/remittances/${id}`, token)).statusCode).toBe(403);
+    });
+  });
+
+  describe("a DRIVER and shifts (V5: shift identity, 9318622 release review)", () => {
+    /** A van on no shift. */
+    async function seedVehicle(tenantId: TenantId = tenant): Promise<string> {
+      return database.migrator.begin(async (tx) => {
+        await tx`select set_config('app.current_tenant_id', ${tenantId}, true)`;
+        const rows = await tx<{ id: string }[]>`
+          insert into vehicles (tenant_id, plate_number, type)
+          values (${tenantId}, ${`TUN-${randomUUID().slice(0, 8)}`}, 'VAN')
+          returning id`;
+        const row = rows[0];
+        if (row === undefined) throw new Error("seed failed");
+        return row.id;
+      });
+    }
+
+    /** Every shift of a driver, read past the API as the schema owner. */
+    async function shiftsOf(
+      driverId: string | null,
+      tenantId: TenantId = tenant,
+    ): Promise<{ id: string; status: string; closing_cash_minor: string | null }[]> {
+      return database.migrator.begin(async (tx) => {
+        await tx`select set_config('app.current_tenant_id', ${tenantId}, true)`;
+        const rows = await tx<{ id: string; status: string; closing_cash_minor: string | null }[]>`
+          select id, status, closing_cash_minor::text as closing_cash_minor
+            from shifts where driver_id = ${driverId ?? randomUUID()}`;
+        return [...rows];
+      });
+    }
+
+    /** The driver opens their own shift over HTTP. */
+    async function ownShift(account: Seeded, extra: object = {}): Promise<string> {
+      const response = await call("POST", "/v1/shifts", await login(account), {
+        driverId: account.driverId,
+        vehicleId: await seedVehicle(account.tenantId),
+        ...extra,
+      });
+      expect(response.statusCode, response.body).toBe(201);
+      return (JSON.parse(response.body) as { id: string }).id;
+    }
+
+    /**
+     * The location privacy gate, called exactly as TelemetryService calls it
+     * for this driver's request (driver-scoped context, the login's user id).
+     */
+    function telemetryGate(account: Seeded, at?: Date) {
+      return TenantContext.run(
+        {
+          tenantId: account.tenantId,
+          actorType: "driver",
+          actorId: account.userId,
+          driverId: account.driverId ?? "",
+        },
+        () => shiftsSvc.openShiftForUser(account.userId, at),
+      );
+    }
+
+    it("refuses a colleague's driverId on start with 403 that names nothing about them", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const b = await seedAccount(["DRIVER"], true);
+
+      const response = await call("POST", "/v1/shifts", await login(a), {
+        driverId: b.driverId,
+        vehicleId: await seedVehicle(),
+        openingCashMinor: "12345",
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(JSON.parse(response.body)).toMatchObject({ code: "FORBIDDEN" });
+      expect(response.body).not.toContain(b.driverId ?? "");
+      // Nothing was opened for B, so B's location is not collected, and B can
+      // still open their own shift (no denial of service).
+      expect(await shiftsOf(b.driverId)).toEqual([]);
+      expect(await telemetryGate(b)).toBeNull();
+      await ownShift(b);
+    });
+
+    it("cannot read or end a colleague's shift: 404, and the shift is untouched", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const b = await seedAccount(["DRIVER"], true);
+      const theirs = await ownShift(b, { openingCashMinor: "12345" });
+      const token = await login(a);
+
+      const read = await call("GET", `/v1/shifts/${theirs}`, token);
+      expect(read.statusCode).toBe(404);
+      expect(read.body).not.toContain("12345");
+
+      const ended = await call("POST", `/v1/shifts/${theirs}/end`, token, {
+        closingCashMinor: "999",
+      });
+      expect(ended.statusCode).toBe(404);
+
+      expect(await shiftsOf(b.driverId)).toEqual([
+        { id: theirs, status: "OPEN", closing_cash_minor: null },
+      ]);
+      // B's location is still collected: the shift was not closed under them.
+      expect(await telemetryGate(b)).toMatchObject({ driverId: b.driverId, shiftId: theirs });
+    });
+
+    it("starts, reads and ends their own shift, and never holds two open", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const token = await login(a);
+      expect(await telemetryGate(a)).toBeNull();
+
+      const id = await ownShift(a, { openingCashMinor: "5000" });
+      // Location is accepted from now on: their own OPEN shift.
+      expect(await telemetryGate(a)).toMatchObject({ driverId: a.driverId, shiftId: id });
+
+      const second = await call("POST", "/v1/shifts", token, {
+        driverId: a.driverId,
+        vehicleId: await seedVehicle(),
+      });
+      expect(second.statusCode).toBe(409);
+      expect(JSON.parse(second.body)).toMatchObject({ code: "DRIVER_SHIFT_OPEN" });
+
+      const read = await call("GET", `/v1/shifts/${id}`, token);
+      expect(read.statusCode).toBe(200);
+      expect(JSON.parse(read.body)).toMatchObject({
+        id,
+        driverId: a.driverId,
+        openingCashMinor: "5000",
+      });
+
+      const ended = await call("POST", `/v1/shifts/${id}/end`, token, {
+        closingCashMinor: "4500",
+      });
+      expect(ended.statusCode, ended.body).toBe(200);
+      expect(JSON.parse(ended.body)).toMatchObject({ status: "CLOSED", closingCashMinor: "4500" });
+
+      const again = await call("POST", `/v1/shifts/${id}/end`, token, {});
+      expect(again.statusCode).toBe(422);
+      expect(JSON.parse(again.body)).toMatchObject({ code: "SHIFT_NOT_OPEN" });
+      // After the shift, a new location is refused.
+      expect(await telemetryGate(a, new Date(Date.now() + 3_600_000))).toBeNull();
+    });
+
+    it("gives a DRIVER login with no driver record nothing: 403 on start, 404 on a shift", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const shift = await ownShift(a);
+      const token = await login(await seedAccount(["DRIVER"], false));
+
+      const start = await call("POST", "/v1/shifts", token, {
+        driverId: a.driverId,
+        vehicleId: await seedVehicle(),
+      });
+      expect(start.statusCode).toBe(403);
+      expect((await call("GET", `/v1/shifts/${shift}`, token)).statusCode).toBe(404);
+      expect((await call("POST", `/v1/shifts/${shift}/end`, token, {})).statusCode).toBe(404);
+      expect((await shiftsOf(a.driverId)).map((s) => s.status)).toEqual(["OPEN"]);
+    });
+
+    it("lets an OWNER start, read and end a shift on a driver's behalf", async () => {
+      const b = await seedAccount(["DRIVER"], true);
+      const token = await login(await seedAccount(["OWNER"], false));
+
+      const started = await call("POST", "/v1/shifts", token, {
+        driverId: b.driverId,
+        vehicleId: await seedVehicle(),
+        openingCashMinor: "700",
+      });
+      expect(started.statusCode, started.body).toBe(201);
+      const { id } = JSON.parse(started.body) as { id: string };
+
+      const read = await call("GET", `/v1/shifts/${id}`, token);
+      expect(read.statusCode).toBe(200);
+      expect(JSON.parse(read.body)).toMatchObject({
+        driverId: b.driverId,
+        openingCashMinor: "700",
+      });
+
+      const ended = await call("POST", `/v1/shifts/${id}/end`, token, { closingCashMinor: "700" });
+      expect(ended.statusCode, ended.body).toBe(200);
+      expect(JSON.parse(ended.body)).toMatchObject({ status: "CLOSED" });
+    });
+
+    it("keeps shifts out of a DISPATCHER's reach (the role holds no shift permission)", async () => {
+      const b = await seedAccount(["DRIVER"], true);
+      const shift = await ownShift(b);
+      const token = await login(await seedAccount(["DISPATCHER"], false));
+
+      expect((await call("GET", `/v1/shifts/${shift}`, token)).statusCode).toBe(403);
+      expect((await call("POST", `/v1/shifts/${shift}/end`, token, {})).statusCode).toBe(403);
+      const start = await call("POST", "/v1/shifts", token, {
+        driverId: b.driverId,
+        vehicleId: await seedVehicle(),
+      });
+      expect(start.statusCode).toBe(403);
+      expect((await shiftsOf(b.driverId)).map((s) => s.status)).toEqual(["OPEN"]);
+    });
+
+    it("cannot reach another tenant's shift or driver", async () => {
+      const c = await seedAccount(["DRIVER"], true, otherTenant);
+      const theirs = await ownShift(c, { openingCashMinor: "8888" });
+      const driver = await login(await seedAccount(["DRIVER"], true));
+      const owner = await login(await seedAccount(["OWNER"], false));
+
+      for (const token of [driver, owner]) {
+        const read = await call("GET", `/v1/shifts/${theirs}`, token);
+        expect(read.statusCode).toBe(404);
+        expect(read.body).not.toContain("8888");
+        expect((await call("POST", `/v1/shifts/${theirs}/end`, token, {})).statusCode).toBe(404);
+      }
+      // Naming the other tenant's driver: not in this tenant for the owner
+      // (404), and not themselves for the driver (403, existence unconfirmed).
+      const ownerStart = await call("POST", "/v1/shifts", owner, {
+        driverId: c.driverId,
+        vehicleId: await seedVehicle(),
+      });
+      expect(ownerStart.statusCode).toBe(404);
+      const driverStart = await call("POST", "/v1/shifts", driver, {
+        driverId: c.driverId,
+        vehicleId: await seedVehicle(),
+      });
+      expect(driverStart.statusCode).toBe(403);
+
+      expect(await shiftsOf(c.driverId, otherTenant)).toEqual([
+        { id: theirs, status: "OPEN", closing_cash_minor: null },
+      ]);
+    });
+
+    it("is refused by the database itself (RLS, migration 0049)", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const b = await seedAccount(["DRIVER"], true);
+      const theirs = await ownShift(b);
+      const vehicle = await seedVehicle();
+
+      // dp_app, scoped exactly as withTenant scopes A's requests.
+      const asA = (query: (tx: TransactionSql) => Promise<readonly unknown[]>) =>
+        database.app.begin(async (tx) => {
+          await tx`select set_config('app.current_tenant_id', ${tenant}, true),
+                          set_config('app.current_driver_id', ${a.driverId ?? ""}, true)`;
+          return [...(await query(tx))];
+        });
+
+      expect(await asA((tx) => tx`select id from shifts where id = ${theirs}`)).toHaveLength(0);
+      expect(
+        await asA(
+          (tx) => tx`update shifts set status = 'CLOSED', ended_at = now()
+                      where id = ${theirs} returning id`,
+        ),
+      ).toHaveLength(0);
+      await expect(
+        asA(
+          (tx) => tx`insert into shifts (tenant_id, driver_id, vehicle_id)
+                     values (${tenant}, ${b.driverId}, ${vehicle})`,
+        ),
+      ).rejects.toMatchObject({ code: "42501" });
+      // The scope narrows; it does not blind a driver to their own rows.
+      expect(
+        await asA(
+          (tx) => tx`insert into shifts (tenant_id, driver_id, vehicle_id)
+                     values (${tenant}, ${a.driverId}, ${vehicle}) returning id`,
+        ),
+      ).toHaveLength(1);
+      expect((await shiftsOf(b.driverId)).map((s) => s.status)).toEqual(["OPEN"]);
+    });
+
+    it("checks ownership after retrieval even in a session RLS does not narrow", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const b = await seedAccount(["DRIVER"], true);
+      const theirs = await ownShift(b);
+      const vehicle = await seedVehicle();
+      const asDriverA: ShiftContext = { actorUserId: a.userId, actorIsDriver: true };
+      // No driverId bound: RLS does not narrow, so the service check stands alone.
+      const unscoped = <T>(fn: () => Promise<T>) =>
+        TenantContext.run({ tenantId: tenant, actorType: "user" }, fn);
+
+      await expect(unscoped(() => shiftsSvc.getById(theirs, asDriverA))).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+      await expect(unscoped(() => shiftsSvc.end(theirs, {}, asDriverA))).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+      await expect(
+        unscoped(() => shiftsSvc.start({ driverId: b.driverId, vehicleId: vehicle }, asDriverA)),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      expect((await shiftsOf(b.driverId)).map((s) => s.status)).toEqual(["OPEN"]);
     });
   });
 

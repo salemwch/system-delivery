@@ -2,8 +2,10 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from "@nestj
 import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
-import { RequirePermissions } from "../../identity/index.js";
+import { CurrentPrincipal, RequirePermissions } from "../../identity/index.js";
+import type { Principal } from "../../identity/index.js";
 import { ShiftService } from "../application/shift.service.js";
+import type { ShiftContext } from "../application/shift.service.js";
 import type { Shift } from "../domain/schema.js";
 import { endShiftSchema, startShiftSchema } from "../domain/dtos.js";
 
@@ -23,6 +25,11 @@ interface ShiftResponse {
   readonly updatedAt: string;
 }
 
+/** The shift caller, with the DRIVER role taken from the signed role claim. */
+function shiftCtx(principal: Principal): ShiftContext {
+  return { actorUserId: principal.userId, actorIsDriver: principal.roles.includes("DRIVER") };
+}
+
 @Controller("v1/shifts")
 export class ShiftController {
   constructor(private readonly shifts: ShiftService) {}
@@ -31,8 +38,9 @@ export class ShiftController {
   @RequirePermissions("shift:start")
   async start(
     @Body(zodBody(startShiftSchema)) body: z.infer<typeof startShiftSchema>,
+    @CurrentPrincipal() principal: Principal,
   ): Promise<ShiftResponse> {
-    const shift = await this.shifts.start(body);
+    const shift = await this.shifts.start(body, shiftCtx(principal));
     return toResponse(shift);
   }
 
@@ -42,15 +50,19 @@ export class ShiftController {
   async end(
     @Param("id") id: string,
     @Body(zodBody(endShiftSchema)) body: z.infer<typeof endShiftSchema>,
+    @CurrentPrincipal() principal: Principal,
   ): Promise<ShiftResponse> {
-    const shift = await this.shifts.end(id, body);
+    const shift = await this.shifts.end(id, body, shiftCtx(principal));
     return toResponse(shift);
   }
 
   @Get(":id")
   @RequirePermissions("shift:start")
-  async getById(@Param("id") id: string): Promise<ShiftResponse> {
-    const shift = await this.shifts.getById(id);
+  async getById(
+    @Param("id") id: string,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<ShiftResponse> {
+    const shift = await this.shifts.getById(id, shiftCtx(principal));
     return toResponse(shift);
   }
 }

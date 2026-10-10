@@ -579,6 +579,10 @@ End response includes an outstanding-cash prompt:
 
 **Notes.** ⚠️ **`telemetryEnabled: false` is a privacy control.** The server rejects telemetry outside an open shift regardless of what the app sends. `telemetryConfig` is server-driven so sampling can be tuned per tenant without an app release.
 
+**As built (2026-10-10).** The `/drivers/me` form above is not built. The shift routes are `POST /v1/shifts` (body `driverId`, `vehicleId`, optional `hubId`, `startOdometer`, `openingCashMinor`) → `201`, `GET /v1/shifts/{id}` → `200`, and `POST /v1/shifts/{id}/end` (optional `endOdometer`, `closingCashMinor`) → `200`, each returning the shift.
+
+**Auth.** `shift:start` (start, read) and `shift:end` (Driver; Owner holds every permission). A driver may start a shift only for their own driver record: any other `driverId`, or a DRIVER login with no driver record, is `403 FORBIDDEN`, opens nothing, and says nothing about the named driver. Another driver's shift is `404 NOT_FOUND` on read and end, exactly like a missing one (domain §3.3 rule 8). A second open shift is `409 DRIVER_SHIFT_OPEN`; ending a closed shift is `422 SHIFT_NOT_OPEN`.
+
 **Emits.** `driver.shift_started` / `driver.shift_ended`
 
 ### `POST /v1/telemetry` — GPS batch

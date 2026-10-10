@@ -15,6 +15,7 @@ import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure
 import { VehicleService } from "../src/modules/fleet/application/vehicle.service.js";
 import { DriverService } from "../src/modules/fleet/application/driver.service.js";
 import { ShiftService } from "../src/modules/fleet/application/shift.service.js";
+import type { ShiftContext } from "../src/modules/fleet/application/shift.service.js";
 import { HubService } from "../src/modules/network/application/hub.service.js";
 import { FeatureService } from "../src/modules/platform/application/feature.service.js";
 import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
@@ -41,6 +42,8 @@ import type { TestDatabase } from "./database.harness.js";
  * network, directory, and platform exactly as it does at runtime.
  */
 describe("dispatch", () => {
+  // Staff (the OWNER) starting a shift on a driver's behalf.
+  const staffShift: ShiftContext = { actorUserId: randomUUID(), actorIsDriver: false };
   let database: TestDatabase;
   let db: DatabaseService;
   let routesSvc: RouteService;
@@ -543,7 +546,7 @@ describe("dispatch", () => {
       const vehicleId = await makeVehicle(tenantId);
       const driverId = await makeDriver(tenantId);
       // Only a driver within an OPEN shift is assignable (the fleet privacy gate).
-      await asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId }));
+      await asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId }, staffShift));
 
       const a = await makeShipment(tenantId, { lat: 36.83, lng: 10.18 });
       const suggestions = await asTenant(tenantId, () =>
