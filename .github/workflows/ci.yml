@@ -16,6 +16,10 @@ concurrency:
 permissions:
   contents: read
 
+# Runner image pinned, never `ubuntu-latest`: that label is re-pointed to a new
+# Ubuntu without a commit here (to Ubuntu 26 from 2026-10-19), changing the
+# toolchain under an unchanged workflow. Move it deliberately, in its own commit.
+
 env:
   NODE_VERSION: "24"
   # Fail the build on any dependency advisory at this level or above.
@@ -27,7 +31,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   static-analysis:
     name: Lint, types, formatting
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -83,7 +87,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   test:
     name: Tests (real PostgreSQL)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -122,7 +126,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   secret-scan:
     name: Secret scanning
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -141,7 +145,7 @@ jobs:
 
   dependency-audit:
     name: Dependency vulnerabilities
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -163,7 +167,7 @@ jobs:
 
   sast:
     name: Static application security testing
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
       image: semgrep/semgrep:1.170.1
@@ -180,7 +184,7 @@ jobs:
 
   terraform:
     name: Terraform format and validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -218,7 +222,7 @@ jobs:
   # than being updated every time a job is added or renamed.
   ci-passed:
     name: CI passed
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [static-analysis, test, secret-scan, dependency-audit, sast, terraform]
     if: always()
     steps:
