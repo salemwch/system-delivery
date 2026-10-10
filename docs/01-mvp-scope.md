@@ -1,8 +1,8 @@
 # MVP Scope Definition
 
 > The authoritative boundary of the first release. Where this document and [10-development-roadmap.md](./10-development-roadmap.md) disagree on team size or scope, **this document wins** — it is written against the confirmed business answers in [blueprint §12](./architecture-blueprint.md#12-open-questions-requiring-business-input).
-> **Status:** DRAFT — awaiting approval. No implementation has begun.
-> **Date:** 2026-07-22
+> **Status:** APPROVED. Implementation authorized 2026-07-22 (see `CLAUDE.md`, "Current phase"). See [§14](#14-scope-changes-since-approval) for features built outside this boundary.
+> **Date:** 2026-07-22 · **Last reviewed:** 2026-10-10
 
 ---
 
@@ -493,3 +493,18 @@ No AI is being built (§5). These targets exist because **operational reporting 
 This document defines the MVP boundary. **On approval, implementation begins with Stage S0.**
 
 Where it conflicts with [10-development-roadmap.md](./10-development-roadmap.md) — which was written before the Q1–Q8 answers and assumes a 3–4 engineer team — **this document is authoritative** and the roadmap should be reconciled to it.
+
+---
+
+## 14. Scope changes since approval
+
+Recorded 2026-10-10, as a statement of fact rather than a re-approval. §5 excludes the four features below, yet each was built and is live in the codebase. Until the founder records a decision for each row, §5 and the code disagree. Each one also took time away from the driver app (§4.4, all P0), which has not been started.
+
+| §5 exclusion | Built in | What exists | Decision needed |
+|---|---|---|---|
+| Stock / inventory management (*gestion de stock*), V3.11 | `fe9bfd3` (2026-08-08) | `inventory` module: append-only consumables movement log, transfers, stock view. Migrations 0041–0042 | Keep in MVP, or freeze until after pilot |
+| Expense tracking (*les dépenses*), V3 | `50498b2` (2026-08-08) | Expenses DRAFT→APPROVED posting to the ledger. Migration 0040 | Keep in MVP, or freeze |
+| Full merchant billing & invoicing (*factures*), V2.15 | `f0ac3ea` (2026-08-08) | Invoices and credit notes with gapless numbering, TVA + timbre fiscal. Migrations 0032–0033 | Keep in MVP, or freeze. If kept, the tax-series rules become launch-critical |
+| Merchant public self-registration, V2 | `48e2760` (2026-08-08) | Public application form with staff approval queue (applications, not instant accounts). Migration 0037 | Keep in MVP. It differs from the "public signup" §5 rejected, because an approval flow exists |
+
+**Rule going forward:** CLAUDE.md "Do not build out-of-scope features" stands. A feature in §5 is built only after a row is added here with the decision and its date.
