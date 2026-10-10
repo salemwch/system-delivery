@@ -2,9 +2,17 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { AddressService, MerchantService, RecipientService } from "../src/modules/directory/index.js";
+import {
+  AddressService,
+  MerchantService,
+  RecipientService,
+} from "../src/modules/directory/index.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
-import { AuditService, OperatingConfigService, OutboxService } from "../src/modules/platform/index.js";
+import {
+  AuditService,
+  OperatingConfigService,
+  OutboxService,
+} from "../src/modules/platform/index.js";
 import { ParcelStateService } from "../src/modules/shipment/application/parcel-state.service.js";
 import { ShipmentEventService } from "../src/modules/shipment/application/shipment-event.service.js";
 import { ShipmentService } from "../src/modules/shipment/application/shipment.service.js";
@@ -31,9 +39,7 @@ describe("parcel state report", () => {
       // `=HYPERLINK(...)` becomes a live link in the courier's spreadsheet, and
       // `=cmd|'/c calc'!A1` is the DDE variant that has produced remote code
       // execution in the wild.
-      expect(csvCell("=HYPERLINK(\"https://evil.tn\")")).toBe(
-        "\"'=HYPERLINK(\"\"https://evil.tn\"\")\"",
-      );
+      expect(csvCell('=HYPERLINK("https://evil.tn")')).toBe('"\'=HYPERLINK(""https://evil.tn"")"');
       expect(csvCell("=cmd|'/c calc'!A1")).toBe("'=cmd|'/c calc'!A1");
     });
 
@@ -274,9 +280,7 @@ describe("parcel state report", () => {
 
       // `<= 2026-08-31` against a timestamp excludes everything after midnight,
       // which silently drops a day's parcels from every month-end report.
-      const report = await asStaff(tenantId, () =>
-        parcelState.report({ from: today, to: today }),
-      );
+      const report = await asStaff(tenantId, () => parcelState.report({ from: today, to: today }));
       expect(report.rows[0]?.total).toBe(1);
     });
 
@@ -327,7 +331,7 @@ describe("parcel state report", () => {
     });
 
     it("⚠️ neutralises a malicious merchant name in the exported file", async () => {
-      const evil = await seedMerchant(tenantId, "=HYPERLINK(\"https://evil.tn\")");
+      const evil = await seedMerchant(tenantId, '=HYPERLINK("https://evil.tn")');
       await seedShipment(tenantId, evil);
 
       const csv = await asStaff(tenantId, () => parcelState.csv(period()));

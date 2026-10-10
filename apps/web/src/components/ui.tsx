@@ -116,14 +116,7 @@ export const BUTTON_CLASS =
   "text-sm font-semibold text-white transition hover:bg-brand-dark " +
   "disabled:cursor-not-allowed disabled:opacity-60";
 
-
-export function PageHeader({
-  title,
-  children,
-}: {
-  title: string;
-  children?: React.ReactNode;
-}) {
+export function PageHeader({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4">
       <h1 className="text-xl font-bold text-slate-900">{title}</h1>
@@ -145,7 +138,10 @@ export function DataTable({
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50">
             {headers.map((h) => (
-              <th key={h} className="px-4 py-3 text-start text-xs font-semibold text-slate-600 uppercase tracking-wider">
+              <th
+                key={h}
+                className="px-4 py-3 text-start text-xs font-semibold text-slate-600 uppercase tracking-wider"
+              >
                 {h}
               </th>
             ))}

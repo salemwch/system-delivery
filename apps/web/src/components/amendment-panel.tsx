@@ -110,7 +110,12 @@ export function AmendmentPanel({
               name="recipientName"
               error={state.fieldErrors["recipientName"]}
             >
-              <input id="recipientName" name="recipientName" maxLength={200} className={INPUT_CLASS} />
+              <input
+                id="recipientName"
+                name="recipientName"
+                maxLength={200}
+                className={INPUT_CLASS}
+              />
             </Field>
 
             <Field
@@ -146,7 +151,12 @@ export function AmendmentPanel({
               name="destinationCity"
               error={state.fieldErrors["destinationCity"]}
             >
-              <input id="destinationCity" name="destinationCity" maxLength={120} className={INPUT_CLASS} />
+              <input
+                id="destinationCity"
+                name="destinationCity"
+                maxLength={120}
+                className={INPUT_CLASS}
+              />
             </Field>
 
             {/*

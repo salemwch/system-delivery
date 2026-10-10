@@ -78,7 +78,10 @@ export default async function PortalLayout({
           </div>
         </div>
 
-        <nav className="mx-auto flex max-w-3xl gap-1 overflow-x-auto px-2 pb-2" aria-label={messages.portal}>
+        <nav
+          className="mx-auto flex max-w-3xl gap-1 overflow-x-auto px-2 pb-2"
+          aria-label={messages.portal}
+        >
           <NavLink href={base} label={messages.dashboard} />
           <NavLink href={`${base}/shipments`} label={messages.shipments} />
           <NavLink href={`${base}/address-book`} label={messages.addressBook} />

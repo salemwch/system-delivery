@@ -48,15 +48,11 @@ describe("composition roots", () => {
   ] as const;
 
   for (const root of roots) {
-    it(
-      `resolves every provider in ${root.name}`,
-      async () => {
-        const moduleRef = await Test.createTestingModule({ imports: [root.module] }).compile();
-        opened.push(moduleRef);
+    it(`resolves every provider in ${root.name}`, async () => {
+      const moduleRef = await Test.createTestingModule({ imports: [root.module] }).compile();
+      opened.push(moduleRef);
 
-        expect(moduleRef).toBeDefined();
-      },
-      120_000,
-    );
+      expect(moduleRef).toBeDefined();
+    }, 120_000);
   }
 });

@@ -16,11 +16,7 @@ import { fetchTemplates } from "@/lib/queries";
  * `shipment.delivered` without looking at the Arabic beside it is how the two
  * drift apart.
  */
-export default async function TemplatesPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function TemplatesPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];

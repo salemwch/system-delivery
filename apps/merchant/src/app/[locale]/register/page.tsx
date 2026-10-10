@@ -15,11 +15,7 @@ import { MESSAGES, toLocale } from "@/lib/i18n";
  * be applying on behalf of a second business than to be lost, and bouncing them
  * to a dashboard would silently discard what they came to do.
  */
-export default async function RegisterPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function RegisterPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];

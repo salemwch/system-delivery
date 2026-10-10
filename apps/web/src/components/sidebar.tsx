@@ -63,7 +63,9 @@ export function Sidebar({
                   }
                   aria-current={active ? "page" : undefined}
                 >
-                  <span className="w-5 text-center" aria-hidden="true">{item.icon}</span>
+                  <span className="w-5 text-center" aria-hidden="true">
+                    {item.icon}
+                  </span>
                   <span className="flex-1">{item.label}</span>
                   {item.badge === undefined || item.badge === 0 ? null : (
                     <span

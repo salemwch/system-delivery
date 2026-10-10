@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from "@nestjs/common";
 import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
@@ -129,7 +139,9 @@ export class ExpenseController {
   /** Approved spend per category. Declared before `:id` for the same reason. */
   @Get("summary")
   @RequirePermissions("expense:read")
-  async summary(@Query() query: unknown): Promise<{ readonly data: readonly SummaryRowResponse[] }> {
+  async summary(
+    @Query() query: unknown,
+  ): Promise<{ readonly data: readonly SummaryRowResponse[] }> {
     const parsed = summaryQuerySchema.parse(query);
     const rows = await this.expenses.summary(parsed);
     return { data: await this.renderSummary(rows) };
@@ -211,9 +223,7 @@ export class ExpenseController {
     return rows.map((row) => toResponse(row, exponentOf(exponents, row.currency)));
   }
 
-  private async renderSummary(
-    rows: readonly ExpenseSummaryRow[],
-  ): Promise<SummaryRowResponse[]> {
+  private async renderSummary(rows: readonly ExpenseSummaryRow[]): Promise<SummaryRowResponse[]> {
     const exponents = await this.exponentsFor(rows.map((row) => row.currency));
     return rows.map((row) => ({
       categoryId: row.categoryId,

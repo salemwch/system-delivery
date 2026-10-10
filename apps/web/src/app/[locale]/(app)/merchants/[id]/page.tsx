@@ -15,12 +15,7 @@ import { P } from "@/lib/permissions";
 import { hasPermission, requireSession } from "@/lib/session";
 import { NotePanel } from "@/components/note-panel";
 import { formatDateTime } from "@/lib/format";
-import {
-  fetchCommercials,
-  fetchMerchant,
-  fetchMerchantStats,
-  fetchNotesFor,
-} from "@/lib/queries";
+import { fetchCommercials, fetchMerchant, fetchMerchantStats, fetchNotesFor } from "@/lib/queries";
 import type { MerchantDetail, MerchantStats } from "@/lib/queries";
 
 /**
@@ -212,10 +207,7 @@ function Performance({ stats, locale }: { stats: MerchantStats; locale: Locale }
           value={`${formatMoney(collected, stats.currencyExponent, locale)} ${stats.currency}`}
           tone="money"
         />
-        <StatCard
-          label={messages.avgAttempts}
-          value={stats.avgAttemptsPerDelivery.toFixed(2)}
-        />
+        <StatCard label={messages.avgAttempts} value={stats.avgAttemptsPerDelivery.toFixed(2)} />
       </div>
 
       {stats.byStatus.length === 0 ? null : (

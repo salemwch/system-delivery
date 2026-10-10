@@ -104,10 +104,7 @@ export class RouteController {
   // A manifest is a snapshot of a live route. Caching it means a driver leaves
   // with yesterday's stop list after a parcel was added.
   @Header("cache-control", "no-store")
-  async distributionNote(
-    @Param("id") id: string,
-    @Query() query: unknown,
-  ): Promise<string> {
+  async distributionNote(@Param("id") id: string, @Query() query: unknown): Promise<string> {
     const { locale } = documentQuerySchema.parse(query);
     return (await this.distributionNotes.render(id, locale)).html;
   }

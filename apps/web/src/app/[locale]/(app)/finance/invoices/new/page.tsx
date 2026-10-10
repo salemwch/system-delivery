@@ -21,11 +21,7 @@ import { fetchMerchants } from "@/lib/queries";
 const TENANT_CURRENCY = "TND";
 const TENANT_CURRENCY_EXPONENT = 3;
 
-export default async function NewInvoicePage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function NewInvoicePage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];

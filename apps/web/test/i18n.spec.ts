@@ -82,9 +82,17 @@ describe("MESSAGES", () => {
 
 describe("STATUS_LABELS", () => {
   const statuses = [
-    "CREATED", "PICKUP_ASSIGNED", "PICKED_UP", "AT_HUB", "IN_TRANSIT",
-    "OUT_FOR_DELIVERY", "DELIVERED", "FAILED_ATTEMPT", "RETURN_PENDING",
-    "RETURNED", "CANCELLED",
+    "CREATED",
+    "PICKUP_ASSIGNED",
+    "PICKED_UP",
+    "AT_HUB",
+    "IN_TRANSIT",
+    "OUT_FOR_DELIVERY",
+    "DELIVERED",
+    "FAILED_ATTEMPT",
+    "RETURN_PENDING",
+    "RETURNED",
+    "CANCELLED",
   ];
 
   it("has labels for all statuses in all locales", () => {

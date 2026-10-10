@@ -85,7 +85,10 @@ function MovementForm({
   const [state, action] = useActionState(recordMovement.bind(null, locale), INITIAL_STATE);
 
   return (
-    <form action={action} className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-3">
+    <form
+      action={action}
+      className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-3"
+    >
       <Field label={messages.item} name="itemId" error={state.fieldErrors["itemId"]}>
         <Select id="itemId" name="itemId" options={items} required />
       </Field>
@@ -151,7 +154,10 @@ function TransferForm({
   const [state, action] = useActionState(transferStock.bind(null, locale), INITIAL_STATE);
 
   return (
-    <form action={action} className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
+    <form
+      action={action}
+      className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2"
+    >
       <Field label={messages.item} name="itemId" error={state.fieldErrors["itemId"]}>
         <Select id="itemId" name="itemId" options={items} required />
       </Field>
@@ -187,7 +193,10 @@ function ItemForm({ locale }: { locale: Locale }) {
   const [state, action] = useActionState(createInventoryItem.bind(null, locale), INITIAL_STATE);
 
   return (
-    <form action={action} className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-3">
+    <form
+      action={action}
+      className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-3"
+    >
       <Field label={messages.reference} name="sku" error={state.fieldErrors["sku"]}>
         <input
           id="sku"

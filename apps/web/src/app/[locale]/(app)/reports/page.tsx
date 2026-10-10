@@ -133,9 +133,7 @@ export default async function ReportsPage({
         <span className="rounded-lg border border-slate-200 bg-white px-3 py-2">
           {messages.deliveryRate}:{" "}
           <strong className="tabular-nums">
-            {totals.parcels === 0
-              ? "—"
-              : formatRate(totals.delivered / totals.parcels, locale, 1)}
+            {totals.parcels === 0 ? "—" : formatRate(totals.delivered / totals.parcels, locale, 1)}
           </strong>
         </span>
       </div>

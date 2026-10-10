@@ -55,8 +55,7 @@ async function main(): Promise<void> {
   // Account recovery. See `resetAccount` for why this exists and why it is a
   // script rather than an endpoint.
   const resetEmail = process.env["SEED_RESET_EMAIL"];
-  const resetPassword =
-    process.env["SEED_RESET_PASSWORD"] ?? randomBytes(12).toString("base64url");
+  const resetPassword = process.env["SEED_RESET_PASSWORD"] ?? randomBytes(12).toString("base64url");
 
   const commercialEmail = process.env["SEED_COMMERCIAL_EMAIL"];
   const commercialName = process.env["SEED_COMMERCIAL_NAME"] ?? "Commercial";
@@ -93,7 +92,12 @@ async function main(): Promise<void> {
 
     const outbox = new OutboxService();
     const database = new DatabaseService(sql as never);
-    const tenantService = new TenantService(database, outbox, new OperatingConfigService(database), new AuditService(database));
+    const tenantService = new TenantService(
+      database,
+      outbox,
+      new OperatingConfigService(database),
+      new AuditService(database),
+    );
     const passwords = new PasswordService();
     const provisioning = new ProvisioningService(tenantService, passwords);
 
@@ -281,12 +285,7 @@ async function addCommercial(
   });
 }
 
-function printCommercial(
-  slug: string,
-  tenantId: string,
-  email: string,
-  password: string,
-): void {
+function printCommercial(slug: string, tenantId: string, email: string, password: string): void {
   process.stdout.write(
     [
       "",

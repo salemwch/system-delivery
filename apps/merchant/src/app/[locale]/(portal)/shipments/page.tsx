@@ -51,9 +51,7 @@ export default async function ShipmentsPage({
       <nav aria-label={messages.status} className="flex flex-wrap gap-2">
         {FILTERS.map((candidate) => {
           const href =
-            candidate === ""
-              ? `/${locale}/shipments`
-              : `/${locale}/shipments?status=${candidate}`;
+            candidate === "" ? `/${locale}/shipments` : `/${locale}/shipments?status=${candidate}`;
           const active = candidate === status;
           return (
             <Link
@@ -98,8 +96,7 @@ export default async function ShipmentsPage({
                     <span>{formatDate(shipment.createdAt, locale, tz)}</span>
                     {cod > 0 ? (
                       <span className="ltr-isolate font-semibold text-slate-900">
-                        {formatMoney(cod, config.currency.exponent, locale)}{" "}
-                        {shipment.currency}
+                        {formatMoney(cod, config.currency.exponent, locale)} {shipment.currency}
                       </span>
                     ) : null}
                   </div>

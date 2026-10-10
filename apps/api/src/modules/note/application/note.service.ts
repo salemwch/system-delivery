@@ -2,7 +2,11 @@ import { Injectable } from "@nestjs/common";
 import { and, desc, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 
-import { DatabaseService, TenantContext, isForeignKeyViolation } from "../../../shared/database/index.js";
+import {
+  DatabaseService,
+  TenantContext,
+  isForeignKeyViolation,
+} from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
 import { NotFoundError, ValidationError } from "../../../shared/errors/index.js";
 import { parseWithZod } from "../../../shared/http/index.js";
@@ -225,7 +229,10 @@ async function selectViews(
 }
 
 /** DTO subject → the one column that holds it. */
-function columnFor(type: SubjectType, id: string): Partial<Pick<Note, "shipmentId" | "merchantId" | "driverId">> {
+function columnFor(
+  type: SubjectType,
+  id: string,
+): Partial<Pick<Note, "shipmentId" | "merchantId" | "driverId">> {
   switch (type) {
     case "SHIPMENT":
       return { shipmentId: id };

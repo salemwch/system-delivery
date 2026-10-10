@@ -66,7 +66,10 @@ export function TemplateEditor({
       </div>
 
       {error === null ? null : (
-        <p role="alert" className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
+        <p
+          role="alert"
+          className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-800"
+        >
           {apiErrorMessage(error, locale)}
         </p>
       )}

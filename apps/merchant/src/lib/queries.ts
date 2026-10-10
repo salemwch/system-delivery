@@ -75,7 +75,9 @@ export async function fetchDashboard(currency: string): Promise<DashboardStats> 
   // RLS narrows this to the caller's own rows: a MERCHANT token sees only its
   // own parcels, so the "dashboard" is already this merchant's dashboard
   // (invariant I24). No merchant id is passed, and none could be trusted if it were.
-  return apiFetch<DashboardStats>(`/v1/shipments/dashboard?currency=${encodeURIComponent(currency)}`);
+  return apiFetch<DashboardStats>(
+    `/v1/shipments/dashboard?currency=${encodeURIComponent(currency)}`,
+  );
 }
 
 export async function fetchShipments(params: {

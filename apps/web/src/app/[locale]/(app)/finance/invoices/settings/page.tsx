@@ -44,11 +44,7 @@ export default async function BillingSettingsPage({
         // Minor units → the decimal the operator types. A plain `Number()` here
         // would divide by 100 somewhere down the line; `formatMoney` reads the
         // exponent instead, and TND's is three.
-        stampDuty={formatMoney(
-          BigInt(settings.stampDutyMinor),
-          TENANT_CURRENCY_EXPONENT,
-          "en",
-        )}
+        stampDuty={formatMoney(BigInt(settings.stampDutyMinor), TENANT_CURRENCY_EXPONENT, "en")}
         paymentTermsDays={settings.paymentTermsDays}
         legalName={settings.legalName}
         taxIdentifier={settings.taxIdentifier}

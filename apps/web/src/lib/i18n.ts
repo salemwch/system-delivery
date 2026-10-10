@@ -538,7 +538,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     active: "نشط",
     inactive: "غير نشط",
     importFile: "ملف CSV",
-    importColumns: "الأعمدة المطلوبة: recipientName, recipientPhone, address — واختياريًا city, codAmount, weightGrams, parcelCount, reference",
+    importColumns:
+      "الأعمدة المطلوبة: recipientName, recipientPhone, address — واختياريًا city, codAmount, weightGrams, parcelCount, reference",
     importDelimiter: "الفاصل",
     importDelimiterHint: "تستعمل بعض ملفات إكسل الفرنسية الفاصلة المنقوطة",
     importRowsReady: "صفوف جاهزة",
@@ -653,7 +654,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     legalName: "Raison sociale",
     taxIdentifier: "Matricule fiscal",
     legalAddress: "Adresse légale",
-    issueWarning: "L'émission est définitive : elle consomme un numéro non réutilisable et fige la facture.",
+    issueWarning:
+      "L'émission est définitive : elle consomme un numéro non réutilisable et fige la facture.",
     correctsInvoice: "Annule et remplace la facture",
     invoiceActionFailed: "L'opération n'a pas pu aboutir.",
     pickupNotClaimable: "Plus disponible",
@@ -662,7 +664,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     pickupAddressHint: "Sans elle, aucun ramassage ne peut être demandé pour ce commerçant",
     city: "Ville",
     phoneHint: "24 201 314 ou +216 24 201 314",
-    addressOnFile: "Une adresse de ramassage est enregistrée. Saisissez-en une nouvelle pour la remplacer.",
+    addressOnFile:
+      "Une adresse de ramassage est enregistrée. Saisissez-en une nouvelle pour la remplacer.",
     addressMissing: "Aucune adresse de ramassage — aucun ramassage ne peut être demandé.",
     errorCodeTaken: "Ce code commerçant est déjà utilisé. Choisissez-en un autre.",
     errorEmailTaken: "Cette adresse e-mail est déjà utilisée dans cette société.",
@@ -750,7 +753,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     emailConfigured: "Configuré",
     emailNotConfigured: "Non configuré",
     emailNotConfiguredHint: "Les messages sont écrits dans le journal, jamais envoyés.",
-    emailSecretsHint: "Les identifiants se règlent sur le serveur, pas depuis cette page — un mot de passe SMTP n'a pas sa place en base.",
+    emailSecretsHint:
+      "Les identifiants se règlent sur le serveur, pas depuis cette page — un mot de passe SMTP n'a pas sa place en base.",
     emailFrom: "Expéditeur",
     emailHost: "Serveur",
     allMerchants: "Tous les expéditeurs",
@@ -806,7 +810,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     active: "Actif",
     inactive: "Inactif",
     importFile: "Fichier CSV",
-    importColumns: "Colonnes requises : recipientName, recipientPhone, address — facultatives : city, codAmount, weightGrams, parcelCount, reference",
+    importColumns:
+      "Colonnes requises : recipientName, recipientPhone, address — facultatives : city, codAmount, weightGrams, parcelCount, reference",
     importDelimiter: "Séparateur",
     importDelimiterHint: "Excel en français exporte souvent avec des points-virgules",
     importRowsReady: "Lignes prêtes",
@@ -815,10 +820,12 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     importEmpty: "Le fichier ne contient aucune ligne",
     importTooMany: "100 lignes maximum par fichier",
     importMissingColumns: "Colonnes manquantes",
-    importRowErrors: "Corrigez les lignes ci-dessous puis réessayez — aucune ligne n a été importée",
+    importRowErrors:
+      "Corrigez les lignes ci-dessous puis réessayez — aucune ligne n a été importée",
     importPartial: "Certaines lignes seulement ont été importées",
     import: "Import colis",
-    importPickMerchant: "Choisissez d abord le commerçant — le fichier ne contient pas de colonne commerçant.",
+    importPickMerchant:
+      "Choisissez d abord le commerçant — le fichier ne contient pas de colonne commerçant.",
     print: "Imprimer",
   },
   en: {
@@ -920,7 +927,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     legalName: "Legal name",
     taxIdentifier: "Tax ID",
     legalAddress: "Legal address",
-    issueWarning: "Issuing is final: it consumes a number that cannot be reused and freezes the invoice.",
+    issueWarning:
+      "Issuing is final: it consumes a number that cannot be reused and freezes the invoice.",
     correctsInvoice: "Cancels and replaces invoice",
     invoiceActionFailed: "The operation could not be completed.",
     pickupNotClaimable: "No longer available",
@@ -1017,7 +1025,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     emailConfigured: "Configured",
     emailNotConfigured: "Not configured",
     emailNotConfiguredHint: "Messages are written to the log, never sent.",
-    emailSecretsHint: "Credentials are set on the server, not from this page — an SMTP password does not belong in the database.",
+    emailSecretsHint:
+      "Credentials are set on the server, not from this page — an SMTP password does not belong in the database.",
     emailFrom: "From",
     emailHost: "Host",
     allMerchants: "All merchants",
@@ -1073,7 +1082,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     active: "Active",
     inactive: "Inactive",
     importFile: "CSV file",
-    importColumns: "Required columns: recipientName, recipientPhone, address — optional: city, codAmount, weightGrams, parcelCount, reference",
+    importColumns:
+      "Required columns: recipientName, recipientPhone, address — optional: city, codAmount, weightGrams, parcelCount, reference",
     importDelimiter: "Delimiter",
     importDelimiterHint: "French Excel often exports with semicolons",
     importRowsReady: "Rows ready",

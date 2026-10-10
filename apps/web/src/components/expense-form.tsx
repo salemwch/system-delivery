@@ -71,7 +71,13 @@ export function ExpenseForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={messages.category} name="categoryId" error={state.fieldErrors["categoryId"]}>
-          <select id="categoryId" name="categoryId" required defaultValue="" className={INPUT_CLASS}>
+          <select
+            id="categoryId"
+            name="categoryId"
+            required
+            defaultValue=""
+            className={INPUT_CLASS}
+          >
             <option value="" disabled>
               —
             </option>
@@ -193,8 +199,18 @@ export function ExpenseForm({
         </Field>
       </div>
 
-      <Field label={messages.description} name="description" error={state.fieldErrors["description"]}>
-        <input id="description" name="description" required maxLength={500} className={INPUT_CLASS} />
+      <Field
+        label={messages.description}
+        name="description"
+        error={state.fieldErrors["description"]}
+      >
+        <input
+          id="description"
+          name="description"
+          required
+          maxLength={500}
+          className={INPUT_CLASS}
+        />
       </Field>
 
       <div className="flex items-center gap-3">

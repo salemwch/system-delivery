@@ -46,11 +46,7 @@ export function ApplicationDecision({
 
   return (
     <div className="space-y-2">
-      <ApproveForm
-        applicationId={applicationId}
-        suggestedName={suggestedName}
-        locale={locale}
-      />
+      <ApproveForm applicationId={applicationId} suggestedName={suggestedName} locale={locale} />
       <button
         type="button"
         onClick={() => {

@@ -61,7 +61,12 @@ describe("platform provisioning", () => {
     const dbService = new DatabaseService(database.app);
     const outbox = new OutboxService();
     operatingConfig = new OperatingConfigService(dbService);
-    const tenantService = new TenantService(dbService, outbox, operatingConfig, new AuditService(dbService));
+    const tenantService = new TenantService(
+      dbService,
+      outbox,
+      operatingConfig,
+      new AuditService(dbService),
+    );
     features = new FeatureService(dbService, new AuditService(dbService));
     provisioning = new ProvisioningService(tenantService, new PasswordService());
   });

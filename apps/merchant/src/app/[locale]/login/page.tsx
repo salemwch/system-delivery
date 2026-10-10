@@ -13,11 +13,7 @@ import { readSession } from "@/lib/session";
  * portal is deployed per courier and resolves its own tenant from the configured
  * slug, so the identifier the API needs never reaches the screen.
  */
-export default async function LoginPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function LoginPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];
@@ -33,9 +29,7 @@ export default async function LoginPage({
   return (
     <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4 py-8">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        {courier === "" ? null : (
-          <p className="text-sm font-semibold text-brand">{courier}</p>
-        )}
+        {courier === "" ? null : <p className="text-sm font-semibold text-brand">{courier}</p>}
         <h1 className="mt-1 text-2xl font-bold">{messages.signIn}</h1>
         <p className="mt-1 text-sm text-slate-600">{messages.signInSubtitle}</p>
 

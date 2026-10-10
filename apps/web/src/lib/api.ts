@@ -57,11 +57,14 @@ async function resolveTenantId(): Promise<string> {
 }
 
 async function resolveTenant(): Promise<string> {
-  const response = await fetch(`${apiBaseUrl()}/v1/tenants/by-slug/${encodeURIComponent(tenantSlug())}`, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    cache: "no-store",
-  });
+  const response = await fetch(
+    `${apiBaseUrl()}/v1/tenants/by-slug/${encodeURIComponent(tenantSlug())}`,
+    {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      cache: "no-store",
+    },
+  );
   if (!response.ok) {
     throw new Error(`cannot resolve tenant "${tenantSlug()}": ${String(response.status)}`);
   }
@@ -75,11 +78,14 @@ async function resolveTenant(): Promise<string> {
 }
 
 export async function courierName(): Promise<string> {
-  const response = await fetch(`${apiBaseUrl()}/v1/tenants/by-slug/${encodeURIComponent(tenantSlug())}`, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    next: { revalidate: 3_600 },
-  });
+  const response = await fetch(
+    `${apiBaseUrl()}/v1/tenants/by-slug/${encodeURIComponent(tenantSlug())}`,
+    {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      next: { revalidate: 3_600 },
+    },
+  );
   if (!response.ok) {
     return "";
   }
@@ -237,11 +243,7 @@ export async function refresh(session: Session): Promise<Session | null> {
   }
 }
 
-async function callWith<T>(
-  accessToken: string,
-  path: string,
-  options: RequestOptions,
-): Promise<T> {
+async function callWith<T>(accessToken: string, path: string, options: RequestOptions): Promise<T> {
   const method = options.method ?? "GET";
   const headers: Record<string, string> = {
     accept: "application/json",
@@ -306,7 +308,11 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, code, detail, fieldErrors);
 }
 
-export async function login(email: string, password: string, mfaCode?: string): Promise<LoginResult> {
+export async function login(
+  email: string,
+  password: string,
+  mfaCode?: string,
+): Promise<LoginResult> {
   const id = await resolveTenantId();
   const response = await fetch(`${apiBaseUrl()}/v1/auth/login`, {
     method: "POST",
@@ -413,7 +419,12 @@ export async function bootstrapMfaConfirm(challenge: string, code: string): Prom
 
 export type LoginResult =
   | { kind: "session"; session: Session }
-  | { kind: "mfa"; status: "MFA_REQUIRED" | "MFA_ENROLMENT_REQUIRED"; challenge: string; expiresIn: number };
+  | {
+      kind: "mfa";
+      status: "MFA_REQUIRED" | "MFA_ENROLMENT_REQUIRED";
+      challenge: string;
+      expiresIn: number;
+    };
 
 function toSession(body: unknown): Session {
   if (typeof body !== "object" || body === null) {

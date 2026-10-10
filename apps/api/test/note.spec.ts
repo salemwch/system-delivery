@@ -390,7 +390,10 @@ describe("notes", () => {
     it("filters by author", async () => {
       const other = await seedUser(tenantId);
       await asStaff(tenantId, () =>
-        notes.create({ subjectType: "MERCHANT", subjectId: merchantId, body: "par un autre" }, other),
+        notes.create(
+          { subjectType: "MERCHANT", subjectId: merchantId, body: "par un autre" },
+          other,
+        ),
       );
 
       const page = await asStaff(tenantId, () => notes.list({ authorUserId: other }));

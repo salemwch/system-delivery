@@ -275,11 +275,13 @@ export class InvoiceService {
         );
       }
 
-      const lines = dto.lines ?? (await this.linesOf(tx, original.id)).map((line) => ({
-        description: line.description,
-        quantity: line.quantity,
-        unitPriceMinor: line.unitPriceMinor,
-      }));
+      const lines =
+        dto.lines ??
+        (await this.linesOf(tx, original.id)).map((line) => ({
+          description: line.description,
+          quantity: line.quantity,
+          unitPriceMinor: line.unitPriceMinor,
+        }));
 
       // The ORIGINAL invoice's rate, not today's. A credit note reverses a
       // specific document and must reverse the tax that document charged.
@@ -407,15 +409,14 @@ export class InvoiceService {
 
     const fallbackParties =
       invoice.sellerName === null || invoice.buyerName === null
-        ? await this.database.withTenant((tx) =>
-            partiesFor(tx, invoice.merchantId, {}),
-          )
+        ? await this.database.withTenant((tx) => partiesFor(tx, invoice.merchantId, {}))
         : null;
 
     // One pass over the amounts rather than an await per line: `toDecimal`
     // resolves the exponent from a per-process cache, and an invoice with 200
     // lines would otherwise serialise 200 trivial async calls.
-    const money = (amount: bigint): Promise<string> => this.currency.toDecimal(amount, invoice.currency);
+    const money = (amount: bigint): Promise<string> =>
+      this.currency.toDecimal(amount, invoice.currency);
     const [subtotal, vatAmount, stampDuty, total, ...lineAmounts] = await Promise.all([
       money(invoice.subtotalMinor),
       money(invoice.vatAmountMinor),
@@ -516,7 +517,10 @@ export class InvoiceService {
       const rows = await tx
         .insert(billingSettings)
         .values({ tenantId, ...dto })
-        .onConflictDoUpdate({ target: billingSettings.tenantId, set: { ...dto, updatedAt: sql`now()` } })
+        .onConflictDoUpdate({
+          target: billingSettings.tenantId,
+          set: { ...dto, updatedAt: sql`now()` },
+        })
         .returning();
 
       const settings = rows[0];
@@ -561,7 +565,13 @@ export class InvoiceService {
     tx: TenantTransaction,
     tenantId: string,
     invoiceId: string,
-    lines: readonly { position: number; description: string; quantity: number; unitPriceMinor: bigint; lineTotalMinor: bigint }[],
+    lines: readonly {
+      position: number;
+      description: string;
+      quantity: number;
+      unitPriceMinor: bigint;
+      lineTotalMinor: bigint;
+    }[],
   ): Promise<void> {
     await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
     if (lines.length === 0) {

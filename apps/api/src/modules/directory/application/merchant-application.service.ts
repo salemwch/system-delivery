@@ -200,9 +200,7 @@ export class MerchantApplicationService {
         // Re-check the status inside the UPDATE: two operators approving the
         // same lead at the same moment both passed the read above, and only the
         // one that finds it still PENDING may write.
-        .where(
-          and(eq(merchantApplications.id, id), eq(merchantApplications.status, "PENDING")),
-        )
+        .where(and(eq(merchantApplications.id, id), eq(merchantApplications.status, "PENDING")))
         .returning();
 
       const row = updated[0];

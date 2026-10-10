@@ -3,11 +3,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui";
 import { toLocale } from "@/lib/i18n";
 
-export default async function SettlementsPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function SettlementsPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
 

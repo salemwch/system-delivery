@@ -143,7 +143,9 @@ export async function importShipments(
         currency: "TND",
         codAmountMinor: cod,
         source: "CSV",
-        ...(parsed.data.reference === undefined ? {} : { externalReference: parsed.data.reference }),
+        ...(parsed.data.reference === undefined
+          ? {}
+          : { externalReference: parsed.data.reference }),
         ...numeric("weightGrams", parsed.data.weightGrams),
         ...numeric("parcelCount", parsed.data.parcelCount),
       },

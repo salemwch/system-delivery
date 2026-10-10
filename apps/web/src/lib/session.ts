@@ -37,10 +37,7 @@ function key(): Buffer {
 function seal(session: Session): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key(), iv);
-  const body = Buffer.concat([
-    cipher.update(JSON.stringify(session), "utf8"),
-    cipher.final(),
-  ]);
+  const body = Buffer.concat([cipher.update(JSON.stringify(session), "utf8"), cipher.final()]);
   return [
     iv.toString("base64url"),
     cipher.getAuthTag().toString("base64url"),
@@ -129,4 +126,3 @@ export async function clearSession(): Promise<void> {
 export function hasPermission(session: Session, permission: string): boolean {
   return session.permissions.includes(permission);
 }
-

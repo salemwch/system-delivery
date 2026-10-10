@@ -70,7 +70,12 @@ describe("user administration", () => {
     const passwords = new PasswordService();
     const audit = new AuditService(db);
     usersService = new UserService(db, passwords, outbox, audit);
-    merchants = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
+    merchants = new MerchantService(
+      db,
+      outbox,
+      new AuditService(db),
+      new AddressService(db, outbox, new ManualGeocodingProvider()),
+    );
     auth = buildAuthStack(db).auth;
   }, 240_000);
 

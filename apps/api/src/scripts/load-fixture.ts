@@ -85,7 +85,12 @@ async function main(): Promise<void> {
     const outbox = new OutboxService();
     const database = new DatabaseService(sql as never);
     const operatingConfig = new OperatingConfigService(database);
-    const tenants = new TenantService(database, outbox, operatingConfig, new AuditService(database));
+    const tenants = new TenantService(
+      database,
+      outbox,
+      operatingConfig,
+      new AuditService(database),
+    );
     const tokens = new TokenService(config);
 
     const slug = `load-${Date.now().toString(36)}`;

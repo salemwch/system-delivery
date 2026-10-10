@@ -31,10 +31,7 @@ describe("inventory", () => {
   const ACTOR_ID = randomUUID();
 
   function asStaff<T>(tenantId: string, fn: () => Promise<T>, actorId = ACTOR_ID): Promise<T> {
-    return TenantContext.run(
-      { tenantId: asTenantId(tenantId), actorType: "user", actorId },
-      fn,
-    );
+    return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "user", actorId }, fn);
   }
 
   async function seedTenant(label: string): Promise<string> {
@@ -150,7 +147,14 @@ describe("inventory", () => {
     it("a receipt raises the level; consumption lowers it", async () => {
       await asStaff(tenantId, () =>
         inventory.record(
-          { idempotencyKey: randomUUID(), itemId, hubId, direction: "IN", quantity: 20, reason: "RECEIPT" },
+          {
+            idempotencyKey: randomUUID(),
+            itemId,
+            hubId,
+            direction: "IN",
+            quantity: 20,
+            reason: "RECEIPT",
+          },
           userId,
         ),
       );
@@ -175,7 +179,14 @@ describe("inventory", () => {
     it("⚠️ refuses to consume more than the shelf holds", async () => {
       await asStaff(tenantId, () =>
         inventory.record(
-          { idempotencyKey: randomUUID(), itemId, hubId, direction: "IN", quantity: 5, reason: "RECEIPT" },
+          {
+            idempotencyKey: randomUUID(),
+            itemId,
+            hubId,
+            direction: "IN",
+            quantity: 5,
+            reason: "RECEIPT",
+          },
           userId,
         ),
       );
@@ -205,7 +216,14 @@ describe("inventory", () => {
     it("ALLOWS a stocktake that comes up short — that IS the correction", async () => {
       await asStaff(tenantId, () =>
         inventory.record(
-          { idempotencyKey: randomUUID(), itemId, hubId, direction: "IN", quantity: 5, reason: "RECEIPT" },
+          {
+            idempotencyKey: randomUUID(),
+            itemId,
+            hubId,
+            direction: "IN",
+            quantity: 5,
+            reason: "RECEIPT",
+          },
           userId,
         ),
       );
@@ -254,7 +272,14 @@ describe("inventory", () => {
       await expect(
         asStaff(tenantId, () =>
           inventory.record(
-            { idempotencyKey: randomUUID(), itemId, hubId, direction: "IN", quantity: 0, reason: "RECEIPT" },
+            {
+              idempotencyKey: randomUUID(),
+              itemId,
+              hubId,
+              direction: "IN",
+              quantity: 0,
+              reason: "RECEIPT",
+            },
             userId,
           ),
         ),
@@ -263,7 +288,14 @@ describe("inventory", () => {
       await expect(
         asStaff(tenantId, () =>
           inventory.record(
-            { idempotencyKey: randomUUID(), itemId, hubId, direction: "IN", quantity: -5, reason: "RECEIPT" },
+            {
+              idempotencyKey: randomUUID(),
+              itemId,
+              hubId,
+              direction: "IN",
+              quantity: -5,
+              reason: "RECEIPT",
+            },
             userId,
           ),
         ),
@@ -304,7 +336,9 @@ describe("inventory", () => {
       userId = await seedUser(tenantId);
       fromHubId = await seedHub(tenantId, "H-FROM");
       toHubId = await seedHub(tenantId, "H-TO");
-      const item = await asStaff(tenantId, () => inventory.createItem({ sku: "ROLL", name: "Rouleau" }));
+      const item = await asStaff(tenantId, () =>
+        inventory.createItem({ sku: "ROLL", name: "Rouleau" }),
+      );
       itemId = item.id;
 
       await asStaff(tenantId, () =>
@@ -367,10 +401,16 @@ describe("inventory", () => {
     it("is idempotent across BOTH legs", async () => {
       const key = randomUUID();
       await asStaff(tenantId, () =>
-        inventory.transfer({ idempotencyKey: key, itemId, fromHubId, toHubId, quantity: 10 }, userId),
+        inventory.transfer(
+          { idempotencyKey: key, itemId, fromHubId, toHubId, quantity: 10 },
+          userId,
+        ),
       );
       await asStaff(tenantId, () =>
-        inventory.transfer({ idempotencyKey: key, itemId, fromHubId, toHubId, quantity: 10 }, userId),
+        inventory.transfer(
+          { idempotencyKey: key, itemId, fromHubId, toHubId, quantity: 10 },
+          userId,
+        ),
       );
 
       expect(await levelOf(tenantId, fromHubId, itemId)).toBe(20);
@@ -469,7 +509,9 @@ describe("inventory", () => {
       const tenantId = await seedTenant("inv-nolevel");
       const userId = await seedUser(tenantId);
       const hubId = await seedHub(tenantId);
-      const item = await asStaff(tenantId, () => inventory.createItem({ sku: "MISC", name: "Divers" }));
+      const item = await asStaff(tenantId, () =>
+        inventory.createItem({ sku: "MISC", name: "Divers" }),
+      );
 
       await asStaff(tenantId, () =>
         inventory.record(

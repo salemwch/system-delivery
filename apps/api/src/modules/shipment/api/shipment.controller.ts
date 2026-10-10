@@ -459,7 +459,11 @@ export class ShipmentController {
       this.addresses.getById(shipment.originAddressId),
       this.addresses.getById(shipment.destinationAddressId),
     ]);
-    return { ...toResponse(shipment, await this.exponentOf(shipment.currency)), origin: toAddress(origin), destination: toAddress(destination) };
+    return {
+      ...toResponse(shipment, await this.exponentOf(shipment.currency)),
+      origin: toAddress(origin),
+      destination: toAddress(destination),
+    };
   }
 
   @Get(":id/events")

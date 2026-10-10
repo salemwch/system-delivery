@@ -45,10 +45,7 @@ export default async function RouteDetailPage({
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link
-          href={`/${locale}/dispatch`}
-          className="text-sm text-brand hover:underline"
-        >
+        <Link href={`/${locale}/dispatch`} className="text-sm text-brand hover:underline">
           {locale === "ar" ? "← التوزيع" : locale === "fr" ? "← Dispatch" : "← Dispatch"}
         </Link>
       </div>
@@ -84,7 +81,9 @@ export default async function RouteDetailPage({
           />
           <InfoRow
             label={locale === "ar" ? "المسافة" : locale === "fr" ? "Distance" : "Distance"}
-            value={route.distanceMeters > 0 ? `${(route.distanceMeters / 1000).toFixed(1)} km` : "—"}
+            value={
+              route.distanceMeters > 0 ? `${(route.distanceMeters / 1000).toFixed(1)} km` : "—"
+            }
             ltr
           />
           <InfoRow
@@ -123,7 +122,9 @@ export default async function RouteDetailPage({
                   </Link>
                   <StatusBadge status={stop.status} locale={locale} />
                 </div>
-                <p className="mt-0.5 truncate text-sm text-slate-500">{stop.recipientName} — {stop.address}</p>
+                <p className="mt-0.5 truncate text-sm text-slate-500">
+                  {stop.recipientName} — {stop.address}
+                </p>
               </div>
             </div>
           ))}
@@ -136,7 +137,9 @@ export default async function RouteDetailPage({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h2 className="mb-3 text-sm font-semibold text-slate-500 uppercase tracking-wider">{title}</h2>
+      <h2 className="mb-3 text-sm font-semibold text-slate-500 uppercase tracking-wider">
+        {title}
+      </h2>
       <div className="space-y-2">{children}</div>
     </div>
   );
@@ -146,7 +149,9 @@ function InfoRow({ label, value, ltr }: { label: string; value: string; ltr?: bo
   return (
     <div className="flex justify-between gap-4 text-sm">
       <span className="text-slate-500">{label}</span>
-      <span className={`font-medium text-slate-900 ${ltr === true ? "ltr-isolate" : ""}`}>{value}</span>
+      <span className={`font-medium text-slate-900 ${ltr === true ? "ltr-isolate" : ""}`}>
+        {value}
+      </span>
     </div>
   );
 }

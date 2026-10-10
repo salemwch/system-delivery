@@ -127,9 +127,7 @@ export default async function InventoryPage({
                 <span className="ltr-isolate font-mono text-sm">{row.sku}</span>
               </td>
               <td className="px-4 py-3 text-sm font-medium text-slate-900">{row.name}</td>
-              <td className="px-4 py-3 text-sm text-slate-600">
-                {hubNames.get(row.hubId) ?? "—"}
-              </td>
+              <td className="px-4 py-3 text-sm text-slate-600">{hubNames.get(row.hubId) ?? "—"}</td>
               <td className="px-4 py-3 text-end text-sm font-semibold tabular-nums ltr-isolate">
                 {row.quantity} {row.unit}
               </td>

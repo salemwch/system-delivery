@@ -9,11 +9,7 @@ import { fetchAddressBook, fetchBootstrap } from "@/lib/queries";
  * autofill — a merchant sending to the same shop every week taps once instead of
  * retyping a name, a phone number and an address.
  */
-export default async function NewShipmentPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function NewShipmentPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];

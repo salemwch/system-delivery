@@ -104,7 +104,12 @@ describe("custody", () => {
 
   async function seedMerchant(tenantId: string): Promise<string> {
     return asTenant(tenantId, async () => {
-      const merchants = new MerchantService(db, new OutboxService(), new AuditService(db), new AddressService(db, new OutboxService(), new ManualGeocodingProvider()));
+      const merchants = new MerchantService(
+        db,
+        new OutboxService(),
+        new AuditService(db),
+        new AddressService(db, new OutboxService(), new ManualGeocodingProvider()),
+      );
       const m = await merchants.create({
         name: `Merchant ${Math.random().toString(36).slice(2, 8)}`,
       });
@@ -234,7 +239,12 @@ describe("custody", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
-    const merchants = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
+    const merchants = new MerchantService(
+      db,
+      outbox,
+      new AuditService(db),
+      new AddressService(db, outbox, new ManualGeocodingProvider()),
+    );
     const recipients = new RecipientService(db);
     const features = new FeatureService(db, new AuditService(db));
     hubsSvc = new HubService(db, outbox, addresses);

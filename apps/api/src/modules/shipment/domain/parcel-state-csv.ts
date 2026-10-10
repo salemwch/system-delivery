@@ -32,9 +32,7 @@ export function csvCell(value: string | number | null): string {
     return "";
   }
   const raw = String(value);
-  const neutralised = FORMULA_PREFIXES.some((prefix) => raw.startsWith(prefix))
-    ? `'${raw}`
-    : raw;
+  const neutralised = FORMULA_PREFIXES.some((prefix) => raw.startsWith(prefix)) ? `'${raw}` : raw;
 
   // RFC 4180: a field containing a quote, a comma or a newline is quoted, and
   // inner quotes are doubled.

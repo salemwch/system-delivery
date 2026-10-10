@@ -210,7 +210,9 @@ export class CityService {
         // (a trigram index) is an extension for a screen nobody paginates.
         ...(searchKey === null || searchKey === ""
           ? []
-          : [sql`EXISTS (SELECT 1 FROM unnest(${cities.searchKeys}) k WHERE k LIKE ${`${searchKey}%`})`]),
+          : [
+              sql`EXISTS (SELECT 1 FROM unnest(${cities.searchKeys}) k WHERE k LIKE ${`${searchKey}%`})`,
+            ]),
         // Keyset pagination on the id, which is UUIDv7 and therefore ordered.
         ...(dto.cursor === undefined ? [] : [gt(cities.id, dto.cursor)]),
       ];

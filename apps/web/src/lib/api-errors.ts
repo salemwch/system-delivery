@@ -49,10 +49,7 @@ export function apiErrorMessage(code: string, locale: Locale): string {
  * (`required`, `phone`, `format`) and an API code routed to a field by
  * {@link FIELD_FOR_ERROR}. Without this the box read "MERCHANT_CODE_TAKEN".
  */
-export function fieldErrorMessage(
-  value: string | undefined,
-  locale: Locale,
-): string | undefined {
+export function fieldErrorMessage(value: string | undefined, locale: Locale): string | undefined {
   if (value === undefined) {
     return undefined;
   }

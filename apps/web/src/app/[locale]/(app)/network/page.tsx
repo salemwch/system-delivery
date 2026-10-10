@@ -2,11 +2,7 @@ import { DataTable, PageHeader } from "@/components/ui";
 import { MESSAGES, toLocale } from "@/lib/i18n";
 import { fetchHubs } from "@/lib/queries";
 
-export default async function NetworkPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function NetworkPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];

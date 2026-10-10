@@ -36,10 +36,7 @@ describe("expenses", () => {
   const ACTOR_ID = randomUUID();
 
   function asStaff<T>(tenantId: string, fn: () => Promise<T>, actorId = ACTOR_ID): Promise<T> {
-    return TenantContext.run(
-      { tenantId: asTenantId(tenantId), actorType: "user", actorId },
-      fn,
-    );
+    return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "user", actorId }, fn);
   }
 
   async function seedTenant(label: string): Promise<string> {

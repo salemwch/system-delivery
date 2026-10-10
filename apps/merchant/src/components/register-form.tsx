@@ -56,7 +56,13 @@ export function RegisterForm({ locale }: { locale: Locale }) {
         name="businessName"
         error={state.fieldErrors["businessName"]}
       >
-        <input id="businessName" name="businessName" required maxLength={200} className={INPUT_CLASS} />
+        <input
+          id="businessName"
+          name="businessName"
+          required
+          maxLength={200}
+          className={INPUT_CLASS}
+        />
       </Field>
 
       <Field
@@ -64,7 +70,13 @@ export function RegisterForm({ locale }: { locale: Locale }) {
         name="contactName"
         error={state.fieldErrors["contactName"]}
       >
-        <input id="contactName" name="contactName" required maxLength={200} className={INPUT_CLASS} />
+        <input
+          id="contactName"
+          name="contactName"
+          required
+          maxLength={200}
+          className={INPUT_CLASS}
+        />
       </Field>
 
       {/*

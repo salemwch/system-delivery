@@ -44,7 +44,8 @@ export default async function CitiesPage({
     query.q === undefined || query.q === "" ? {} : { search: query.q },
   );
 
-  const editing = query.edit === undefined ? null : (result.data.find((c) => c.id === query.edit) ?? null);
+  const editing =
+    query.edit === undefined ? null : (result.data.find((c) => c.id === query.edit) ?? null);
 
   // The currency of the list, so the form quotes in the same one the table
   // shows. A tenant billing in two currencies would need a select here; until

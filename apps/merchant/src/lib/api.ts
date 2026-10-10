@@ -71,11 +71,14 @@ async function tenantId(): Promise<string> {
 }
 
 async function resolveTenant(): Promise<string> {
-  const response = await fetch(`${apiBaseUrl()}/v1/tenants/by-slug/${encodeURIComponent(tenantSlug())}`, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    cache: "no-store",
-  });
+  const response = await fetch(
+    `${apiBaseUrl()}/v1/tenants/by-slug/${encodeURIComponent(tenantSlug())}`,
+    {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      cache: "no-store",
+    },
+  );
   if (!response.ok) {
     throw new Error(`cannot resolve tenant "${tenantSlug()}": ${String(response.status)}`);
   }
@@ -90,13 +93,16 @@ async function resolveTenant(): Promise<string> {
 
 /** The courier's display name, for the portal header. */
 export async function courierName(): Promise<string> {
-  const response = await fetch(`${apiBaseUrl()}/v1/tenants/by-slug/${encodeURIComponent(tenantSlug())}`, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    // Cached for an hour: a courier does not rename itself often, and this is on
-    // every page's header.
-    next: { revalidate: 3_600 },
-  });
+  const response = await fetch(
+    `${apiBaseUrl()}/v1/tenants/by-slug/${encodeURIComponent(tenantSlug())}`,
+    {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      // Cached for an hour: a courier does not rename itself often, and this is on
+      // every page's header.
+      next: { revalidate: 3_600 },
+    },
+  );
   if (!response.ok) {
     return "";
   }
@@ -156,11 +162,7 @@ async function refresh(session: Session): Promise<Session | null> {
   }
 }
 
-async function callWith<T>(
-  accessToken: string,
-  path: string,
-  options: RequestOptions,
-): Promise<T> {
+async function callWith<T>(accessToken: string, path: string, options: RequestOptions): Promise<T> {
   const method = options.method ?? "GET";
   const headers: Record<string, string> = {
     accept: "application/json",

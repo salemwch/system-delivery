@@ -21,13 +21,7 @@ import type { Locale } from "@/lib/i18n";
  * courier physically holds it and the API refuses — showing the button anyway
  * would offer an action that always fails.
  */
-export function CancelShipmentForm({
-  locale,
-  shipmentId,
-}: {
-  locale: Locale;
-  shipmentId: string;
-}) {
+export function CancelShipmentForm({ locale, shipmentId }: { locale: Locale; shipmentId: string }) {
   const messages = MESSAGES[locale];
   const [confirming, setConfirming] = useState(false);
   const [state, action] = useActionState(cancelShipment.bind(null, locale), EMPTY_FORM_STATE);

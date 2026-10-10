@@ -16,11 +16,7 @@ import { hasPermission, requireSession } from "@/lib/session";
  * Every section here is backed by something real. A settings screen that lists
  * a heading with nothing behind it teaches an operator that the menu lies.
  */
-export default async function SettingsPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function SettingsPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];

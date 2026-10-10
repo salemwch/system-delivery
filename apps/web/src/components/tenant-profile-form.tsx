@@ -26,19 +26,16 @@ const TIMEZONES = ["Africa/Tunis", "Africa/Algiers", "Africa/Casablanca", "Europ
  *
  * The API checks it too. This is the courtesy; that is the guarantee.
  */
-export function TenantProfileForm({
-  locale,
-  profile,
-}: {
-  locale: Locale;
-  profile: TenantProfile;
-}) {
+export function TenantProfileForm({ locale, profile }: { locale: Locale; profile: TenantProfile }) {
   const messages = MESSAGES[locale];
   const [state, action] = useActionState(updateTenantProfile.bind(null, locale), INITIAL_STATE);
   const [supported, setSupported] = useState<readonly string[]>(profile.supportedLocales);
 
   return (
-    <form action={action} className="max-w-xl space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+    <form
+      action={action}
+      className="max-w-xl space-y-4 rounded-xl border border-slate-200 bg-white p-4"
+    >
       <Field label={messages.courierName} name="name" error={state.fieldErrors["name"]}>
         <input
           id="name"

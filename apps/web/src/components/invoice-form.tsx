@@ -55,12 +55,14 @@ export function InvoiceForm({
       <input type="hidden" name="exponent" value={exponent} />
 
       <div className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
-        <Field
-          label={messages.merchants}
-          name="merchantId"
-          error={state.fieldErrors["merchantId"]}
-        >
-          <select id="merchantId" name="merchantId" required className={INPUT_CLASS} defaultValue="">
+        <Field label={messages.merchants} name="merchantId" error={state.fieldErrors["merchantId"]}>
+          <select
+            id="merchantId"
+            name="merchantId"
+            required
+            className={INPUT_CLASS}
+            defaultValue=""
+          >
             <option value="" disabled>
               —
             </option>

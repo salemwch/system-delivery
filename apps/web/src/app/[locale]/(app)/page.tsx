@@ -6,11 +6,7 @@ import { P } from "@/lib/permissions";
 import { fetchDashboard } from "@/lib/queries";
 import type { DashboardStats } from "@/lib/queries";
 
-export default async function DashboardPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function DashboardPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];
@@ -26,7 +22,13 @@ export default async function DashboardPage({
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
-          label={locale === "ar" ? "طرود اليوم" : locale === "fr" ? "Envois aujourd'hui" : "Shipments today"}
+          label={
+            locale === "ar"
+              ? "طرود اليوم"
+              : locale === "fr"
+                ? "Envois aujourd'hui"
+                : "Shipments today"
+          }
           value={String(stats.todayCreated)}
         />
         <StatCard
@@ -40,7 +42,13 @@ export default async function DashboardPage({
           tone={stats.todayFailed > 0 ? "attention" : "plain"}
         />
         <StatCard
-          label={locale === "ar" ? "معدل التسليم" : locale === "fr" ? "Taux de livraison" : "Delivery rate"}
+          label={
+            locale === "ar"
+              ? "معدل التسليم"
+              : locale === "fr"
+                ? "Taux de livraison"
+                : "Delivery rate"
+          }
           value={formatRate(stats.deliveryRate, locale)}
         />
       </div>
@@ -51,22 +59,34 @@ export default async function DashboardPage({
           value={String(countOf(stats, "IN_TRANSIT"))}
         />
         <StatCard
-          label={locale === "ar" ? "خارج للتسليم" : locale === "fr" ? "En livraison" : "Out for delivery"}
+          label={
+            locale === "ar" ? "خارج للتسليم" : locale === "fr" ? "En livraison" : "Out for delivery"
+          }
           value={String(countOf(stats, "OUT_FOR_DELIVERY"))}
         />
         <StatCard
-          label={locale === "ar" ? "إجمالي الطرود" : locale === "fr" ? "Total des colis" : "Total shipments"}
+          label={
+            locale === "ar"
+              ? "إجمالي الطرود"
+              : locale === "fr"
+                ? "Total des colis"
+                : "Total shipments"
+          }
           value={String(stats.totalShipments)}
         />
         {canReadCod ? (
           <StatCard
-            label={locale === "ar" ? "COD معلق" : locale === "fr" ? "COD en attente" : "Pending COD"}
+            label={
+              locale === "ar" ? "COD معلق" : locale === "fr" ? "COD en attente" : "Pending COD"
+            }
             value={formatMoney(BigInt(stats.codPendingMinor), stats.currencyExponent, locale)}
             tone="money"
           />
         ) : (
           <StatCard
-            label={locale === "ar" ? "COD معلق" : locale === "fr" ? "COD en attente" : "Pending COD"}
+            label={
+              locale === "ar" ? "COD معلق" : locale === "fr" ? "COD en attente" : "Pending COD"
+            }
             value="—"
           />
         )}

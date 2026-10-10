@@ -55,10 +55,7 @@ export function CityForm({
   );
 
   return (
-    <form
-      action={action}
-      className="space-y-4 rounded-xl border border-slate-200 bg-white p-4"
-    >
+    <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
       <input type="hidden" name="currency" value={currency} />
       <input type="hidden" name="exponent" value={exponent} />
 
@@ -113,7 +110,11 @@ export function CityForm({
           />
         </Field>
 
-        <Field label={messages.postalCode} name="postalCode" error={state.fieldErrors["postalCode"]}>
+        <Field
+          label={messages.postalCode}
+          name="postalCode"
+          error={state.fieldErrors["postalCode"]}
+        >
           <input
             id="postalCode"
             name="postalCode"
@@ -197,7 +198,10 @@ export function CityForm({
       </Field>
 
       <div className="flex items-center gap-3">
-        <SubmitButton label={city === null ? messages.addCity : messages.save} pendingLabel={messages.loading} />
+        <SubmitButton
+          label={city === null ? messages.addCity : messages.save}
+          pendingLabel={messages.loading}
+        />
         {state.error === null ? null : (
           <p role="alert" className="text-sm font-medium text-red-700">
             <span className="ltr-isolate font-mono">{state.error}</span>

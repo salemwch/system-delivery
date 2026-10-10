@@ -69,19 +69,13 @@ describe("schema idempotency", () => {
 
   it("still REJECTS a negative amount", () => {
     // Idempotency must not have widened the schema into accepting nonsense.
-    expect(() =>
-      createShipmentSchema.parse({ ...shipment, codAmountMinor: -1 }),
-    ).toThrow();
-    expect(() =>
-      createShipmentSchema.parse({ ...shipment, codAmountMinor: -1n }),
-    ).toThrow();
+    expect(() => createShipmentSchema.parse({ ...shipment, codAmountMinor: -1 })).toThrow();
+    expect(() => createShipmentSchema.parse({ ...shipment, codAmountMinor: -1n })).toThrow();
   });
 
   it("still rejects a fractional amount", () => {
     // Minor units are integers. 12.5 millimes does not exist.
-    expect(() =>
-      createShipmentSchema.parse({ ...shipment, codAmountMinor: 12.5 }),
-    ).toThrow();
+    expect(() => createShipmentSchema.parse({ ...shipment, codAmountMinor: 12.5 })).toThrow();
   });
 
   it("survives dates being parsed twice", () => {

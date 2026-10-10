@@ -1,11 +1,7 @@
 import { PageHeader } from "@/components/ui";
 import { MESSAGES, toLocale } from "@/lib/i18n";
 
-export default async function FinancePage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function FinancePage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];

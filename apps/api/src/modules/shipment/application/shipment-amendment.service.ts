@@ -115,9 +115,7 @@ export class ShipmentAmendmentService {
             ...(dto.destinationRawInput === undefined
               ? {}
               : { destinationRawInput: dto.destinationRawInput }),
-            ...(dto.destinationCity === undefined
-              ? {}
-              : { destinationCity: dto.destinationCity }),
+            ...(dto.destinationCity === undefined ? {} : { destinationCity: dto.destinationCity }),
             ...(dto.codAmountMinor === undefined
               ? {}
               : { codAmountMinor: BigInt(dto.codAmountMinor) }),
@@ -392,7 +390,10 @@ export class ShipmentAmendmentService {
     return shipment;
   }
 
-  private assertCodAmendable(requested: bigint | number | null | undefined, shipment: Shipment): void {
+  private assertCodAmendable(
+    requested: bigint | number | null | undefined,
+    shipment: Shipment,
+  ): void {
     if (requested === null || requested === undefined) {
       return;
     }
@@ -414,10 +415,7 @@ export class ShipmentAmendmentService {
     return row;
   }
 
-  private async requirePending(
-    tx: TenantTransaction,
-    id: string,
-  ): Promise<ShipmentAmendment> {
+  private async requirePending(tx: TenantTransaction, id: string): Promise<ShipmentAmendment> {
     const rows = await tx
       .select()
       .from(shipmentAmendments)

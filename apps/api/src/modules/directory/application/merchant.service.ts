@@ -282,7 +282,10 @@ export class MerchantService {
       // 23514 from `merchants_assert_account_manager_tenant`: the user exists,
       // but in another tenant. Not found is the honest answer AND the safe one —
       // confirming the id would make this endpoint a cross-tenant user oracle.
-      if (isCheckViolation(error) || isForeignKeyViolation(error, "merchants_account_manager_id_fkey")) {
+      if (
+        isCheckViolation(error) ||
+        isForeignKeyViolation(error, "merchants_account_manager_id_fkey")
+      ) {
         throw new NotFoundError("User");
       }
       throw error;

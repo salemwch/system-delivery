@@ -100,7 +100,11 @@ export function CreateShipmentForm({
       <section className="space-y-4">
         <h2 className="text-sm font-semibold text-slate-800">{messages.recipientDetails}</h2>
 
-        <Field label={messages.recipientName} name="recipientName" error={errorFor("recipientName")}>
+        <Field
+          label={messages.recipientName}
+          name="recipientName"
+          error={errorFor("recipientName")}
+        >
           <input
             id="recipientName"
             name="recipientName"

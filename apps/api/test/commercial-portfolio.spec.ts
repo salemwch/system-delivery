@@ -62,7 +62,12 @@ describe("commercial portfolio", () => {
     fn: () => Promise<T>,
   ): Promise<T> {
     return TenantContext.run(
-      { tenantId: asTenantId(tenantId), actorType: "user", actorId: accountManagerId, accountManagerId },
+      {
+        tenantId: asTenantId(tenantId),
+        actorType: "user",
+        actorId: accountManagerId,
+        accountManagerId,
+      },
       fn,
     );
   }
@@ -242,7 +247,9 @@ describe("commercial portfolio", () => {
       const nadia = await seedUser(tenantId, "COMMERCIAL", `nadia-${randomUUID()}@courier.tn`);
 
       const mine = await asCommercial(tenantId, salem, () => merchants.create({ name: "Mine" }));
-      const theirs = await asCommercial(tenantId, nadia, () => merchants.create({ name: "Theirs" }));
+      const theirs = await asCommercial(tenantId, nadia, () =>
+        merchants.create({ name: "Theirs" }),
+      );
       const house = await asStaff(tenantId, () => merchants.create({ name: "House" }));
 
       const visible = await asCommercial(tenantId, salem, () => merchants.list());
@@ -253,9 +260,9 @@ describe("commercial portfolio", () => {
       expect(ids).not.toContain(house.id);
 
       // And the single-row read agrees with the list — a 404, never a leak.
-      await expect(asCommercial(tenantId, salem, () => merchants.getById(theirs.id))).rejects.toThrow(
-        NotFoundError,
-      );
+      await expect(
+        asCommercial(tenantId, salem, () => merchants.getById(theirs.id)),
+      ).rejects.toThrow(NotFoundError);
     });
 
     it("still shows courier staff every merchant in the tenant", async () => {
@@ -278,7 +285,9 @@ describe("commercial portfolio", () => {
       const nadia = await seedUser(tenantId, "COMMERCIAL", `nadia-${randomUUID()}@courier.tn`);
 
       const mine = await asCommercial(tenantId, salem, () => merchants.create({ name: "Mine" }));
-      const theirs = await asCommercial(tenantId, nadia, () => merchants.create({ name: "Theirs" }));
+      const theirs = await asCommercial(tenantId, nadia, () =>
+        merchants.create({ name: "Theirs" }),
+      );
 
       const ownShipment = await createShipment(tenantId, mine.id);
       const otherShipment = await createShipment(tenantId, theirs.id);
@@ -297,7 +306,9 @@ describe("commercial portfolio", () => {
       const nadia = await seedUser(tenantId, "COMMERCIAL", `nadia-${randomUUID()}@courier.tn`);
 
       const mine = await asCommercial(tenantId, salem, () => merchants.create({ name: "Mine" }));
-      const theirs = await asCommercial(tenantId, nadia, () => merchants.create({ name: "Theirs" }));
+      const theirs = await asCommercial(tenantId, nadia, () =>
+        merchants.create({ name: "Theirs" }),
+      );
 
       // Asserted through the policy functions directly rather than by wiring up
       // four more services: this proves the predicate itself, which is the thing
@@ -323,7 +334,9 @@ describe("commercial portfolio", () => {
     it("is a no-op for every session that is not a commercial login", async () => {
       const tenantId = await seedTenant("com-noop");
       const salem = await seedUser(tenantId, "COMMERCIAL", `salem-${randomUUID()}@courier.tn`);
-      const theirs = await asCommercial(tenantId, salem, () => merchants.create({ name: "Theirs" }));
+      const theirs = await asCommercial(tenantId, salem, () =>
+        merchants.create({ name: "Theirs" }),
+      );
 
       const verdicts = await database.app.begin(async (tx) => {
         await tx`select set_config('app.current_tenant_id', ${tenantId}, true)`;
@@ -371,7 +384,9 @@ describe("commercial portfolio", () => {
       const tenantId = await seedTenant("com-login-x");
       const salem = await seedUser(tenantId, "COMMERCIAL", `salem-${randomUUID()}@courier.tn`);
       const nadia = await seedUser(tenantId, "COMMERCIAL", `nadia-${randomUUID()}@courier.tn`);
-      const theirs = await asCommercial(tenantId, nadia, () => merchants.create({ name: "Theirs" }));
+      const theirs = await asCommercial(tenantId, nadia, () =>
+        merchants.create({ name: "Theirs" }),
+      );
 
       // 404 rather than 403: confirming the id exists would turn this endpoint
       // into an oracle for enumerating a colleague's book of business.
@@ -389,7 +404,9 @@ describe("commercial portfolio", () => {
     it("lets courier staff onboard any merchant, portfolio or not", async () => {
       const tenantId = await seedTenant("com-login-staff");
       const salem = await seedUser(tenantId, "COMMERCIAL", `salem-${randomUUID()}@courier.tn`);
-      const theirs = await asCommercial(tenantId, salem, () => merchants.create({ name: "Theirs" }));
+      const theirs = await asCommercial(tenantId, salem, () =>
+        merchants.create({ name: "Theirs" }),
+      );
 
       const created = await asStaff(tenantId, () =>
         users.createMerchantLogin({
@@ -546,9 +563,7 @@ describe("commercial portfolio", () => {
       const a = await asStaff(tenantId, () => merchants.create({ name: "Alpha" }));
       const b = await asStaff(tenantId, () => merchants.create({ name: "Beta" }));
 
-      const names = await asStaff(tenantId, () =>
-        merchants.namesByIds([a.id, b.id, a.id, a.id]),
-      );
+      const names = await asStaff(tenantId, () => merchants.namesByIds([a.id, b.id, a.id, a.id]));
 
       expect(names.get(a.id)).toBe("Alpha");
       expect(names.get(b.id)).toBe("Beta");
@@ -588,14 +603,16 @@ describe("commercial portfolio", () => {
       merchantId: string,
     ): Promise<string> {
       return asCommercial(tenantId, commercialId, async () => {
-        const addressId = await asStaff(tenantId, async () =>
-          (
-            await addresses.resolve({
-              rawInput: "Avenue Habib Bourguiba, Tunis",
-              countryCode: "TN",
-              coordinates: { lat: 36.8, lng: 10.18 },
-            })
-          ).addressId,
+        const addressId = await asStaff(
+          tenantId,
+          async () =>
+            (
+              await addresses.resolve({
+                rawInput: "Avenue Habib Bourguiba, Tunis",
+                countryCode: "TN",
+                coordinates: { lat: 36.8, lng: 10.18 },
+              })
+            ).addressId,
         );
         const from = new Date(Date.now() + 60 * 60 * 1000);
         const to = new Date(from.getTime() + 2 * 60 * 60 * 1000);
@@ -644,7 +661,9 @@ describe("commercial portfolio", () => {
       const tenantId = await seedTenant("com-claim-x");
       const salem = await seedUser(tenantId, "COMMERCIAL", `salem-${randomUUID()}@courier.tn`);
       const nadia = await seedUser(tenantId, "COMMERCIAL", `nadia-${randomUUID()}@courier.tn`);
-      const theirs = await asCommercial(tenantId, nadia, () => merchants.create({ name: "Theirs" }));
+      const theirs = await asCommercial(tenantId, nadia, () =>
+        merchants.create({ name: "Theirs" }),
+      );
       const pickupId = await pendingPickup(tenantId, nadia, theirs.id);
 
       // RLS never returns the row, so this is a 404 — not a forbidden, which

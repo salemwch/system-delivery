@@ -28,10 +28,7 @@ export default async function AppLayout({
   // ⚠️ ONE call for every badge, and it must NEVER break the shell. A failed
   // count is a missing badge; a thrown error would be a blank application on
   // every page, which is a far worse outcome than not knowing a number.
-  const [courier, workload] = await Promise.all([
-    courierName(),
-    fetchWorkload().catch(() => null),
-  ]);
+  const [courier, workload] = await Promise.all([courierName(), fetchWorkload().catch(() => null)]);
 
   /** Section key → its badge. Sections with no queue are simply absent. */
   const BADGES: Readonly<Record<string, number>> =

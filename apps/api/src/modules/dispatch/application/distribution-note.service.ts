@@ -91,8 +91,7 @@ export class DistributionNoteService {
         recipientName: leg.recipientName,
         recipientPhone: leg.recipientPhone,
         addressLine: address === undefined || address === null ? "—" : addressLineOf(address),
-        codAmount:
-          leg.codAmountMinor > 0n ? formatMinorUnits(leg.codAmountMinor, exponent) : null,
+        codAmount: leg.codAmountMinor > 0n ? formatMinorUnits(leg.codAmountMinor, exponent) : null,
       };
     });
 
@@ -124,9 +123,7 @@ export class DistributionNoteService {
    * plus 45 euros is not a number — so it is refused rather than summed. Rare to
    * the point of hypothetical in this market, and silently wrong if allowed.
    */
-  private async exponentFor(
-    legs: readonly { readonly currency: string }[],
-  ): Promise<number> {
+  private async exponentFor(legs: readonly { readonly currency: string }[]): Promise<number> {
     const currencies = new Set(legs.map((leg) => leg.currency));
     if (currencies.size > 1) {
       throw new BusinessRuleError(

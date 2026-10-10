@@ -17,13 +17,7 @@ import type { Locale } from "@/lib/i18n";
  * in the URL, not re-fetchable, gone on the next navigation. That is the whole
  * design: possession of the password is evidence of having just created it.
  */
-export function PortalLoginForm({
-  merchantId,
-  locale,
-}: {
-  merchantId: string;
-  locale: Locale;
-}) {
+export function PortalLoginForm({ merchantId, locale }: { merchantId: string; locale: Locale }) {
   const messages = MESSAGES[locale];
   const [state, action] = useActionState(createPortalLogin, INITIAL_CREDENTIAL_STATE);
 
@@ -34,9 +28,7 @@ export function PortalLoginForm({
         <dl className="space-y-2 text-sm">
           <div>
             <dt className="text-emerald-800">{messages.email}</dt>
-            <dd className="ltr-isolate font-mono break-all select-all">
-              {state.credential.email}
-            </dd>
+            <dd className="ltr-isolate font-mono break-all select-all">{state.credential.email}</dd>
           </div>
           <div>
             <dt className="text-emerald-800">{messages.temporaryPassword}</dt>
@@ -62,11 +54,19 @@ export function PortalLoginForm({
         </p>
       ) : null}
 
-      <Field label={messages.fullName} name="fullName" error={fieldErrorMessage(state.fieldErrors["fullName"], locale)}>
+      <Field
+        label={messages.fullName}
+        name="fullName"
+        error={fieldErrorMessage(state.fieldErrors["fullName"], locale)}
+      >
         <input id="fullName" name="fullName" required maxLength={200} className={INPUT_CLASS} />
       </Field>
 
-      <Field label={messages.email} name="email" error={fieldErrorMessage(state.fieldErrors["email"], locale)}>
+      <Field
+        label={messages.email}
+        name="email"
+        error={fieldErrorMessage(state.fieldErrors["email"], locale)}
+      >
         <input
           id="email"
           name="email"
@@ -78,7 +78,12 @@ export function PortalLoginForm({
         />
       </Field>
 
-      <Field label={messages.phone} name="phone" hint={messages.phoneHint} error={fieldErrorMessage(state.fieldErrors["phone"], locale)}>
+      <Field
+        label={messages.phone}
+        name="phone"
+        hint={messages.phoneHint}
+        error={fieldErrorMessage(state.fieldErrors["phone"], locale)}
+      >
         <input
           id="phone"
           name="phone"

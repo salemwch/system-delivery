@@ -106,7 +106,11 @@ export const createInvoiceSchema = z
     merchantId: z.uuid(),
     periodFrom: isoDate,
     periodTo: isoDate,
-    currency: z.string().trim().length(3).transform((value) => value.toUpperCase()),
+    currency: z
+      .string()
+      .trim()
+      .length(3)
+      .transform((value) => value.toUpperCase()),
     /** Optional: a draft may be opened empty and filled in afterwards. */
     lines: z.array(invoiceLineInput).max(500).optional(),
     notes: z.string().trim().max(2000).optional(),

@@ -273,7 +273,11 @@ describe("notification delivery", () => {
 
     beforeAll(() => {
       sms = new CapturingNotificationProvider();
-      const service = new NotificationService(db, new FeatureService(db, new AuditService(db)), sms);
+      const service = new NotificationService(
+        db,
+        new FeatureService(db, new AuditService(db)),
+        sms,
+      );
       handler = new NotificationEventHandler(service);
     });
 

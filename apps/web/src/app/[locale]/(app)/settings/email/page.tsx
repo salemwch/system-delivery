@@ -62,7 +62,9 @@ export default async function EmailSettingsPage({
             <div className="flex justify-between gap-4">
               <dt className="text-slate-500">{messages.emailFrom}</dt>
               <dd className="ltr-isolate font-mono">
-                {status.fromName === "" ? status.fromAddress : `${status.fromName} <${status.fromAddress}>`}
+                {status.fromName === ""
+                  ? status.fromAddress
+                  : `${status.fromName} <${status.fromAddress}>`}
               </dd>
             </div>
             <div className="flex justify-between gap-4">

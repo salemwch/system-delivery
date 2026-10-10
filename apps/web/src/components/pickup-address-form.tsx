@@ -61,7 +61,11 @@ export function PickupAddressForm({
         />
       </Field>
 
-      <Field label={messages.city} name="pickupCity" error={fieldErrorMessage(state.fieldErrors["city"], locale)}>
+      <Field
+        label={messages.city}
+        name="pickupCity"
+        error={fieldErrorMessage(state.fieldErrors["city"], locale)}
+      >
         <input id="pickupCity" name="city" maxLength={200} className={INPUT_CLASS} />
       </Field>
 

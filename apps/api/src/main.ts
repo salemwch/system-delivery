@@ -19,11 +19,9 @@ import { ProblemDetailsFilter, createFastifyAdapter } from "./shared/http/index.
  * request can be accepted.
  */
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
-    createFastifyAdapter(),
-    { bufferLogs: true },
-  );
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, createFastifyAdapter(), {
+    bufferLogs: true,
+  });
 
   app.useLogger(app.get(Logger));
 

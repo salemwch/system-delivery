@@ -71,9 +71,7 @@ export class ParcelStateService {
         // timestamp excludes everything after midnight, which silently drops a
         // day's parcels from every month-end report.
         lte(shipments.createdAt, new Date(`${dto.to}T23:59:59.999Z`)),
-        ...(dto.merchantId === undefined
-          ? []
-          : [sql`${shipments.merchantId} = ${dto.merchantId}`]),
+        ...(dto.merchantId === undefined ? [] : [sql`${shipments.merchantId} = ${dto.merchantId}`]),
       ];
 
       return tx
@@ -139,9 +137,7 @@ export class ParcelStateService {
           SHIPMENT_STATUSES.map((status) => [status, entry.byStatus[status] ?? 0]),
         ),
         deliveryRate:
-          entry.total === 0
-            ? 0
-            : roundTo((entry.byStatus["DELIVERED"] ?? 0) / entry.total, 4),
+          entry.total === 0 ? 0 : roundTo((entry.byStatus["DELIVERED"] ?? 0) / entry.total, 4),
         codCollectedMinor: entry.codCollectedMinor.toString(),
         codPendingMinor: entry.codPendingMinor.toString(),
         currency: entry.currency,
@@ -193,7 +189,6 @@ export class ParcelStateService {
 
     return toCsv(headers, body);
   }
-
 }
 
 /** The accumulator shape. Mutable by design — it is folded over, then frozen. */

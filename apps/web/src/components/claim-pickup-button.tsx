@@ -17,13 +17,7 @@ import type { Locale } from "@/lib/i18n";
  * time. Rendered only on ACCEPTED rows, and only for a caller holding
  * `pickup:claim` — the API refuses it in every other case regardless.
  */
-export function ClaimPickupButton({
-  pickupId,
-  locale,
-}: {
-  pickupId: string;
-  locale: Locale;
-}) {
+export function ClaimPickupButton({ pickupId, locale }: { pickupId: string; locale: Locale }) {
   const messages = MESSAGES[locale];
   const [state, action] = useActionState(claimPickup.bind(null, locale), INITIAL_STATE);
 

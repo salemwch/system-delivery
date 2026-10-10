@@ -33,10 +33,7 @@ export function AccountManagerForm({
   locale: Locale;
 }) {
   const messages = MESSAGES[locale];
-  const [state, action] = useActionState(
-    assignAccountManager.bind(null, locale),
-    INITIAL_STATE,
-  );
+  const [state, action] = useActionState(assignAccountManager.bind(null, locale), INITIAL_STATE);
 
   return (
     <form action={action} className="flex flex-wrap items-end gap-3">

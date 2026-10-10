@@ -2,11 +2,7 @@ import { DataTable, PageHeader, StatusBadge } from "@/components/ui";
 import { MESSAGES, toLocale } from "@/lib/i18n";
 import { fetchDrivers, fetchVehicles } from "@/lib/queries";
 
-export default async function FleetPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function FleetPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];

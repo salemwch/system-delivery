@@ -275,8 +275,7 @@ export async function assignAccountManager(
     await apiFetch(`/v1/merchants/${encodeURIComponent(parsed.data.merchantId)}/account-manager`, {
       method: "PUT",
       body: {
-        accountManagerId:
-          parsed.data.accountManagerId === "" ? null : parsed.data.accountManagerId,
+        accountManagerId: parsed.data.accountManagerId === "" ? null : parsed.data.accountManagerId,
       },
     });
   } catch (error) {

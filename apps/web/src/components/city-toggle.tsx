@@ -31,7 +31,10 @@ export function CityToggle({
     <form action={action}>
       <input type="hidden" name="cityId" value={cityId} />
       <input type="hidden" name="active" value={active ? "false" : "true"} />
-      <SubmitButton label={active ? messages.retire : messages.restore} pending={messages.loading} />
+      <SubmitButton
+        label={active ? messages.retire : messages.restore}
+        pending={messages.loading}
+      />
       {state.error === null ? null : (
         <p role="alert" className="mt-1 text-xs font-medium text-red-700">
           <span className="ltr-isolate font-mono">{state.error}</span>

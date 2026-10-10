@@ -74,10 +74,7 @@ export default async function InvoiceDetailPage({
       {invoice.correctsInvoiceId === null ? null : (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
           {messages.correctsInvoice}{" "}
-          <Link
-            href={`${base}/${invoice.correctsInvoiceId}`}
-            className="font-semibold underline"
-          >
+          <Link href={`${base}/${invoice.correctsInvoiceId}`} className="font-semibold underline">
             {messages.details}
           </Link>
         </p>
@@ -87,15 +84,10 @@ export default async function InvoiceDetailPage({
         <section className="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-2">
           <dl className="grid gap-3 sm:grid-cols-2">
             <Detail label={messages.merchants} value={invoice.buyerName ?? "—"} />
-            <Detail
-              label={messages.period}
-              value={`${invoice.periodFrom} → ${invoice.periodTo}`}
-            />
+            <Detail label={messages.period} value={`${invoice.periodFrom} → ${invoice.periodTo}`} />
             <Detail
               label={messages.issueDate}
-              value={
-                invoice.issuedAt === null ? "—" : formatDateTime(invoice.issuedAt, locale, tz)
-              }
+              value={invoice.issuedAt === null ? "—" : formatDateTime(invoice.issuedAt, locale, tz)}
             />
             <Detail
               label={messages.dueDate}
@@ -141,7 +133,13 @@ export default async function InvoiceDetailPage({
       </div>
 
       <DataTable
-        headers={["#", messages.description, messages.quantity, messages.unitPrice, messages.amount]}
+        headers={[
+          "#",
+          messages.description,
+          messages.quantity,
+          messages.unitPrice,
+          messages.amount,
+        ]}
       >
         {invoice.lines.map((line) => (
           <tr key={line.id}>

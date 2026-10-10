@@ -136,7 +136,9 @@ describe("cities", () => {
     });
 
     it("drops empty keys rather than storing one", () => {
-      expect(searchKeysFor({ name: "Gabès", nameAr: null, aliases: ["--", ""] })).toEqual(["gabes"]);
+      expect(searchKeysFor({ name: "Gabès", nameAr: null, aliases: ["--", ""] })).toEqual([
+        "gabes",
+      ]);
     });
   });
 
@@ -195,9 +197,7 @@ describe("cities", () => {
       await asStaff(tenantId, () => service.create(cityInput({ name: "Sousse" })));
 
       await expect(
-        asStaff(tenantId, () =>
-          service.create(cityInput({ name: "Msaken", aliases: ["sousse"] })),
-        ),
+        asStaff(tenantId, () => service.create(cityInput({ name: "Msaken", aliases: ["sousse"] }))),
       ).rejects.toBeInstanceOf(ConflictError);
     });
 
@@ -266,9 +266,7 @@ describe("cities", () => {
     it("recomputes the keys when only the aliases change", async () => {
       const city = await asStaff(tenantId, () => service.create(cityInput({ name: "Nabeul" })));
 
-      const updated = await asStaff(tenantId, () =>
-        service.update(city.id, { aliases: ["نابل"] }),
-      );
+      const updated = await asStaff(tenantId, () => service.update(city.id, { aliases: ["نابل"] }));
 
       expect(updated.searchKeys).toEqual(["nabeul", "نابل"]);
     });
@@ -428,7 +426,12 @@ describe("cities", () => {
       );
       await asStaff(tenantId, () =>
         service.create(
-          cityInput({ code: "TUN-SFAX", name: "Sfax", governorate: "Sfax", deliveryFeeMinor: 9_500 }),
+          cityInput({
+            code: "TUN-SFAX",
+            name: "Sfax",
+            governorate: "Sfax",
+            deliveryFeeMinor: 9_500,
+          }),
         ),
       );
     });
@@ -477,7 +480,9 @@ describe("cities", () => {
     });
 
     it("returns nulls, not an error, when nothing normalises to a key", async () => {
-      const matches = await asStaff(tenantId, () => service.resolveMany({ names: ["---", "   ."] }));
+      const matches = await asStaff(tenantId, () =>
+        service.resolveMany({ names: ["---", "   ."] }),
+      );
       expect(matches.map((m) => m.city)).toEqual([null, null]);
     });
   });

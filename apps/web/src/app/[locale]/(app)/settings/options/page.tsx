@@ -17,11 +17,7 @@ import { hasPermission, requireSession } from "@/lib/session";
  * carries what it actually does, not just its name — a screen of fourteen
  * SCREAMING_SNAKE keys is a screen nobody dares touch.
  */
-export default async function OptionsPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function OptionsPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];
@@ -94,7 +90,11 @@ function featureLabel(key: string, locale: "ar" | "fr" | "en"): string {
     },
     FRAUD_RULES_ENABLED: { ar: "قواعد الاحتيال", fr: "Règles anti-fraude", en: "Fraud rules" },
     POD_PHOTO_REQUIRED: { ar: "صورة إجبارية", fr: "Photo obligatoire", en: "Photo required" },
-    POD_SIGNATURE_REQUIRED: { ar: "إمضاء إجباري", fr: "Signature obligatoire", en: "Signature required" },
+    POD_SIGNATURE_REQUIRED: {
+      ar: "إمضاء إجباري",
+      fr: "Signature obligatoire",
+      en: "Signature required",
+    },
     POD_OTP_REQUIRED: { ar: "رمز إجباري", fr: "Code obligatoire", en: "OTP required" },
   };
   return labels[key]?.[locale] ?? key;

@@ -43,7 +43,11 @@ export class PaymentNoteService {
     // The read is RLS-filtered like any other, so a settlement whose merchant is
     // outside the caller's scope simply yields no name — never another tenant's.
     const { settlement, merchantName } = await this.database.withTenant(async (tx) => {
-      const rows = await tx.select().from(settlements).where(eq(settlements.id, settlementId)).limit(1);
+      const rows = await tx
+        .select()
+        .from(settlements)
+        .where(eq(settlements.id, settlementId))
+        .limit(1);
       const row = rows[0];
       if (row === undefined) {
         throw new NotFoundError("Settlement");

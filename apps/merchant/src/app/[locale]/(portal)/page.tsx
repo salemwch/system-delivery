@@ -16,11 +16,7 @@ import { fetchBootstrap, fetchDashboard, fetchShipments } from "@/lib/queries";
  * Server-rendered: the whole page is a read, so no client JavaScript is involved
  * in producing it.
  */
-export default async function DashboardPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function DashboardPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];
@@ -65,7 +61,11 @@ export default async function DashboardPage({
           href={`/${locale}/shipments`}
         />
         {/* Money first among equals — it is the question merchants ask most. */}
-        <StatCard label={messages.codOutstanding} value={money(stats.codPendingMinor)} tone="money" />
+        <StatCard
+          label={messages.codOutstanding}
+          value={money(stats.codPendingMinor)}
+          tone="money"
+        />
         <StatCard label={messages.deliveredThisMonth} value={String(delivered)} />
         <StatCard
           label={messages.deliveryRate}
@@ -81,9 +81,7 @@ export default async function DashboardPage({
           href={`/${locale}/shipments?status=ATTEMPT_FAILED`}
           className="flex items-center justify-between rounded-xl border border-amber-300 bg-amber-50 p-4 transition hover:border-amber-400"
         >
-          <span className="text-sm font-semibold text-amber-900">
-            ⚠ {messages.needsAttention}
-          </span>
+          <span className="text-sm font-semibold text-amber-900">⚠ {messages.needsAttention}</span>
           <span className="text-lg font-bold tabular-nums text-amber-900">{attention}</span>
         </Link>
       ) : null}

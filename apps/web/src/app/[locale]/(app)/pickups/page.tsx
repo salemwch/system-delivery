@@ -35,10 +35,7 @@ export default async function PickupsPage({
   const tz = timezone();
   const query = await searchParams;
 
-  const [session, result] = await Promise.all([
-    requireSession(locale),
-    fetchPickups(query.cursor),
-  ]);
+  const [session, result] = await Promise.all([requireSession(locale), fetchPickups(query.cursor)]);
   const canClaim = hasPermission(session, P.PICKUP_CLAIM);
   const canAccept = hasPermission(session, P.PICKUP_ACCEPT);
 
@@ -160,9 +157,7 @@ function ClaimCell({
   }
   if (assignedTo === currentUserId) {
     return (
-      <span className="text-xs font-medium text-emerald-700">
-        {MESSAGES[locale].assignedToYou}
-      </span>
+      <span className="text-xs font-medium text-emerald-700">{MESSAGES[locale].assignedToYou}</span>
     );
   }
   return <span className="text-slate-400">—</span>;

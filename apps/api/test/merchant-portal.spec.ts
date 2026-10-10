@@ -127,7 +127,12 @@ describe("merchant portal", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
-    merchants = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
+    merchants = new MerchantService(
+      db,
+      outbox,
+      new AuditService(db),
+      new AddressService(db, outbox, new ManualGeocodingProvider()),
+    );
     const recipients = new RecipientService(db);
     const events = new ShipmentEventService(outbox);
     const operatingConfig = new OperatingConfigService(db);

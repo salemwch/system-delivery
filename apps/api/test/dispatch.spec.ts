@@ -182,7 +182,12 @@ describe("dispatch", () => {
     const outbox = new OutboxService();
     const features = new FeatureService(db, new AuditService(db));
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
-    const merchants = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
+    const merchants = new MerchantService(
+      db,
+      outbox,
+      new AuditService(db),
+      new AddressService(db, outbox, new ManualGeocodingProvider()),
+    );
     const recipients = new RecipientService(db);
     const hubs = new HubService(db, outbox, addresses);
     const cipher = new FieldCipher(randomBytes(32));

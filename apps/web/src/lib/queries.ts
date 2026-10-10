@@ -316,7 +316,10 @@ export async function fetchDashboard(): Promise<DashboardStats> {
   return apiFetch<DashboardStats>("/v1/shipments/dashboard");
 }
 
-export async function fetchShipments(cursor?: string | null, limit = 25): Promise<PaginatedResult<ShipmentSummary>> {
+export async function fetchShipments(
+  cursor?: string | null,
+  limit = 25,
+): Promise<PaginatedResult<ShipmentSummary>> {
   return fetchPage<ShipmentSummary>("/v1/shipments", cursor, limit);
 }
 
@@ -337,15 +340,24 @@ export async function fetchShipmentEvents(id: string): Promise<readonly Shipment
   return result.data;
 }
 
-export async function fetchDrivers(cursor?: string | null, limit = 50): Promise<PaginatedResult<DriverSummary>> {
+export async function fetchDrivers(
+  cursor?: string | null,
+  limit = 50,
+): Promise<PaginatedResult<DriverSummary>> {
   return fetchPage<DriverSummary>("/v1/drivers", cursor, limit);
 }
 
-export async function fetchVehicles(cursor?: string | null, limit = 50): Promise<PaginatedResult<VehicleSummary>> {
+export async function fetchVehicles(
+  cursor?: string | null,
+  limit = 50,
+): Promise<PaginatedResult<VehicleSummary>> {
   return fetchPage<VehicleSummary>("/v1/vehicles", cursor, limit);
 }
 
-export async function fetchMerchants(cursor?: string | null, limit = 25): Promise<PaginatedResult<MerchantSummary>> {
+export async function fetchMerchants(
+  cursor?: string | null,
+  limit = 25,
+): Promise<PaginatedResult<MerchantSummary>> {
   return fetchPage<MerchantSummary>("/v1/merchants", cursor, limit);
 }
 
@@ -369,15 +381,24 @@ export async function fetchHubs(): Promise<PaginatedResult<HubSummary>> {
   return fetchPage<HubSummary>("/v1/hubs", null, 100);
 }
 
-export async function fetchRoutes(cursor?: string | null, limit = 25): Promise<PaginatedResult<RouteSummary>> {
+export async function fetchRoutes(
+  cursor?: string | null,
+  limit = 25,
+): Promise<PaginatedResult<RouteSummary>> {
   return fetchPage<RouteSummary>("/v1/routes", cursor, limit);
 }
 
-export async function fetchManifests(cursor?: string | null, limit = 25): Promise<PaginatedResult<ManifestSummary>> {
+export async function fetchManifests(
+  cursor?: string | null,
+  limit = 25,
+): Promise<PaginatedResult<ManifestSummary>> {
   return fetchPage<ManifestSummary>("/v1/manifests", cursor, limit);
 }
 
-export async function fetchUsers(cursor?: string | null, limit = 25): Promise<PaginatedResult<UserSummary>> {
+export async function fetchUsers(
+  cursor?: string | null,
+  limit = 25,
+): Promise<PaginatedResult<UserSummary>> {
   return fetchPage<UserSummary>("/v1/users", cursor, limit);
 }
 
@@ -386,15 +407,24 @@ export async function fetchCommercials(): Promise<PaginatedResult<UserSummary>> 
   return fetchPage<UserSummary>("/v1/users", null, 100, { role: "COMMERCIAL" });
 }
 
-export async function fetchComplaints(cursor?: string | null, limit = 25): Promise<PaginatedResult<ComplaintSummary>> {
+export async function fetchComplaints(
+  cursor?: string | null,
+  limit = 25,
+): Promise<PaginatedResult<ComplaintSummary>> {
   return fetchPage<ComplaintSummary>("/v1/complaints", cursor, limit);
 }
 
-export async function fetchAudit(cursor?: string | null, limit = 25): Promise<PaginatedResult<AuditEntry>> {
+export async function fetchAudit(
+  cursor?: string | null,
+  limit = 25,
+): Promise<PaginatedResult<AuditEntry>> {
   return fetchPage<AuditEntry>("/v1/audit", cursor, limit);
 }
 
-export async function fetchPickups(cursor?: string | null, limit = 25): Promise<PaginatedResult<PickupSummary>> {
+export async function fetchPickups(
+  cursor?: string | null,
+  limit = 25,
+): Promise<PaginatedResult<PickupSummary>> {
   return fetchPage<PickupSummary>("/v1/pickups", cursor, limit);
 }
 
@@ -529,9 +559,7 @@ export async function fetchAmendments(
 }
 
 /** One parcel's change history, newest first. */
-export async function fetchAmendmentsFor(
-  shipmentId: string,
-): Promise<readonly AmendmentSummary[]> {
+export async function fetchAmendmentsFor(shipmentId: string): Promise<readonly AmendmentSummary[]> {
   const page = await apiFetch<ApiPage<AmendmentSummary>>(
     `/v1/shipments/${encodeURIComponent(shipmentId)}/amendments`,
   );
@@ -861,9 +889,7 @@ export interface MovementRow {
   readonly occurredAt: string;
 }
 
-export async function fetchInventoryItems(
-  activeOnly = true,
-): Promise<readonly InventoryItemRow[]> {
+export async function fetchInventoryItems(activeOnly = true): Promise<readonly InventoryItemRow[]> {
   const result = await apiFetch<{ data: readonly InventoryItemRow[] }>(
     `/v1/inventory/items?activeOnly=${String(activeOnly)}`,
   );

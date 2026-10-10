@@ -38,7 +38,6 @@ export function isDocumentType(value: string): value is DocumentType {
   return DOCUMENT_TYPE_SET.has(value);
 }
 
-
 /** Everything a document prints. Assembled by the service; this module is pure. */
 export interface DocumentData {
   readonly documentType: DocumentType;
@@ -176,7 +175,6 @@ const LABELS: Readonly<Record<DocumentLocale, Labels>> = {
 };
 
 /** Arabic is the only RTL locale here; French and English are LTR. */
-
 
 /**
  * The document's local date and time.

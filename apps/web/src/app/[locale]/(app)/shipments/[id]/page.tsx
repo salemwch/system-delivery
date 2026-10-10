@@ -48,10 +48,7 @@ export default async function ShipmentDetailPage({
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link
-          href={`/${locale}/shipments`}
-          className="text-sm text-brand hover:underline"
-        >
+        <Link href={`/${locale}/shipments`} className="text-sm text-brand hover:underline">
           {locale === "ar" ? "← الطرود" : locale === "fr" ? "← Expéditions" : "← Shipments"}
         </Link>
       </div>
@@ -72,24 +69,57 @@ export default async function ShipmentDetailPage({
       */}
       {canPrint ? (
         <div className="flex flex-wrap gap-2">
-          <DocumentLink locale={locale} id={shipment.id} type="delivery-note" label={messages.deliveryNote} />
-          <DocumentLink locale={locale} id={shipment.id} type="consignment-note" label={messages.consignmentNote} />
+          <DocumentLink
+            locale={locale}
+            id={shipment.id}
+            type="delivery-note"
+            label={messages.deliveryNote}
+          />
+          <DocumentLink
+            locale={locale}
+            id={shipment.id}
+            type="consignment-note"
+            label={messages.consignmentNote}
+          />
           {RETURN_STATUSES.has(shipment.status) ? (
-            <DocumentLink locale={locale} id={shipment.id} type="return-note" label={messages.returnNote} />
+            <DocumentLink
+              locale={locale}
+              id={shipment.id}
+              type="return-note"
+              label={messages.returnNote}
+            />
           ) : null}
         </div>
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Section title={locale === "ar" ? "المستلم" : locale === "fr" ? "Destinataire" : "Recipient"}>
-          <InfoRow label={locale === "ar" ? "الاسم" : locale === "fr" ? "Nom" : "Name"} value={shipment.recipientName} />
-          <InfoRow label={locale === "ar" ? "الهاتف" : locale === "fr" ? "Téléphone" : "Phone"} value={shipment.recipientPhone} ltr />
-          <InfoRow label={locale === "ar" ? "العنوان" : locale === "fr" ? "Adresse" : "Address"} value={shipment.destination.rawInput} />
+        <Section
+          title={locale === "ar" ? "المستلم" : locale === "fr" ? "Destinataire" : "Recipient"}
+        >
+          <InfoRow
+            label={locale === "ar" ? "الاسم" : locale === "fr" ? "Nom" : "Name"}
+            value={shipment.recipientName}
+          />
+          <InfoRow
+            label={locale === "ar" ? "الهاتف" : locale === "fr" ? "Téléphone" : "Phone"}
+            value={shipment.recipientPhone}
+            ltr
+          />
+          <InfoRow
+            label={locale === "ar" ? "العنوان" : locale === "fr" ? "Adresse" : "Address"}
+            value={shipment.destination.rawInput}
+          />
         </Section>
 
         <Section title={locale === "ar" ? "التفاصيل" : locale === "fr" ? "Détails" : "Details"}>
-          <InfoRow label={locale === "ar" ? "التاجر" : locale === "fr" ? "Commerçant" : "Merchant"} value={shipment.merchantId ?? "—"} />
-          <InfoRow label={locale === "ar" ? "الطرود" : locale === "fr" ? "Colis" : "Parcels"} value={String(shipment.parcelCount)} />
+          <InfoRow
+            label={locale === "ar" ? "التاجر" : locale === "fr" ? "Commerçant" : "Merchant"}
+            value={shipment.merchantId ?? "—"}
+          />
+          <InfoRow
+            label={locale === "ar" ? "الطرود" : locale === "fr" ? "Colis" : "Parcels"}
+            value={String(shipment.parcelCount)}
+          />
           {canReadCod && BigInt(shipment.codAmountMinor) > 0n ? (
             <InfoRow
               label="COD"
@@ -163,7 +193,9 @@ export default async function ShipmentDetailPage({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h2 className="mb-3 text-sm font-semibold text-slate-500 uppercase tracking-wider">{title}</h2>
+      <h2 className="mb-3 text-sm font-semibold text-slate-500 uppercase tracking-wider">
+        {title}
+      </h2>
       <div className="space-y-2">{children}</div>
     </div>
   );
@@ -173,7 +205,9 @@ function InfoRow({ label, value, ltr }: { label: string; value: string; ltr?: bo
   return (
     <div className="flex justify-between gap-4 text-sm">
       <span className="text-slate-500">{label}</span>
-      <span className={`font-medium text-slate-900 ${ltr === true ? "ltr-isolate" : ""}`}>{value}</span>
+      <span className={`font-medium text-slate-900 ${ltr === true ? "ltr-isolate" : ""}`}>
+        {value}
+      </span>
     </div>
   );
 }

@@ -98,15 +98,15 @@ export default async function AmendmentsPage({
                 ))}
               </ul>
             </td>
-            <td className="px-4 py-3 max-w-xs text-sm text-slate-600">
-              {amendment.reason ?? "—"}
-            </td>
+            <td className="px-4 py-3 max-w-xs text-sm text-slate-600">{amendment.reason ?? "—"}</td>
             <td className="px-4 py-3 text-sm text-slate-500">
               {formatDateTime(amendment.createdAt, locale, tz)}
             </td>
             <td className="px-4 py-3">
               {status === "PENDING" ? (
-                canDecide ? <AmendmentDecision amendmentId={amendment.id} locale={locale} /> : null
+                canDecide ? (
+                  <AmendmentDecision amendmentId={amendment.id} locale={locale} />
+                ) : null
               ) : (
                 <div className="text-xs">
                   <span

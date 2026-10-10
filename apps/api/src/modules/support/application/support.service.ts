@@ -177,9 +177,7 @@ export class SupportService {
           // remark the merchant cannot see, and flipping to PENDING_MERCHANT
           // would tell the queue someone had been asked a question they were
           // never sent.
-          ...(internal
-            ? {}
-            : { status: authorSide === "COURIER" ? "PENDING_MERCHANT" : "OPEN" }),
+          ...(internal ? {} : { status: authorSide === "COURIER" ? "PENDING_MERCHANT" : "OPEN" }),
         })
         .where(eq(supportTickets.id, ticketId));
 
@@ -195,7 +193,8 @@ export class SupportService {
       const ticket = await this.requireTicket(tx, ticketId);
 
       const closing = dto.status === "CLOSED" && ticket.status !== "CLOSED";
-      const reopening = dto.status !== undefined && dto.status !== "CLOSED" && ticket.status === "CLOSED";
+      const reopening =
+        dto.status !== undefined && dto.status !== "CLOSED" && ticket.status === "CLOSED";
 
       await tx
         .update(supportTickets)
@@ -203,9 +202,7 @@ export class SupportService {
           updatedAt: sql`now()`,
           ...(dto.status === undefined ? {} : { status: dto.status }),
           ...(dto.category === undefined ? {} : { category: dto.category }),
-          ...(dto.assignedToUserId === undefined
-            ? {}
-            : { assignedToUserId: dto.assignedToUserId }),
+          ...(dto.assignedToUserId === undefined ? {} : { assignedToUserId: dto.assignedToUserId }),
           // `support_tickets_closed_chk` treats the pair as one: a closure with
           // no closer records nothing, and reopening must clear both.
           ...(closing ? { closedAt: sql`now()`, closedByUserId: actorUserId } : {}),
@@ -375,4 +372,3 @@ function requireId(rows: readonly { id: string }[]): string {
   }
   return row.id;
 }
-

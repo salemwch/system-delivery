@@ -16,13 +16,7 @@ import type { Locale } from "@/lib/i18n";
  * REQUESTED rows: that is the sole transition into ACCEPTED, so a button
  * anywhere else is an offer the API would refuse.
  */
-export function AcceptPickupButton({
-  pickupId,
-  locale,
-}: {
-  pickupId: string;
-  locale: Locale;
-}) {
+export function AcceptPickupButton({ pickupId, locale }: { pickupId: string; locale: Locale }) {
   const messages = MESSAGES[locale];
   const [state, action] = useActionState(acceptPickup.bind(null, locale), INITIAL_STATE);
 

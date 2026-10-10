@@ -304,11 +304,7 @@ describe("invoices", () => {
         const issued = await asStaff(tenantId, () => invoices.issue(invoice.id, ACTOR_ID));
         numbers.push(issued.invoice.number);
       }
-      expect(numbers).toEqual([
-        `FA-${YEAR}-00001`,
-        `FA-${YEAR}-00002`,
-        `FA-${YEAR}-00003`,
-      ]);
+      expect(numbers).toEqual([`FA-${YEAR}-00001`, `FA-${YEAR}-00002`, `FA-${YEAR}-00003`]);
     });
 
     /**
@@ -647,7 +643,9 @@ describe("invoices", () => {
     it("refuses to credit a draft", async () => {
       const { invoice } = await draft(tenantId, merchantId);
       await expect(
-        asStaff(tenantId, () => invoices.createCreditNote({ correctsInvoiceId: invoice.id }, ACTOR_ID)),
+        asStaff(tenantId, () =>
+          invoices.createCreditNote({ correctsInvoiceId: invoice.id }, ACTOR_ID),
+        ),
       ).rejects.toThrow(/issued invoice/i);
     });
 
@@ -795,9 +793,7 @@ describe("invoices", () => {
       // 215.200 — a hundredfold error on the one number a customer pays.
       const { invoice } = await draft(tenantId, merchantId);
       const issued = await asStaff(tenantId, () => invoices.issue(invoice.id, ACTOR_ID));
-      const html = await asStaff(tenantId, () =>
-        invoices.renderDocument(issued.invoice.id, "fr"),
-      );
+      const html = await asStaff(tenantId, () => invoices.renderDocument(issued.invoice.id, "fr"));
 
       expect(html).toContain("215.200"); // total TTC
       expect(html).toContain("180.000"); // total HT
@@ -809,9 +805,7 @@ describe("invoices", () => {
     it("prints the number, the rate and the fiscal identity", async () => {
       const { invoice } = await draft(tenantId, merchantId);
       const issued = await asStaff(tenantId, () => invoices.issue(invoice.id, ACTOR_ID));
-      const html = await asStaff(tenantId, () =>
-        invoices.renderDocument(issued.invoice.id, "fr"),
-      );
+      const html = await asStaff(tenantId, () => invoices.renderDocument(issued.invoice.id, "fr"));
 
       expect(html).toContain(`FA-${YEAR}-00001`);
       expect(html).toContain("19.00%");
@@ -832,9 +826,7 @@ describe("invoices", () => {
     it("renders Arabic right-to-left with Latin digits", async () => {
       const { invoice } = await draft(tenantId, merchantId);
       const issued = await asStaff(tenantId, () => invoices.issue(invoice.id, ACTOR_ID));
-      const html = await asStaff(tenantId, () =>
-        invoices.renderDocument(issued.invoice.id, "ar"),
-      );
+      const html = await asStaff(tenantId, () => invoices.renderDocument(issued.invoice.id, "ar"));
 
       expect(html).toContain('dir="rtl"');
       expect(html).toContain("فاتورة");
@@ -877,9 +869,7 @@ describe("invoices", () => {
       const issued = await asStaff(tenantId, () => invoices.issue(invoice.id, ACTOR_ID));
       await asStaff(tenantId, () => merchants.update(merchantId, { name: "Nouveau Nom SARL" }));
 
-      const html = await asStaff(tenantId, () =>
-        invoices.renderDocument(issued.invoice.id, "fr"),
-      );
+      const html = await asStaff(tenantId, () => invoices.renderDocument(issued.invoice.id, "fr"));
       expect(html).toContain("Boutique Kappa");
       expect(html).not.toContain("Nouveau Nom SARL");
     });
@@ -895,9 +885,9 @@ describe("invoices", () => {
     it("refuses to render an invoice outside the caller's scope", async () => {
       const other = await seedTenant("inv-doc-other");
       const { invoice } = await draft(tenantId, merchantId);
-      await expect(
-        asStaff(other, () => invoices.renderDocument(invoice.id, "fr")),
-      ).rejects.toThrow(NotFoundError);
+      await expect(asStaff(other, () => invoices.renderDocument(invoice.id, "fr"))).rejects.toThrow(
+        NotFoundError,
+      );
     });
   });
 

@@ -13,8 +13,14 @@ import type { LoginState } from "@/lib/login-state";
 
 export function LoginForm({ locale }: { locale: Locale }) {
   const messages = MESSAGES[locale];
-  const [loginState, loginAction] = useActionState(signIn.bind(null, locale), INITIAL_STATE as LoginState);
-  const [mfaState, mfaAction] = useActionState(submitMfa.bind(null, locale), INITIAL_STATE as LoginState);
+  const [loginState, loginAction] = useActionState(
+    signIn.bind(null, locale),
+    INITIAL_STATE as LoginState,
+  );
+  const [mfaState, mfaAction] = useActionState(
+    submitMfa.bind(null, locale),
+    INITIAL_STATE as LoginState,
+  );
 
   const [mfa, setMfa] = useState<{
     status: "MFA_REQUIRED" | "MFA_ENROLMENT_REQUIRED";

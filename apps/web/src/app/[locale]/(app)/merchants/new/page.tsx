@@ -14,11 +14,7 @@ import { hasPermission, requireSession } from "@/lib/session";
  * permission: the route's existence is not information anyone without
  * `merchant:create` needs, and the API refuses the write regardless.
  */
-export default async function NewMerchantPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function NewMerchantPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];

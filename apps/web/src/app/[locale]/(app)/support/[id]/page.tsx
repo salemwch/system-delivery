@@ -52,7 +52,10 @@ export default async function TicketPage({
 
       <div className="flex flex-wrap gap-4 text-sm text-slate-600">
         <span>{ticket.category}</span>
-        <Link href={`/${locale}/merchants/${ticket.merchantId}`} className="text-brand hover:underline">
+        <Link
+          href={`/${locale}/merchants/${ticket.merchantId}`}
+          className="text-brand hover:underline"
+        >
           {messages.merchants} →
         </Link>
         {ticket.shipmentId === null ? null : (
@@ -65,7 +68,9 @@ export default async function TicketPage({
         )}
       </div>
 
-      {canManage ? <TicketCommands ticketId={ticket.id} status={ticket.status} locale={locale} /> : null}
+      {canManage ? (
+        <TicketCommands ticketId={ticket.id} status={ticket.status} locale={locale} />
+      ) : null}
 
       <SupportThread
         locale={locale}

@@ -18,11 +18,7 @@ import { fetchAddressBook } from "@/lib/queries";
  * A merchant therefore holds no `recipient:*` permission at all, and this page
  * reads `/v1/address-book`, which is already narrowed by RLS.
  */
-export default async function AddressBookPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function AddressBookPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
   const messages = MESSAGES[locale];
@@ -54,18 +50,14 @@ export default async function AddressBookPage({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">{entry.recipientName}</p>
-              <p className="ltr-isolate truncate text-xs text-slate-500">
-                {entry.recipientPhone}
-              </p>
+              <p className="ltr-isolate truncate text-xs text-slate-500">{entry.recipientPhone}</p>
               <p className="mt-1 truncate text-xs text-slate-600">{entry.rawInput}</p>
             </div>
             <div className="shrink-0 text-end">
               <p className="text-xs text-slate-500">
                 {entry.shipmentCount} {messages.deliveries}
               </p>
-              <p className="text-xs text-slate-400">
-                {formatDate(entry.lastUsedAt, locale, tz)}
-              </p>
+              <p className="text-xs text-slate-400">{formatDate(entry.lastUsedAt, locale, tz)}</p>
             </div>
           </div>
         </li>

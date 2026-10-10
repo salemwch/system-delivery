@@ -20,11 +20,7 @@ interface ReconciliationResult {
   readonly currencyExponent: number;
 }
 
-export default async function RemittancesPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function RemittancesPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
 
@@ -59,7 +55,9 @@ export default async function RemittancesPage({
             <td className="px-4 py-3 text-sm tabular-nums ltr-isolate">
               {formatMoney(entry.remittedMinor, result.currencyExponent, locale)}
             </td>
-            <td className={`px-4 py-3 text-sm tabular-nums ltr-isolate font-medium ${entry.differenceMinor !== 0 ? "text-red-700" : "text-emerald-700"}`}>
+            <td
+              className={`px-4 py-3 text-sm tabular-nums ltr-isolate font-medium ${entry.differenceMinor !== 0 ? "text-red-700" : "text-emerald-700"}`}
+            >
               {formatMoney(entry.differenceMinor, result.currencyExponent, locale)}
             </td>
           </tr>

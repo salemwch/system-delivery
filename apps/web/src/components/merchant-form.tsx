@@ -33,11 +33,19 @@ export function MerchantForm({ locale }: { locale: Locale }) {
         </p>
       ) : null}
 
-      <Field label={messages.merchantName} name="name" error={fieldErrorMessage(state.fieldErrors["name"], locale)}>
+      <Field
+        label={messages.merchantName}
+        name="name"
+        error={fieldErrorMessage(state.fieldErrors["name"], locale)}
+      >
         <input id="name" name="name" required maxLength={200} className={INPUT_CLASS} />
       </Field>
 
-      <Field label={messages.merchantCode} name="code" error={fieldErrorMessage(state.fieldErrors["code"], locale)}>
+      <Field
+        label={messages.merchantCode}
+        name="code"
+        error={fieldErrorMessage(state.fieldErrors["code"], locale)}
+      >
         <input id="code" name="code" maxLength={50} className={`${INPUT_CLASS} ltr-isolate`} />
       </Field>
 
@@ -87,7 +95,11 @@ export function MerchantForm({ locale }: { locale: Locale }) {
         <input id="addressLine" name="addressLine" maxLength={500} className={INPUT_CLASS} />
       </Field>
 
-      <Field label={messages.city} name="city" error={fieldErrorMessage(state.fieldErrors["city"], locale)}>
+      <Field
+        label={messages.city}
+        name="city"
+        error={fieldErrorMessage(state.fieldErrors["city"], locale)}
+      >
         <input id="city" name="city" maxLength={200} className={INPUT_CLASS} />
       </Field>
 

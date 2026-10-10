@@ -55,7 +55,13 @@ export function OpenTicketForm({
     <form action={action} className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label={messages.merchants} name="merchantId" error={state.fieldErrors["merchantId"]}>
-          <select id="merchantId" name="merchantId" required defaultValue="" className={INPUT_CLASS}>
+          <select
+            id="merchantId"
+            name="merchantId"
+            required
+            defaultValue=""
+            className={INPUT_CLASS}
+          >
             <option value="" disabled>
               —
             </option>
@@ -83,7 +89,14 @@ export function OpenTicketForm({
       </Field>
 
       <Field label={messages.reply} name="body" error={state.fieldErrors["body"]}>
-        <textarea id="body" name="body" rows={3} required maxLength={5000} className={INPUT_CLASS} />
+        <textarea
+          id="body"
+          name="body"
+          rows={3}
+          required
+          maxLength={5000}
+          className={INPUT_CLASS}
+        />
       </Field>
 
       <div className="flex items-center gap-3">

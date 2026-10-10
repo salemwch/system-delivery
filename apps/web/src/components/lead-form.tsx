@@ -58,7 +58,13 @@ export function LeadForm({ locale }: { locale: Locale }) {
         </Field>
 
         <Field label={messages.contact} name="contactName" error={state.fieldErrors["contactName"]}>
-          <input id="contactName" name="contactName" required maxLength={200} className={INPUT_CLASS} />
+          <input
+            id="contactName"
+            name="contactName"
+            required
+            maxLength={200}
+            className={INPUT_CLASS}
+          />
         </Field>
 
         {/*

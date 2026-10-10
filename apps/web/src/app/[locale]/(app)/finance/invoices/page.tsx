@@ -124,15 +124,7 @@ export default async function InvoicesPage({
   );
 }
 
-function FilterLink({
-  href,
-  label,
-  active,
-}: {
-  href: string;
-  label: string;
-  active: boolean;
-}) {
+function FilterLink({ href, label, active }: { href: string; label: string; active: boolean }) {
   return (
     <Link
       href={href}

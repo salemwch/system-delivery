@@ -47,7 +47,10 @@ export function BillingSettingsForm({
   const [state, action] = useActionState(updateBillingSettings.bind(null, locale), INITIAL_STATE);
 
   return (
-    <form action={action} className="max-w-xl space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+    <form
+      action={action}
+      className="max-w-xl space-y-4 rounded-xl border border-slate-200 bg-white p-4"
+    >
       <input type="hidden" name="exponent" value={exponent} />
 
       <Field label={messages.vatRate} name="vatRate" error={state.fieldErrors["vatRate"]}>
@@ -121,7 +124,11 @@ export function BillingSettingsForm({
         />
       </Field>
 
-      <Field label={messages.legalAddress} name="legalAddress" error={state.fieldErrors["legalAddress"]}>
+      <Field
+        label={messages.legalAddress}
+        name="legalAddress"
+        error={state.fieldErrors["legalAddress"]}
+      >
         <textarea
           id="legalAddress"
           name="legalAddress"

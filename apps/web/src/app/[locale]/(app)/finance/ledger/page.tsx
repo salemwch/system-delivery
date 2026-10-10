@@ -19,11 +19,7 @@ interface CashInFieldResult {
   readonly currencyExponent: number;
 }
 
-export default async function LedgerPage({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+export default async function LedgerPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: raw } = await params;
   const locale = toLocale(raw);
 
@@ -38,7 +34,13 @@ export default async function LedgerPage({
       </div>
 
       <PageHeader
-        title={locale === "ar" ? "النقد في الميدان" : locale === "fr" ? "Espèces sur le terrain" : "Cash in field"}
+        title={
+          locale === "ar"
+            ? "النقد في الميدان"
+            : locale === "fr"
+              ? "Espèces sur le terrain"
+              : "Cash in field"
+        }
       />
 
       <DataTable
