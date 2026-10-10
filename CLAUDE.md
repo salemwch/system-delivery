@@ -20,7 +20,7 @@ Authorized 2026-07-22. Build within these limits:
 
 ## Current state (updated 2026-10-10)
 
-**Everything green:** `pnpm build` → ok · `pnpm test` → 1479/1479 (1296 api + 39 track + 45 merchant + 99 web) · `pnpm typecheck` → 0 (incl. `test/`) · `pnpm format:check` → 0 · `pnpm docs:spell` → 0 · MFA sign-in verified end to end · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (443 targets, all four apps tracked and covered).
+**Everything green:** `pnpm build` → ok · `pnpm test` → 1483/1483 (1296 api + 39 track + 47 merchant + 101 web) · `pnpm typecheck` → 0 (incl. `test/`) · `pnpm format:check` → 0 · `pnpm docs:spell` → 0 · MFA sign-in verified end to end · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (443 targets, all four apps tracked and covered).
 
 ⚠️ `pnpm sast` scans **git-tracked files only** — an untracked app is silently invisible to it. Never pipe it to `tail`: the pipeline's exit status is the last command's, which hid a `RuleParseError` behind a green tick.
 
