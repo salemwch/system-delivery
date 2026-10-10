@@ -36,11 +36,12 @@ describe("support tickets", () => {
   const STAFF_ID = randomUUID();
 
   /** Back office: full tenant scope, no merchant narrowing. */
-  function asStaff<T>(tenantId: string, fn: () => Promise<T>, actorId = STAFF_ID): Promise<T> {
-    return TenantContext.run(
-      { tenantId: asTenantId(tenantId), actorType: "user", actorId },
-      fn,
-    );
+  function asStaff<T>(
+    tenantId: string,
+    fn: () => Promise<T>,
+    actorId: string = STAFF_ID,
+  ): Promise<T> {
+    return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "user", actorId }, fn);
   }
 
   /** A merchant portal login: narrowed to one merchant (invariant I24). */
@@ -48,7 +49,7 @@ describe("support tickets", () => {
     tenantId: string,
     merchantId: string,
     fn: () => Promise<T>,
-    actorId = STAFF_ID,
+    actorId: string = STAFF_ID,
   ): Promise<T> {
     return TenantContext.run(
       { tenantId: asTenantId(tenantId), actorType: "user", actorId, merchantId },
@@ -173,7 +174,11 @@ describe("support tickets", () => {
 
     it("lets staff open one on a merchant's behalf — the phone-call case", async () => {
       const view = await asStaff(tenantId, () =>
-        support.open({ subject: "Appel client", body: "Demande par téléphone", merchantId }, userId, "COURIER"),
+        support.open(
+          { subject: "Appel client", body: "Demande par téléphone", merchantId },
+          userId,
+          "COURIER",
+        ),
       );
       expect(view.ticket.merchantId).toBe(merchantId);
       expect(view.messages[0]?.authorSide).toBe("COURIER");
@@ -189,7 +194,11 @@ describe("support tickets", () => {
 
     it("publishes support.ticket_opened", async () => {
       const view = await asMerchant(tenantId, merchantId, () =>
-        support.open({ subject: "Facturation", body: "…", category: "BILLING" }, userId, "MERCHANT"),
+        support.open(
+          { subject: "Facturation", body: "…", category: "BILLING" },
+          userId,
+          "MERCHANT",
+        ),
       );
 
       const rows = await withTenantContext(
@@ -234,7 +243,9 @@ describe("support tickets", () => {
     });
 
     it("a merchant reply puts it back", async () => {
-      await asStaff(tenantId, () => support.reply(ticketId, { body: "Précisez ?" }, userId, "COURIER"));
+      await asStaff(tenantId, () =>
+        support.reply(ticketId, { body: "Précisez ?" }, userId, "COURIER"),
+      );
       const view = await asMerchant(tenantId, merchantId, () =>
         support.reply(ticketId, { body: "Voici" }, userId, "MERCHANT"),
       );
@@ -245,7 +256,12 @@ describe("support tickets", () => {
 
     it("an INTERNAL note does not move the ticket", async () => {
       const view = await asStaff(tenantId, () =>
-        support.reply(ticketId, { body: "Client mauvais payeur", internal: true }, userId, "COURIER"),
+        support.reply(
+          ticketId,
+          { body: "Client mauvais payeur", internal: true },
+          userId,
+          "COURIER",
+        ),
       );
 
       // Nobody is waiting on a remark the merchant cannot see; flipping to
@@ -256,7 +272,12 @@ describe("support tickets", () => {
 
     it("⚠️ HIDES an internal note from the merchant entirely", async () => {
       await asStaff(tenantId, () =>
-        support.reply(ticketId, { body: "Ne pas accorder de crédit", internal: true }, userId, "COURIER"),
+        support.reply(
+          ticketId,
+          { body: "Ne pas accorder de crédit", internal: true },
+          userId,
+          "COURIER",
+        ),
       );
 
       const staffView = await asStaff(tenantId, () => support.getById(ticketId));
@@ -265,9 +286,7 @@ describe("support tickets", () => {
       // The whole point. RLS removes the row — this code never learns it was
       // withheld, which is what makes it impossible to leak by forgetting a
       // filter.
-      const merchantView = await asMerchant(tenantId, merchantId, () =>
-        support.getById(ticketId),
-      );
+      const merchantView = await asMerchant(tenantId, merchantId, () => support.getById(ticketId));
       expect(merchantView.messages).toHaveLength(1);
       expect(merchantView.messages.map((m) => m.body)).toEqual(["Première question"]);
     });

@@ -374,7 +374,11 @@
     "multimodal",
     "tiled",
     "reoptimize",
-    "reoptimization"
+    "reoptimization",
+    "état",
+    "paiement",
+    "général",
+    "vhdx"
   ],
   "ignoreWords": [],
   "allowCompoundWords": true

@@ -36,11 +36,12 @@ describe("merchant applications", () => {
 
   const ACTOR_ID = randomUUID();
 
-  function asStaff<T>(tenantId: string, fn: () => Promise<T>, actorId = ACTOR_ID): Promise<T> {
-    return TenantContext.run(
-      { tenantId: asTenantId(tenantId), actorType: "user", actorId },
-      fn,
-    );
+  function asStaff<T>(
+    tenantId: string,
+    fn: () => Promise<T>,
+    actorId: string = ACTOR_ID,
+  ): Promise<T> {
+    return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "user", actorId }, fn);
   }
 
   /** What the public endpoint does: a tenant, no user. */
@@ -252,9 +253,7 @@ describe("merchant applications", () => {
       expect(decided.decidedByUserId).toBe(userId);
       expect(decided.decidedAt).not.toBeNull();
 
-      const merchant = await asStaff(tenantId, () =>
-        merchants.getById(decided.merchantId ?? ""),
-      );
+      const merchant = await asStaff(tenantId, () => merchants.getById(decided.merchantId ?? ""));
       // Copied, not retyped — a second chance to get the phone wrong is a second
       // chance for a parcel to go undelivered.
       expect(merchant.name).toBe("Boutique Yasmine");
@@ -358,7 +357,11 @@ describe("merchant applications", () => {
 
     it("refuses to decide an already-decided application", async () => {
       const pending = await onlyPending(tenantId);
-      await asStaff(tenantId, () => applications.reject(pending.id, { reason: "non" }, userId), userId);
+      await asStaff(
+        tenantId,
+        () => applications.reject(pending.id, { reason: "non" }, userId),
+        userId,
+      );
 
       await expect(
         asStaff(tenantId, () => applications.approve(pending.id, {}, userId), userId),
@@ -414,7 +417,10 @@ describe("merchant applications", () => {
       for (let i = 0; i < 3; i += 1) {
         await asAnonymous(tenantId, () =>
           applications.submit(
-            application({ businessName: `Client ${String(i)}`, contactPhone: `+2162420131${String(i)}` }),
+            application({
+              businessName: `Client ${String(i)}`,
+              contactPhone: `+2162420131${String(i)}`,
+            }),
           ),
         );
       }
@@ -428,7 +434,11 @@ describe("merchant applications", () => {
     it("reads history newest first", async () => {
       const pending = await asStaff(tenantId, () => applications.list());
       for (const item of pending.items) {
-        await asStaff(tenantId, () => applications.reject(item.id, { reason: "non" }, userId), userId);
+        await asStaff(
+          tenantId,
+          () => applications.reject(item.id, { reason: "non" }, userId),
+          userId,
+        );
       }
 
       const history = await asStaff(tenantId, () => applications.list({ status: "REJECTED" }));
@@ -443,7 +453,11 @@ describe("merchant applications", () => {
       expect(await asStaff(tenantId, () => applications.pendingCount())).toBe(3);
 
       const first = await onlyPending(tenantId);
-      await asStaff(tenantId, () => applications.reject(first.id, { reason: "non" }, userId), userId);
+      await asStaff(
+        tenantId,
+        () => applications.reject(first.id, { reason: "non" }, userId),
+        userId,
+      );
 
       expect(await asStaff(tenantId, () => applications.pendingCount())).toBe(2);
     });

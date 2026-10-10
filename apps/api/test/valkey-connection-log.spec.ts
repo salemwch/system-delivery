@@ -95,7 +95,7 @@ describe("ConnectionErrorLog", () => {
     // stacks — and the real outage ran for hours across two clients, which is
     // how one dead Postgres produced a wall of Valkey frames.
     expect(lines).toHaveLength(1);
-    expect(lines[0]?.context.attempts).toBe(1);
+    expect(lines[0]?.context["attempts"]).toBe(1);
   });
 
   it("restates an ongoing outage once the window expires, carrying the counts", () => {
@@ -113,9 +113,9 @@ describe("ConnectionErrorLog", () => {
     expect(restated).toBeDefined();
     // Nothing is silently dropped: the swallowed attempts ride on the next line,
     // so the true rate is recoverable from the log alone.
-    expect(restated?.context.suppressed).toBe(14);
-    expect(restated?.context.attempts).toBe(16);
-    expect(restated?.context.outageMs).toBe(30_000);
+    expect(restated?.context["suppressed"]).toBe(14);
+    expect(restated?.context["attempts"]).toBe(16);
+    expect(restated?.context["outageMs"]).toBe(30_000);
   });
 
   it("logs a changed failure immediately rather than swallowing it", () => {
@@ -178,8 +178,8 @@ describe("ConnectionErrorLog", () => {
     const recovery = lines.at(-1);
     expect(recovery?.level).toBe("info");
     expect(recovery?.message).toBe("valkey reconnected");
-    expect(recovery?.context.outageMs).toBe(10_000);
-    expect(recovery?.context.attempts).toBe(2);
+    expect(recovery?.context["outageMs"]).toBe(10_000);
+    expect(recovery?.context["attempts"]).toBe(2);
   });
 
   it("stays silent on a healthy first connect", () => {
@@ -210,8 +210,8 @@ describe("ConnectionErrorLog", () => {
     // of the first, and its counters start from zero rather than accumulating.
     const second = lines.at(-1);
     expect(second?.level).toBe("error");
-    expect(second?.context.attempts).toBe(1);
-    expect(second?.context.outageMs).toBe(0);
+    expect(second?.context["attempts"]).toBe(1);
+    expect(second?.context["outageMs"]).toBe(0);
   });
 
   it("tells the two clients apart", () => {
@@ -224,7 +224,7 @@ describe("ConnectionErrorLog", () => {
     shared.record(systemError("ECONNREFUSED"));
     subscriber.record(systemError("ECONNREFUSED"));
 
-    expect(lines.map((line) => line.context.component)).toStrictEqual([
+    expect(lines.map((line) => line.context["component"])).toStrictEqual([
       "valkey",
       "realtime-subscriber",
     ]);
