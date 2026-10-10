@@ -64,6 +64,12 @@ Reference for implementation pitfalls discovered during the build. Read the sect
 - **Privileged roles (OWNER/FINANCE/PLATFORM_ADMIN) cannot log in without MFA** — fail-closed. Seed them with `mfa_enabled = true` in tests.
 - **`pnpm sast` scans only git-TRACKED files.** `git add` new files before running or the scan proves nothing about new code.
 
+## Driver identity
+
+- **Never take a `driverId` from a driver's request body.** Resolve it from the login: `select id from drivers where user_id = <sub>`. Migration 0043 makes that lookup unique. A user id is not a driver id. Delivery and failure also require the parcel to be in that driver's custody (I26). A body field let any `shipment:deliver` holder book a colleague's COD.
+- **A pickup collector is a USER, the custody holder is a DRIVER.** `pickup_requests.assigned_driver_id` and `pickup_shipments.scanned_by_driver_id` hold user ids despite their names (0044). `pickup.parcel_scanned` carries `collectorUserId` (who) and `driverId` (a `drivers.id` or null). Only the assignee may scan or collect (I27). Never put a user id in a driver-id field.
+- **Driver test fixtures need a real login.** Use `seedDriverLogin` from `test/database.harness.ts`, and send `out_for_delivery` WITH that `driverId`. Without one, the parcel is in a DRIVER custody nobody holds and every delivery is refused.
+
 ## PII / Crypto
 
 - **PII at rest = `FieldCipher` (AES-256-GCM), not pgcrypto.** Columns hold `v1:iv:tag:ct`. Read models expose only `hasX` booleans; plaintext via explicit `revealPii` (gated by `pii:export`). `CryptoModule` is `@Global`; the crypto barrel exports the class+token ONLY, never the Module.

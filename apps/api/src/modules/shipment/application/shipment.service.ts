@@ -11,7 +11,12 @@ import {
   isUniqueViolation,
 } from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
-import { BusinessRuleError, ConflictError, NotFoundError } from "../../../shared/errors/index.js";
+import {
+  BusinessRuleError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from "../../../shared/errors/index.js";
 import { parseWithZod } from "../../../shared/http/index.js";
 import {
   cancelShipmentSchema,
@@ -22,15 +27,25 @@ import {
   listShipmentsSchema,
   recordEventSchema,
   recordFailedAttemptSchema,
+  recordPickupScanSchema,
   recordPickupSchema,
 } from "../domain/dtos.js";
-import type { ConfirmDeliveryInput, CreateShipmentInput } from "../domain/dtos.js";
+import type {
+  ConfirmDeliveryInput,
+  CreateShipmentInput,
+  RecordPickupScanInput,
+} from "../domain/dtos.js";
 import { haversineMetres } from "../domain/geo.js";
 import { pod, shipmentEvents, shipmentLegs, shipments } from "../domain/schema.js";
 import type { Shipment } from "../domain/schema.js";
 import { generateTrackingNumber } from "../domain/tracking-number.js";
-import { isInCustody, toShipmentStatus } from "../domain/shipment-status.js";
-import type { CodStatus, EventActor, ShipmentStatus } from "../domain/shipment-status.js";
+import { checkTransition, isInCustody, toShipmentStatus } from "../domain/shipment-status.js";
+import type {
+  CodStatus,
+  EventActor,
+  ShipmentEventType,
+  ShipmentStatus,
+} from "../domain/shipment-status.js";
 import { ShipmentEventService } from "./shipment-event.service.js";
 import type { ShipmentSnapshot } from "./shipment-event.service.js";
 
@@ -321,8 +336,25 @@ export class ShipmentService {
 
   // ── Driver-owned lifecycle commands ──────────────────────────────────────────
 
+  /** Staff record a collection on a driver's behalf. The driver is required. */
   async recordPickup(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
-    const dto = parseWithZod(recordPickupSchema, input);
+    return this.applyPickup(id, parseWithZod(recordPickupSchema, input), ctx);
+  }
+
+  /**
+   * A collection proven by a pickup scan (`pickup.parcel_scanned`). Not exposed
+   * over HTTP. The collector may be a non-driver (a commercial), so the driver
+   * is optional; see {@link recordPickupScanSchema}.
+   */
+  async recordPickupScan(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
+    return this.applyPickup(id, parseWithZod(recordPickupScanSchema, input), ctx);
+  }
+
+  private async applyPickup(
+    id: string,
+    dto: RecordPickupScanInput,
+    ctx: CommandContext,
+  ): Promise<Shipment> {
     const occurredAt = dto.occurredAt ?? new Date();
 
     return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
@@ -332,7 +364,7 @@ export class ShipmentService {
         actor: ctx.actor,
         idempotencyKey: dto.idempotencyKey,
         occurredAt,
-        driverId: dto.driverId,
+        ...(dto.driverId === undefined ? {} : { driverId: dto.driverId }),
         ...(legId === undefined ? {} : { legId }),
         ...(dto.routeId === undefined ? {} : { routeId: dto.routeId }),
         ...(dto.location === undefined ? {} : { location: dto.location }),
@@ -343,7 +375,7 @@ export class ShipmentService {
         outboxPayload: {
           shipmentId: shipment.id,
           legId: legId ?? null,
-          driverId: dto.driverId,
+          driverId: dto.driverId ?? null,
           routeId: dto.routeId ?? null,
           routeStopId: dto.routeStopId ?? null,
           scannedBarcode: dto.scannedBarcode ?? null,
@@ -373,6 +405,11 @@ export class ShipmentService {
     const distanceM = await this.podDistance(pre.destinationAddressId, dto.location);
 
     return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+      // Who delivered is decided before anything about HOW: authority first, so
+      // a caller with no business touching this parcel learns nothing from the
+      // COD and POD rules below.
+      const driverId = await this.requireCustodian(tx, shipment, "delivered", ctx);
+
       const isCod = shipment.codAmountMinor > 0n;
       if (isCod && dto.codCollected !== true) {
         // Rule 8: a COD shipment cannot be marked DELIVERED without collecting cash.
@@ -400,7 +437,7 @@ export class ShipmentService {
         actor: ctx.actor,
         idempotencyKey: dto.idempotencyKey,
         occurredAt,
-        driverId: dto.driverId,
+        driverId,
         incrementAttempt: true,
         ...(legId === undefined ? {} : { legId }),
         ...(dto.location === undefined ? {} : { location: dto.location }),
@@ -413,7 +450,7 @@ export class ShipmentService {
           attemptId,
           attemptNumber,
           maxAttempts: shipment.maxAttempts,
-          driverId: dto.driverId,
+          driverId,
           outcome: "SUCCESS",
           dwellTimeSeconds: dto.dwellTimeSeconds ?? null,
           ...(distanceM === null ? {} : { distanceFromDestinationM: distanceM }),
@@ -446,7 +483,7 @@ export class ShipmentService {
         actor: ctx.actor,
         idempotencyKey: `${dto.idempotencyKey}#delivered`,
         occurredAt,
-        driverId: dto.driverId,
+        driverId,
         ...(legId === undefined ? {} : { legId }),
         ...(dto.location === undefined ? {} : { location: dto.location }),
         ...(isCod ? { codStatus: "COLLECTED" satisfies CodStatus } : {}),
@@ -462,7 +499,7 @@ export class ShipmentService {
           podType: dto.pod.podType,
           recipientName: dto.pod.recipientName,
           recipientRelationship: dto.pod.recipientRelationship ?? null,
-          driverId: dto.driverId,
+          driverId,
           routeId: dto.routeId ?? null,
           routeStopId: dto.routeStopId ?? null,
           codAmountMinor: shipment.codAmountMinor.toString(),
@@ -485,7 +522,7 @@ export class ShipmentService {
           occurredAt,
           payload: {
             shipmentId: shipment.id,
-            driverId: dto.driverId,
+            driverId,
             // The party the collected cash is owed to; the Ledger consumer credits
             // MERCHANT_PAYABLE from this. Null when the shipment has no merchant —
             // finance then accrues it to a tenant-level payable. Self-contained
@@ -516,6 +553,8 @@ export class ShipmentService {
     const distanceM = await this.podDistance(pre.destinationAddressId, dto.location);
 
     return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+      const driverId = await this.requireCustodian(tx, shipment, "delivery_failed", ctx);
+
       const legId = dto.legId ?? (await this.firstLegId(tx, shipment.id));
       const attemptId = randomUUID();
       const attemptNumber = shipment.attemptCount + 1;
@@ -527,7 +566,7 @@ export class ShipmentService {
         actor: ctx.actor,
         idempotencyKey: dto.idempotencyKey,
         occurredAt,
-        driverId: dto.driverId,
+        driverId,
         reasonCode: dto.reasonCode,
         incrementAttempt: true,
         ...(legId === undefined ? {} : { legId }),
@@ -541,7 +580,7 @@ export class ShipmentService {
           attemptId,
           attemptNumber,
           maxAttempts: shipment.maxAttempts,
-          driverId: dto.driverId,
+          driverId,
           outcome: "FAILED",
           reasonCode: dto.reasonCode,
           dwellTimeSeconds: dto.dwellTimeSeconds ?? null,
@@ -556,7 +595,7 @@ export class ShipmentService {
         actor: ctx.actor,
         idempotencyKey: `${dto.idempotencyKey}#failed`,
         occurredAt,
-        driverId: dto.driverId,
+        driverId,
         reasonCode: dto.reasonCode,
         ...(legId === undefined ? {} : { legId }),
         ...(dto.location === undefined ? {} : { location: dto.location }),
@@ -572,7 +611,7 @@ export class ShipmentService {
           maxAttempts: shipment.maxAttempts,
           reasonCode: dto.reasonCode,
           reasonNotes: dto.reasonNotes ?? null,
-          driverId: dto.driverId,
+          driverId,
           dwellTimeSeconds: dto.dwellTimeSeconds ?? null,
           attemptsRemaining,
           ...(distanceM === null ? {} : { distanceFromDestinationM: distanceM }),
@@ -708,6 +747,7 @@ export class ShipmentService {
     const occurredAt = dto.occurredAt ?? new Date();
 
     return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+      const driverId = await this.returningDriver(tx, shipment, ctx);
       const legId = await this.openReturnLegId(tx, shipment.id);
 
       await this.events.applyTo(tx, snapshotOf(shipment), {
@@ -716,7 +756,7 @@ export class ShipmentService {
         idempotencyKey: dto.idempotencyKey,
         occurredAt,
         ...(legId === undefined ? {} : { legId }),
-        ...(dto.driverId === undefined ? {} : { driverId: dto.driverId }),
+        ...(driverId === null ? {} : { driverId }),
         outboxPayload: {
           shipmentId: shipment.id,
           trackingNumber: shipment.trackingNumber,
@@ -1100,6 +1140,97 @@ export class ShipmentService {
     });
   }
 
+  /**
+   * The driver recording a delivery outcome — the CALLER, and only while the
+   * parcel is in their custody (invariant I26, docs/05-api-contracts.md §3).
+   *
+   * ⚠️ The driver used to come from the request body. Any holder of
+   * `shipment:deliver` could then mark a colleague's parcel delivered and book
+   * its COD to the colleague's DRIVER_CASH account, which makes the end-of-day
+   * cash reconciliation meaningless.
+   *
+   * Custody, not route membership, is the test. `out_for_delivery` puts the
+   * parcel in the route driver's custody, so for a normal day the two agree.
+   * Where they differ (a parcel brought back to the hub and sent out with
+   * someone else), custody is what physically happened.
+   *
+   * An ILLEGAL transition skips the custody test on purpose. A parcel that is
+   * already DELIVERED has no custodian, and a late offline retry should get
+   * SHIPMENT_INVALID_TRANSITION from the state machine, not a 403 telling the
+   * app it was never this driver's parcel. That path cannot write anything: the
+   * state machine throws inside the same transaction.
+   */
+  private async requireCustodian(
+    tx: TenantTransaction,
+    shipment: Shipment,
+    outcome: ShipmentEventType,
+    ctx: CommandContext,
+  ): Promise<string> {
+    const driverId = await this.callerDriverId(tx, ctx);
+    if (driverId === null) {
+      throw new ForbiddenError("Only a driver can record a delivery outcome.");
+    }
+    const transition = checkTransition(toShipmentStatus(shipment.status), outcome);
+    if (transition.kind !== "rejected" && !heldBy(shipment, driverId)) {
+      throw new ForbiddenError("This shipment is not in your custody.");
+    }
+    return driverId;
+  }
+
+  /**
+   * Who handed a returned parcel back, or null when staff record it at a
+   * counter (invariant I26).
+   *
+   * Looser than {@link requireCustodian} on purpose. A return can be closed
+   * from the hub (RETURN_PENDING follows AT_HUB as well as a failed attempt),
+   * so requiring driver custody would block the counter case. What is refused
+   * is a driver closing a return that ANOTHER driver is carrying, and a driver
+   * session with no driver record behind it: that session has no identity to
+   * book the return to.
+   */
+  private async returningDriver(
+    tx: TenantTransaction,
+    shipment: Shipment,
+    ctx: CommandContext,
+  ): Promise<string | null> {
+    const driverId = await this.callerDriverId(tx, ctx);
+    if (driverId === null) {
+      if (ctx.actor.actorType === "DRIVER") {
+        throw new ForbiddenError("This login is not linked to a driver.");
+      }
+      return null;
+    }
+    const transition = checkTransition(toShipmentStatus(shipment.status), "returned");
+    if (
+      transition.kind !== "rejected" &&
+      shipment.currentCustodyType === "DRIVER" &&
+      !heldBy(shipment, driverId)
+    ) {
+      throw new ForbiddenError("This shipment is in another driver's custody.");
+    }
+    return driverId;
+  }
+
+  /**
+   * The `drivers` row behind the authenticated user, or null if there is none.
+   *
+   * A user id and a driver id are different things (see
+   * `ShiftService.openShiftForUser`). Read here with an RLS-scoped query rather
+   * than by injecting the fleet module, the same way `InvoiceService.partiesFor`
+   * reads merchants. Migration 0043 makes `(tenant_id, user_id)` unique, so
+   * this matches at most one row.
+   */
+  private async callerDriverId(tx: TenantTransaction, ctx: CommandContext): Promise<string | null> {
+    const userId = ctx.actor.actorId;
+    if (userId === undefined) {
+      return null;
+    }
+    const rows = await tx.execute<{ id: string }>(
+      sql`select id from drivers where user_id = ${userId}`,
+    );
+    return rows[0]?.id ?? null;
+  }
+
   private async lock(tx: TenantTransaction, id: string): Promise<Shipment> {
     const rows = await tx
       .select()
@@ -1274,6 +1405,11 @@ function advance(
   result: { status: ShipmentSnapshot["status"]; sequence: bigint },
 ): ShipmentSnapshot {
   return { ...snap, status: result.status, lastSequence: result.sequence };
+}
+
+/** Whether `driverId` physically holds the parcel, according to the custody projection. */
+function heldBy(shipment: Shipment, driverId: string): boolean {
+  return shipment.currentCustodyType === "DRIVER" && shipment.currentCustodyId === driverId;
 }
 
 function buildCreatedPayload(

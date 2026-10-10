@@ -184,6 +184,50 @@ export async function createTenant(migrator: Sql, label: string): Promise<string
   });
 }
 
+/** A user account and the driver record linked to it. */
+export interface DriverLogin {
+  /** `users.id` — what a token's `sub` and a command's `actorId` carry. */
+  readonly userId: string;
+  /** `drivers.id` — what custody, routes and DRIVER_CASH are keyed on. */
+  readonly driverId: string;
+}
+
+/**
+ * Seeds a driver who can log in: a `users` row and a `drivers` row pointing at
+ * it.
+ *
+ * Delivery outcomes resolve the driver from the authenticated user (invariant
+ * I26), so a test can no longer pass any UUID as `driverId`. The command looks
+ * the driver up and refuses when there is none. One transaction, for the same
+ * reason as {@link createTenant}.
+ */
+export async function seedDriverLogin(migrator: Sql, tenantId: string): Promise<DriverLogin> {
+  const suffix = Math.random().toString(36).slice(2, 10);
+  const phone = `+2162${String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0")}`;
+  return migrator.begin(async (tx) => {
+    await tx`select set_config('app.current_tenant_id', ${tenantId}, true)`;
+    const users = await tx<{ id: string }[]>`
+      insert into users (tenant_id, email, password_hash, full_name, status)
+      values (${tenantId}, ${`driver-${suffix}@test.tn`}, 'hash', 'Test Driver', 'ACTIVE')
+      returning id
+    `;
+    const user = users[0];
+    if (user === undefined) {
+      throw new Error("failed to seed driver user");
+    }
+    const drivers = await tx<{ id: string }[]>`
+      insert into drivers (tenant_id, user_id, employee_code, full_name, phone, status, employment_type)
+      values (${tenantId}, ${user.id}, ${`D-${suffix}`}, 'Test Driver', ${phone}, 'ACTIVE', 'EMPLOYEE')
+      returning id
+    `;
+    const driver = drivers[0];
+    if (driver === undefined) {
+      throw new Error("failed to seed driver");
+    }
+    return { userId: user.id, driverId: driver.id };
+  });
+}
+
 async function insertOperatingDefaults(migrator: TransactionSql, tenantId: string): Promise<void> {
   for (const reason of DEFAULT_FAILURE_REASONS) {
     await migrator`

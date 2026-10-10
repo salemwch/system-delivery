@@ -39,6 +39,7 @@ export const pickupRequests = pgTable(
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     acceptedByUserId: uuid("accepted_by_user_id"),
 
+    /** The collector's USER id, despite the column name (migration 0044). */
     assignedDriverId: uuid("assigned_driver_id"),
     assignedRouteStopId: uuid("assigned_route_stop_id"),
     assignedAt: timestamp("assigned_at", { withTimezone: true }),
@@ -86,6 +87,7 @@ export const pickupShipments = pgTable(
     scanStatus: text("scan_status").notNull().default("EXPECTED"),
     scannedAt: timestamp("scanned_at", { withTimezone: true }),
     recordedAt: timestamp("recorded_at", { withTimezone: true }),
+    /** The scanning collector's USER id, despite the column name (migration 0044). */
     scannedByDriverId: uuid("scanned_by_driver_id"),
     idempotencyKey: text("idempotency_key"),
 

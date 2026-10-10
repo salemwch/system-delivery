@@ -25,6 +25,7 @@ const listQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
   status: z.string().min(1).optional(),
   merchantId: z.string().min(1).optional(),
+  /** The assigned collector's USER id, which is what `assignedDriverId` holds (migration 0044). */
   driverId: z.string().min(1).optional(),
 });
 

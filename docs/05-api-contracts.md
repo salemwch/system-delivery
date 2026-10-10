@@ -329,7 +329,7 @@ Filterable/sortable fields are **allow-listed per resource** — an open filter 
 
 ### `POST /v1/shipments/{id}/deliver` ⭐
 
-**Auth.** Driver only, and only for a shipment on their own active route.
+**Auth.** Driver only, and only for a shipment in their own custody (invariant I26). The driver is resolved from the token, **never sent in the body**; a body carrying `driverId` is rejected with `400 VALIDATION_FAILED`. Custody is what `out_for_delivery` sets when the route starts, so for a normal day this is "a shipment on their own active route".
 
 **Request**
 ```json
@@ -373,11 +373,13 @@ Filterable/sortable fields are **allow-listed per resource** — an open filter 
 
 **Emits (one transaction).** `delivery.attempted` → `pod.captured` → `shipment.delivered` → `cod.collected`
 
-**Errors.** `409 SHIPMENT_INVALID_TRANSITION` (already delivered/returned) · `422 POD_REQUIRED` · `422 COD_AMOUNT_MISMATCH` · `403 FORBIDDEN` (not this driver's shipment)
+**Errors.** `409 SHIPMENT_INVALID_TRANSITION` (already delivered/returned; reported in preference to `403`, so a late offline retry learns the parcel's real state) · `422 POD_REQUIRED` · `422 COD_AMOUNT_MISMATCH` · `403 FORBIDDEN` (caller is not a driver, or the shipment is not in their custody)
 
 ---
 
 ### `POST /v1/shipments/{id}/fail`
+
+**Auth.** As `deliver`: driver only, shipment in their custody, driver taken from the token (I26). `403 FORBIDDEN` otherwise.
 
 **Request**
 ```json
@@ -417,8 +419,10 @@ The two halves of the RTO lifecycle (01-mvp-scope §4.2 #2.8).
 `return/complete` records the parcel physically back with the merchant:
 
 ```json
-{ "receivedByName": "Ines (Boutique)", "driverId": "018f7c33-...", "occurredAt": "2026-07-25T09:12:00Z" }
+{ "receivedByName": "Ines (Boutique)", "occurredAt": "2026-07-25T09:12:00Z" }
 ```
+
+The return is booked to the caller's own driver record when the caller is a driver, and to no driver when staff close it at a counter. It is never booked to a `driverId` from the body; one is rejected with `400 VALIDATION_FAILED` (I26). A driver cannot close a return that another driver is carrying (`403 FORBIDDEN`).
 
 → `200` with status `RETURNED`. Permission is **`shipment:deliver`**, not `shipment:update`: handing a parcel back is a custody transfer performed by the driver who carried it, and asserting that a parcel arrived somewhere is not an edit.
 

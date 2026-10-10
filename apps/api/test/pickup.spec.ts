@@ -19,14 +19,15 @@ import { AuditService } from "../src/modules/platform/application/audit.service.
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
-import { ConflictError, NotFoundError } from "../src/shared/errors/index.js";
+import { BusinessRuleError, ForbiddenError, NotFoundError } from "../src/shared/errors/index.js";
 import {
   createTenant,
   createTestDatabase,
   deleteTenants,
+  seedDriverLogin,
   withTenantContext,
 } from "./database.harness.js";
-import type { TestDatabase } from "./database.harness.js";
+import type { DriverLogin, TestDatabase } from "./database.harness.js";
 
 interface SeededShipment {
   readonly id: string;
@@ -36,7 +37,8 @@ interface SeededShipment {
 /** A pickup driven to ASSIGNED, with its expected parcels already linked. */
 interface ReadyPickup {
   readonly id: string;
-  readonly driverId: string;
+  /** The assigned collector: the only user who may scan or collect this run. */
+  readonly collector: DriverLogin;
   readonly shipments: readonly SeededShipment[];
 }
 
@@ -260,17 +262,40 @@ describe("pickup", () => {
       ...(parcelCount === 0 ? {} : { shipmentIds: shipments.map((s) => s.id) }),
     });
     await asTenant(tenantId, () => pickups.accept(id, { idempotencyKey: randomUUID() }, ctx));
-    const driverId = randomUUID();
+    const collector = await assignDriver(tenantId, id);
+    return { id, collector, shipments };
+  }
+
+  /**
+   * Dispatch assigns a real, logged-in driver. `assign` takes the `drivers.id`
+   * and stores the driver's LOGIN as the collector (migration 0044), so an
+   * invented UUID is refused as an unknown driver.
+   */
+  async function assignDriver(
+    tenantId: string,
+    pickupId: string,
+    extra: Record<string, unknown> = {},
+  ): Promise<DriverLogin> {
+    const collector = await seedDriverLogin(database.migrator, tenantId);
     await asTenant(tenantId, () =>
-      pickups.assign(id, { idempotencyKey: randomUUID(), driverId }, ctx),
+      pickups.assign(
+        pickupId,
+        { idempotencyKey: randomUUID(), driverId: collector.driverId, ...extra },
+        ctx,
+      ),
     );
-    return { id, driverId, shipments };
+    return collector;
+  }
+
+  /** The command context of a pickup's assigned collector. */
+  function asCollector(ready: { readonly collector: DriverLogin }): { actorId: string } {
+    return { actorId: ready.collector.userId };
   }
 
   async function scanOne(
     tenantId: string,
     pickupId: string,
-    driverId: string,
+    collectorUserId: string,
     trackingNumber: string,
     overrides: Record<string, unknown> = {},
   ): ReturnType<PickupService["scan"]> {
@@ -278,7 +303,7 @@ describe("pickup", () => {
       pickups.scan(
         pickupId,
         { idempotencyKey: randomUUID(), trackingNumber, ...overrides },
-        { actorId: driverId },
+        { actorId: collectorUserId },
       ),
     );
   }
@@ -291,7 +316,7 @@ describe("pickup", () => {
   ): Promise<string> {
     const ready = await readyPickup(tenantId, merchantId, addressId, parcelCount);
     for (const s of ready.shipments) {
-      await scanOne(tenantId, ready.id, ready.driverId, s.trackingNumber);
+      await scanOne(tenantId, ready.id, ready.collector.userId, s.trackingNumber);
     }
     await asTenant(tenantId, () =>
       pickups.collect(
@@ -300,7 +325,7 @@ describe("pickup", () => {
           idempotencyKey: randomUUID(),
           ...(parcelCount === 0 ? { outcomeReason: "NO_PARCELS_AVAILABLE" } : {}),
         },
-        ctx,
+        asCollector(ready),
       ),
     );
     await asTenant(tenantId, () =>
@@ -314,7 +339,12 @@ describe("pickup", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     addressesSvc = new AddressService(db, outbox, new ManualGeocodingProvider());
-    merchantsSvc = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
+    merchantsSvc = new MerchantService(
+      db,
+      outbox,
+      new AuditService(db),
+      new AddressService(db, outbox, new ManualGeocodingProvider()),
+    );
     pickups = new PickupService(db, outbox);
   }, 240_000);
 
@@ -861,7 +891,12 @@ describe("pickup", () => {
       const first = ready.shipments[0];
       expect(first).toBeDefined();
 
-      const result = await scanOne(tenantId, ready.id, ready.driverId, first?.trackingNumber ?? "");
+      const result = await scanOne(
+        tenantId,
+        ready.id,
+        ready.collector.userId,
+        first?.trackingNumber ?? "",
+      );
 
       expect(result.shipmentId).toBe(first?.id);
       expect(result.scanStatus).toBe("SCANNED");
@@ -870,7 +905,7 @@ describe("pickup", () => {
       const rows = await scanRows(tenantId, ready.id);
       const scanned = rows.filter((r) => r.scan_status === "SCANNED");
       expect(scanned).toHaveLength(1);
-      expect(scanned[0]?.scanned_by_driver_id).toBe(ready.driverId);
+      expect(scanned[0]?.scanned_by_driver_id).toBe(ready.collector.userId);
     });
 
     it("stores the device scan time and the server receipt time separately", async () => {
@@ -882,7 +917,7 @@ describe("pickup", () => {
 
       // Two hours of no signal before the scan reached us.
       const deviceTime = new Date(Date.now() - 2 * 3600_000);
-      await scanOne(tenantId, ready.id, ready.driverId, parcel?.trackingNumber ?? "", {
+      await scanOne(tenantId, ready.id, ready.collector.userId, parcel?.trackingNumber ?? "", {
         scannedAt: deviceTime.toISOString(),
       });
 
@@ -900,7 +935,12 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
 
       const before = Date.now();
-      await scanOne(tenantId, ready.id, ready.driverId, ready.shipments[0]?.trackingNumber ?? "");
+      await scanOne(
+        tenantId,
+        ready.id,
+        ready.collector.userId,
+        ready.shipments[0]?.trackingNumber ?? "",
+      );
 
       const rows = await scanRows(tenantId, ready.id);
       expect(rows[0]?.scanned_at?.getTime()).toBeGreaterThanOrEqual(before - 1000);
@@ -913,13 +953,16 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
       const parcel = ready.shipments[0];
 
-      await scanOne(tenantId, ready.id, ready.driverId, parcel?.trackingNumber ?? "");
+      await scanOne(tenantId, ready.id, ready.collector.userId, parcel?.trackingNumber ?? "");
 
       const payload = await payloadFor(tenantId, "pickup.parcel_scanned", ready.id);
       expect(payload).toBeDefined();
       expect(payload?.["shipmentId"]).toBe(parcel?.id);
       expect(payload?.["trackingNumber"]).toBe(parcel?.trackingNumber);
-      expect(payload?.["driverId"]).toBe(ready.driverId);
+      // WHO scanned (a user) and WHICH DRIVER now holds it (a drivers.id): the
+      // custody ledger is keyed on the second, and must never receive the first.
+      expect(payload?.["collectorUserId"]).toBe(ready.collector.userId);
+      expect(payload?.["driverId"]).toBe(ready.collector.driverId);
       expect(payload?.["scannedAt"]).toEqual(expect.any(String));
     });
 
@@ -930,7 +973,7 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
 
       await expect(
-        scanOne(tenantId, ready.id, ready.driverId, "SD-TEST-NOTHERE"),
+        scanOne(tenantId, ready.id, ready.collector.userId, "SD-TEST-NOTHERE"),
       ).rejects.toMatchObject({ code: "BARCODE_NOT_IN_PICKUP" });
     });
 
@@ -942,7 +985,7 @@ describe("pickup", () => {
       const other = await readyPickup(tenantId, merchantId, addressId, 1);
 
       await expect(
-        scanOne(tenantId, mine.id, mine.driverId, other.shipments[0]?.trackingNumber ?? ""),
+        scanOne(tenantId, mine.id, mine.collector.userId, other.shipments[0]?.trackingNumber ?? ""),
       ).rejects.toMatchObject({ code: "BARCODE_NOT_IN_PICKUP" });
     });
 
@@ -953,8 +996,8 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 2);
       const tracking = ready.shipments[0]?.trackingNumber ?? "";
 
-      const first = await scanOne(tenantId, ready.id, ready.driverId, tracking);
-      const second = await scanOne(tenantId, ready.id, ready.driverId, tracking);
+      const first = await scanOne(tenantId, ready.id, ready.collector.userId, tracking);
+      const second = await scanOne(tenantId, ready.id, ready.collector.userId, tracking);
 
       expect(second.scanStatus).toBe("SCANNED");
       expect(second.scannedAt.getTime()).toBe(first.scannedAt.getTime());
@@ -965,18 +1008,22 @@ describe("pickup", () => {
       expect(events).toHaveLength(1);
     });
 
-    it("rejects a parcel already scanned by a different driver", async () => {
+    it("keeps the collector's scan when someone else scans the same parcel", async () => {
       const tenantId = await seedTenant("pk-scan-conflict");
       const merchantId = await seedMerchant(tenantId);
       const addressId = await seedAddress(tenantId);
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
       const tracking = ready.shipments[0]?.trackingNumber ?? "";
 
-      await scanOne(tenantId, ready.id, ready.driverId, tracking);
+      await scanOne(tenantId, ready.id, ready.collector.userId, tracking);
 
+      // A second scanner on a run they were not given is refused outright,
+      // before it can contest the parcel (a run has exactly one collector).
       await expect(scanOne(tenantId, ready.id, randomUUID(), tracking)).rejects.toBeInstanceOf(
-        ConflictError,
+        ForbiddenError,
       );
+      const rows = await scanRows(tenantId, ready.id);
+      expect(rows[0]?.scanned_by_driver_id).toBe(ready.collector.userId);
     });
 
     it("rejects scanning before the pickup is ASSIGNED", async () => {
@@ -1001,12 +1048,14 @@ describe("pickup", () => {
       const first = ready.shipments[0]?.trackingNumber ?? "";
       const second = ready.shipments[1]?.trackingNumber ?? "";
 
-      await scanOne(tenantId, ready.id, ready.driverId, first);
+      await scanOne(tenantId, ready.id, ready.collector.userId, first);
       await asTenant(tenantId, () =>
-        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, ctx),
+        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, asCollector(ready)),
       );
 
-      await expect(scanOne(tenantId, ready.id, ready.driverId, second)).rejects.toMatchObject({
+      await expect(
+        scanOne(tenantId, ready.id, ready.collector.userId, second),
+      ).rejects.toMatchObject({
         code: "PICKUP_NOT_ASSIGNED",
       });
     });
@@ -1024,7 +1073,7 @@ describe("pickup", () => {
       const addressId = await seedAddress(tenantId);
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
 
-      await expect(scanOne(tenantId, ready.id, ready.driverId, "")).rejects.toThrow();
+      await expect(scanOne(tenantId, ready.id, ready.collector.userId, "")).rejects.toThrow();
     });
 
     it("rejects unknown fields on the scan payload (strict mode)", async () => {
@@ -1034,10 +1083,180 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
 
       await expect(
-        scanOne(tenantId, ready.id, ready.driverId, ready.shipments[0]?.trackingNumber ?? "", {
-          gpsAccuracy: 5,
-        }),
+        scanOne(
+          tenantId,
+          ready.id,
+          ready.collector.userId,
+          ready.shipments[0]?.trackingNumber ?? "",
+          {
+            gpsAccuracy: 5,
+          },
+        ),
       ).rejects.toThrow();
+    });
+  });
+
+  // ── Only the assigned collector (migration 0044) ───────────────────────────
+
+  describe("the assigned collector", () => {
+    async function seedUserWithoutDriver(tenantId: string): Promise<string> {
+      const rows = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<{ id: string }[]>`
+          insert into users (tenant_id, email, password_hash, full_name, status)
+          values (${tenantId}, ${`c-${randomUUID().slice(0, 8)}@test.tn`}, 'hash', 'Commercial', 'ACTIVE')
+          returning id`,
+      );
+      const row = rows[0];
+      if (row === undefined) throw new Error("failed to seed user");
+      return row.id;
+    }
+
+    async function seedDriverRow(
+      tenantId: string,
+      userId: string | null,
+      status: string,
+    ): Promise<string> {
+      const rows = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<{ id: string }[]>`
+          insert into drivers (tenant_id, user_id, employee_code, full_name, phone, status, employment_type)
+          values (${tenantId}, ${userId}, ${`D-${randomUUID().slice(0, 6)}`}, 'Driver',
+                  ${`+2162${String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0")}`},
+                  ${status}, 'EMPLOYEE')
+          returning id`,
+      );
+      const row = rows[0];
+      if (row === undefined) throw new Error("failed to seed driver");
+      return row.id;
+    }
+
+    it("refuses a scan by anyone but the assigned collector, and writes nothing", async () => {
+      const tenantId = await seedTenant("pk-col-scan");
+      const merchantId = await seedMerchant(tenantId);
+      const addressId = await seedAddress(tenantId);
+      const ready = await readyPickup(tenantId, merchantId, addressId, 1);
+      const colleague = await seedDriverLogin(database.migrator, tenantId);
+
+      await expect(
+        scanOne(tenantId, ready.id, colleague.userId, ready.shipments[0]?.trackingNumber ?? ""),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+
+      const rows = await scanRows(tenantId, ready.id);
+      expect(rows.every((r) => r.scan_status === "EXPECTED")).toBe(true);
+      expect(await payloadFor(tenantId, "pickup.parcel_scanned", ready.id)).toBeUndefined();
+    });
+
+    it("refuses an offline batch from anyone but the assigned collector", async () => {
+      const tenantId = await seedTenant("pk-col-batch");
+      const merchantId = await seedMerchant(tenantId);
+      const addressId = await seedAddress(tenantId);
+      const ready = await readyPickup(tenantId, merchantId, addressId, 1);
+      const colleague = await seedDriverLogin(database.migrator, tenantId);
+
+      await expect(
+        asTenant(tenantId, () =>
+          pickups.scanBatch(
+            ready.id,
+            {
+              scans: [
+                {
+                  idempotencyKey: randomUUID(),
+                  trackingNumber: ready.shipments[0]?.trackingNumber ?? "",
+                  scannedAt: new Date().toISOString(),
+                },
+              ],
+            },
+            { actorId: colleague.userId },
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    it("refuses to let anyone but the assigned collector close the run", async () => {
+      const tenantId = await seedTenant("pk-col-collect");
+      const merchantId = await seedMerchant(tenantId);
+      const addressId = await seedAddress(tenantId);
+      const ready = await readyPickup(tenantId, merchantId, addressId, 1);
+
+      await expect(
+        asTenant(tenantId, () =>
+          pickups.collect(
+            ready.id,
+            { idempotencyKey: randomUUID(), outcomeReason: "MERCHANT_NOT_READY" },
+            ctx,
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      expect((await asTenant(tenantId, () => pickups.getById(ready.id))).status).toBe("ASSIGNED");
+    });
+
+    it("refuses to assign an unknown driver", async () => {
+      const tenantId = await seedTenant("pk-col-unknown");
+      const merchantId = await seedMerchant(tenantId);
+      const addressId = await seedAddress(tenantId);
+      const { id } = await requestPickup(tenantId, merchantId, addressId);
+      await asTenant(tenantId, () => pickups.accept(id, { idempotencyKey: randomUUID() }, ctx));
+
+      await expect(
+        asTenant(tenantId, () =>
+          pickups.assign(id, { idempotencyKey: randomUUID(), driverId: randomUUID() }, ctx),
+        ),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("refuses to assign a driver who has no login, or is not active", async () => {
+      const tenantId = await seedTenant("pk-col-unusable");
+      const merchantId = await seedMerchant(tenantId);
+      const addressId = await seedAddress(tenantId);
+      const { id } = await requestPickup(tenantId, merchantId, addressId);
+      await asTenant(tenantId, () => pickups.accept(id, { idempotencyKey: randomUUID() }, ctx));
+
+      const noLogin = await seedDriverRow(tenantId, null, "ACTIVE");
+      await expect(
+        asTenant(tenantId, () =>
+          pickups.assign(id, { idempotencyKey: randomUUID(), driverId: noLogin }, ctx),
+        ),
+      ).rejects.toMatchObject({ code: "DRIVER_HAS_NO_LOGIN" });
+
+      const suspended = await seedDriverRow(
+        tenantId,
+        await seedUserWithoutDriver(tenantId),
+        "SUSPENDED",
+      );
+      await expect(
+        asTenant(tenantId, () =>
+          pickups.assign(id, { idempotencyKey: randomUUID(), driverId: suspended }, ctx),
+        ),
+      ).rejects.toBeInstanceOf(BusinessRuleError);
+
+      // Neither refusal half-applied the assignment.
+      expect((await asTenant(tenantId, () => pickups.getById(id))).status).toBe("ACCEPTED");
+    });
+
+    it("publishes no driver id when the collector is not a driver", async () => {
+      const tenantId = await seedTenant("pk-col-commercial");
+      const merchantId = await seedMerchant(tenantId);
+      const addressId = await seedAddress(tenantId);
+      const seeded = await seedShipments(tenantId, merchantId, addressId, 1);
+      const { id } = await requestPickup(tenantId, merchantId, addressId, {
+        shipmentIds: seeded.map((s) => s.id),
+      });
+      await asTenant(tenantId, () => pickups.accept(id, { idempotencyKey: randomUUID() }, ctx));
+      const commercial = await seedUserWithoutDriver(tenantId);
+      await asTenant(tenantId, () =>
+        pickups.claim(id, { idempotencyKey: randomUUID() }, { actorId: commercial }),
+      );
+
+      await scanOne(tenantId, id, commercial, seeded[0]?.trackingNumber ?? "");
+
+      const payload = await payloadFor(tenantId, "pickup.parcel_scanned", id);
+      expect(payload?.["collectorUserId"]).toBe(commercial);
+      // Never their user id in the driver slot: that would reach
+      // shipment_events.driver_id and the custody projection.
+      expect(payload?.["driverId"]).toBeNull();
     });
   });
 
@@ -1047,11 +1266,11 @@ describe("pickup", () => {
     async function syncBatch(
       tenantId: string,
       pickupId: string,
-      driverId: string,
+      collectorUserId: string,
       scans: Record<string, unknown>[],
     ): ReturnType<PickupService["scanBatch"]> {
       return asTenant(tenantId, () =>
-        pickups.scanBatch(pickupId, { scans }, { actorId: driverId }),
+        pickups.scanBatch(pickupId, { scans }, { actorId: collectorUserId }),
       );
     }
 
@@ -1072,7 +1291,7 @@ describe("pickup", () => {
       const result = await syncBatch(
         tenantId,
         ready.id,
-        ready.driverId,
+        ready.collector.userId,
         ready.shipments.map((s, i) => queued(s.trackingNumber, 30 - i)),
       );
 
@@ -1093,7 +1312,7 @@ describe("pickup", () => {
 
       const older = new Date(Date.now() - 90 * 60_000);
       const newer = new Date(Date.now() - 30 * 60_000);
-      await syncBatch(tenantId, ready.id, ready.driverId, [
+      await syncBatch(tenantId, ready.id, ready.collector.userId, [
         {
           idempotencyKey: randomUUID(),
           trackingNumber: ready.shipments[0]?.trackingNumber ?? "",
@@ -1122,7 +1341,7 @@ describe("pickup", () => {
       const addressId = await seedAddress(tenantId);
       const ready = await readyPickup(tenantId, merchantId, addressId, 2);
 
-      const result = await syncBatch(tenantId, ready.id, ready.driverId, [
+      const result = await syncBatch(tenantId, ready.id, ready.collector.userId, [
         queued(ready.shipments[0]?.trackingNumber ?? "", 20),
         queued("SD-TEST-GHOST", 19),
         queued(ready.shipments[1]?.trackingNumber ?? "", 18),
@@ -1147,10 +1366,22 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 2);
       const contested = ready.shipments[0]?.trackingNumber ?? "";
 
-      // Another driver got there first while this device was offline.
-      await scanOne(tenantId, ready.id, randomUUID(), contested);
+      // A scan recorded under another user. Since 0044 only the assigned
+      // collector can scan, so this arises from scans recorded before that
+      // release (a run assigned by drivers.id). Seeded directly, because the
+      // service now refuses to create it. The batch must still classify it
+      // rather than fail the whole sync.
+      await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx`
+          update pickup_shipments
+             set scan_status = 'SCANNED', scanned_at = now(), recorded_at = now(),
+                 scanned_by_driver_id = ${randomUUID()}, idempotency_key = ${randomUUID()}
+           where pickup_request_id = ${ready.id} and tracking_number = ${contested}`,
+      );
 
-      const result = await syncBatch(tenantId, ready.id, ready.driverId, [
+      const result = await syncBatch(tenantId, ready.id, ready.collector.userId, [
         queued(contested, 45),
         queued(ready.shipments[1]?.trackingNumber ?? "", 44),
       ]);
@@ -1169,7 +1400,7 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
       const tracking = ready.shipments[0]?.trackingNumber ?? "";
 
-      const result = await syncBatch(tenantId, ready.id, ready.driverId, [
+      const result = await syncBatch(tenantId, ready.id, ready.collector.userId, [
         queued(tracking, 10),
         queued(tracking, 9),
       ]);
@@ -1187,8 +1418,8 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 3);
 
       const batch = ready.shipments.map((s, i) => queued(s.trackingNumber, 60 - i));
-      const first = await syncBatch(tenantId, ready.id, ready.driverId, batch);
-      const replay = await syncBatch(tenantId, ready.id, ready.driverId, batch);
+      const first = await syncBatch(tenantId, ready.id, ready.collector.userId, batch);
+      const replay = await syncBatch(tenantId, ready.id, ready.collector.userId, batch);
 
       expect(first.accepted).toBe(3);
       expect(replay.accepted).toBe(3);
@@ -1202,8 +1433,13 @@ describe("pickup", () => {
       const addressId = await seedAddress(tenantId);
       const ready = await readyPickup(tenantId, merchantId, addressId, 3);
 
-      await scanOne(tenantId, ready.id, ready.driverId, ready.shipments[0]?.trackingNumber ?? "");
-      const result = await syncBatch(tenantId, ready.id, ready.driverId, [
+      await scanOne(
+        tenantId,
+        ready.id,
+        ready.collector.userId,
+        ready.shipments[0]?.trackingNumber ?? "",
+      );
+      const result = await syncBatch(tenantId, ready.id, ready.collector.userId, [
         queued(ready.shipments[1]?.trackingNumber ?? "", 5),
         queued(ready.shipments[2]?.trackingNumber ?? "", 4),
       ]);
@@ -1232,7 +1468,7 @@ describe("pickup", () => {
       const addressId = await seedAddress(tenantId);
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
 
-      await expect(syncBatch(tenantId, ready.id, ready.driverId, [])).rejects.toThrow();
+      await expect(syncBatch(tenantId, ready.id, ready.collector.userId, [])).rejects.toThrow();
     });
 
     it("rejects a batch larger than 200 scans", async () => {
@@ -1242,7 +1478,9 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
 
       const oversized = Array.from({ length: 201 }, () => queued("SD-TEST-X", 1));
-      await expect(syncBatch(tenantId, ready.id, ready.driverId, oversized)).rejects.toThrow();
+      await expect(
+        syncBatch(tenantId, ready.id, ready.collector.userId, oversized),
+      ).rejects.toThrow();
     });
 
     it("rejects a queued scan with no device timestamp", async () => {
@@ -1252,7 +1490,7 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
 
       await expect(
-        syncBatch(tenantId, ready.id, ready.driverId, [
+        syncBatch(tenantId, ready.id, ready.collector.userId, [
           {
             idempotencyKey: randomUUID(),
             trackingNumber: ready.shipments[0]?.trackingNumber ?? "",
@@ -1268,7 +1506,7 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
 
       await expect(
-        syncBatch(tenantId, ready.id, ready.driverId, [
+        syncBatch(tenantId, ready.id, ready.collector.userId, [
           {
             trackingNumber: ready.shipments[0]?.trackingNumber ?? "",
             scannedAt: new Date().toISOString(),
@@ -1294,7 +1532,12 @@ describe("pickup", () => {
       const addressId = await seedAddress(tenantId);
       const ready = await readyPickup(tenantId, merchantId, addressId, 3);
 
-      await scanOne(tenantId, ready.id, ready.driverId, ready.shipments[0]?.trackingNumber ?? "");
+      await scanOne(
+        tenantId,
+        ready.id,
+        ready.collector.userId,
+        ready.shipments[0]?.trackingNumber ?? "",
+      );
 
       const manifest = await asTenant(tenantId, () => pickups.getManifest(ready.id));
       expect(manifest.shipments).toHaveLength(3);
@@ -1302,7 +1545,7 @@ describe("pickup", () => {
 
       const scanned = manifest.shipments.filter((s) => s.scanStatus === "SCANNED");
       expect(scanned).toHaveLength(1);
-      expect(scanned[0]?.scannedByDriverId).toBe(ready.driverId);
+      expect(scanned[0]?.scannedByDriverId).toBe(ready.collector.userId);
       expect(scanned[0]?.scannedAt).not.toBeNull();
       expect(scanned[0]?.recordedAt).not.toBeNull();
 
@@ -1362,22 +1605,27 @@ describe("pickup", () => {
       expect(accepted.acceptedAt).not.toBeNull();
       expect(accepted.acceptedByUserId).toBe(actorId);
 
-      const driverId = randomUUID();
+      const collector = await seedDriverLogin(database.migrator, tenantId);
       const routeStopId = randomUUID();
       const assigned = await asTenant(tenantId, () =>
-        pickups.assign(id, { idempotencyKey: randomUUID(), driverId, routeStopId }, ctx),
+        pickups.assign(
+          id,
+          { idempotencyKey: randomUUID(), driverId: collector.driverId, routeStopId },
+          ctx,
+        ),
       );
       expect(assigned.status).toBe("ASSIGNED");
-      expect(assigned.assignedDriverId).toBe(driverId);
+      // The driver's LOGIN is stored, not the drivers.id dispatch sent (0044).
+      expect(assigned.assignedDriverId).toBe(collector.userId);
       expect(assigned.assignedRouteStopId).toBe(routeStopId);
       expect(assigned.assignedAt).not.toBeNull();
 
       for (const s of seeded) {
-        await scanOne(tenantId, id, driverId, s.trackingNumber);
+        await scanOne(tenantId, id, collector.userId, s.trackingNumber);
       }
 
       const collected = await asTenant(tenantId, () =>
-        pickups.collect(id, { idempotencyKey: randomUUID() }, ctx),
+        pickups.collect(id, { idempotencyKey: randomUUID() }, asCollector({ collector })),
       );
       expect(collected.status).toBe("COLLECTED");
       expect(collected.actualParcelCount).toBe(3);
@@ -1407,10 +1655,7 @@ describe("pickup", () => {
 
       const { id } = await requestPickup(tenantId, merchantId, addressId);
       await asTenant(tenantId, () => pickups.accept(id, { idempotencyKey: randomUUID() }, ctx));
-      const driverId = randomUUID();
-      await asTenant(tenantId, () =>
-        pickups.assign(id, { idempotencyKey: randomUUID(), driverId }, ctx),
-      );
+      const collector = await assignDriver(tenantId, id);
 
       const sync = await asTenant(tenantId, () =>
         pickups.scanBatch(
@@ -1422,13 +1667,13 @@ describe("pickup", () => {
               scannedAt: new Date(Date.now() - (10 - i) * 60_000).toISOString(),
             })),
           },
-          { actorId: driverId },
+          asCollector({ collector }),
         ),
       );
       expect(sync.accepted).toBe(4);
 
       const collected = await asTenant(tenantId, () =>
-        pickups.collect(id, { idempotencyKey: randomUUID() }, ctx),
+        pickups.collect(id, { idempotencyKey: randomUUID() }, asCollector({ collector })),
       );
       expect(collected.actualParcelCount).toBe(4);
 
@@ -1445,11 +1690,9 @@ describe("pickup", () => {
 
       const { id } = await requestPickup(tenantId, merchantId, addressId);
       await asTenant(tenantId, () => pickups.accept(id, { idempotencyKey: randomUUID() }, ctx));
-      const driverId = randomUUID();
-      const assigned = await asTenant(tenantId, () =>
-        pickups.assign(id, { idempotencyKey: randomUUID(), driverId }, ctx),
-      );
-      expect(assigned.assignedDriverId).toBe(driverId);
+      const collector = await assignDriver(tenantId, id);
+      const assigned = await asTenant(tenantId, () => pickups.getById(id));
+      expect(assigned.assignedDriverId).toBe(collector.userId);
       expect(assigned.assignedRouteStopId).toBeNull();
     });
   });
@@ -1495,9 +1738,7 @@ describe("pickup", () => {
 
       const { id } = await requestPickup(tenantId, merchantId, addressId);
       await asTenant(tenantId, () => pickups.accept(id, { idempotencyKey: randomUUID() }, ctx));
-      await asTenant(tenantId, () =>
-        pickups.assign(id, { idempotencyKey: randomUUID(), driverId: randomUUID() }, ctx),
-      );
+      await assignDriver(tenantId, id);
       await expect(
         asTenant(tenantId, () => pickups.complete(id, { idempotencyKey: randomUUID() }, ctx)),
       ).rejects.toMatchObject({ code: "PICKUP_INVALID_TRANSITION" });
@@ -1601,9 +1842,14 @@ describe("pickup", () => {
       const addressId = await seedAddress(tenantId);
 
       const ready = await readyPickup(tenantId, merchantId, addressId, 1);
-      await scanOne(tenantId, ready.id, ready.driverId, ready.shipments[0]?.trackingNumber ?? "");
+      await scanOne(
+        tenantId,
+        ready.id,
+        ready.collector.userId,
+        ready.shipments[0]?.trackingNumber ?? "",
+      );
       await asTenant(tenantId, () =>
-        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, ctx),
+        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, asCollector(ready)),
       );
       await expect(
         asTenant(tenantId, () =>
@@ -1639,11 +1885,11 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 5);
 
       for (const s of ready.shipments.slice(0, 3)) {
-        await scanOne(tenantId, ready.id, ready.driverId, s.trackingNumber);
+        await scanOne(tenantId, ready.id, ready.collector.userId, s.trackingNumber);
       }
 
       const collected = await asTenant(tenantId, () =>
-        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, ctx),
+        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, asCollector(ready)),
       );
       expect(collected.estimatedParcelCount).toBe(5);
       expect(collected.actualParcelCount).toBe(3);
@@ -1663,10 +1909,10 @@ describe("pickup", () => {
       const taken = ready.shipments.slice(0, 2);
       const left = ready.shipments.slice(2);
       for (const s of taken) {
-        await scanOne(tenantId, ready.id, ready.driverId, s.trackingNumber);
+        await scanOne(tenantId, ready.id, ready.collector.userId, s.trackingNumber);
       }
       await asTenant(tenantId, () =>
-        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, ctx),
+        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, asCollector(ready)),
       );
 
       const payload = await payloadFor(tenantId, "pickup.collected", ready.id);
@@ -1674,7 +1920,7 @@ describe("pickup", () => {
       expect(payload?.["estimatedParcelCount"]).toBe(3);
       expect(payload?.["actualParcelCount"]).toBe(2);
       expect(payload?.["countVariance"]).toBe(1);
-      expect(payload?.["driverId"]).toBe(ready.driverId);
+      expect(payload?.["collectorUserId"]).toBe(ready.collector.userId);
       expect(new Set(payload?.["shipmentIds"] as string[])).toEqual(
         new Set(taken.map((s) => s.id)),
       );
@@ -1690,10 +1936,10 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 3);
 
       for (const s of ready.shipments) {
-        await scanOne(tenantId, ready.id, ready.driverId, s.trackingNumber);
+        await scanOne(tenantId, ready.id, ready.collector.userId, s.trackingNumber);
       }
       await asTenant(tenantId, () =>
-        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, ctx),
+        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, asCollector(ready)),
       );
 
       const payload = await payloadFor(tenantId, "pickup.collected", ready.id);
@@ -1711,14 +1957,15 @@ describe("pickup", () => {
         notes: "Original note",
       });
       await asTenant(tenantId, () => pickups.accept(id, { idempotencyKey: randomUUID() }, ctx));
-      const driverId = randomUUID();
-      await asTenant(tenantId, () =>
-        pickups.assign(id, { idempotencyKey: randomUUID(), driverId }, ctx),
-      );
-      await scanOne(tenantId, id, driverId, seeded[0]?.trackingNumber ?? "");
+      const collector = await assignDriver(tenantId, id);
+      await scanOne(tenantId, id, collector.userId, seeded[0]?.trackingNumber ?? "");
 
       const collected = await asTenant(tenantId, () =>
-        pickups.collect(id, { idempotencyKey: randomUUID(), notes: "Updated at collection" }, ctx),
+        pickups.collect(
+          id,
+          { idempotencyKey: randomUUID(), notes: "Updated at collection" },
+          asCollector({ collector }),
+        ),
       );
       expect(collected.notes).toBe("Updated at collection");
     });
@@ -1737,7 +1984,7 @@ describe("pickup", () => {
         pickups.collect(
           ready.id,
           { idempotencyKey: randomUUID(), outcomeReason: "MERCHANT_NOT_READY" },
-          ctx,
+          asCollector(ready),
         ),
       );
       expect(collected.status).toBe("COLLECTED");
@@ -1758,7 +2005,9 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 2);
 
       await expect(
-        asTenant(tenantId, () => pickups.collect(ready.id, { idempotencyKey: randomUUID() }, ctx)),
+        asTenant(tenantId, () =>
+          pickups.collect(ready.id, { idempotencyKey: randomUUID() }, asCollector(ready)),
+        ),
       ).rejects.toMatchObject({ code: "OUTCOME_REASON_REQUIRED" });
 
       // The refusal must not have half-applied anything.
@@ -1779,7 +2028,7 @@ describe("pickup", () => {
         pickups.collect(
           ready.id,
           { idempotencyKey: randomUUID(), outcomeReason: "NO_PARCELS_AVAILABLE" },
-          ctx,
+          asCollector(ready),
         ),
       );
       expect(collected.estimatedParcelCount).toBe(0);
@@ -1795,7 +2044,11 @@ describe("pickup", () => {
         const ready = await readyPickup(tenantId, merchantId, addressId, 1);
 
         const collected = await asTenant(tenantId, () =>
-          pickups.collect(ready.id, { idempotencyKey: randomUUID(), outcomeReason: reason }, ctx),
+          pickups.collect(
+            ready.id,
+            { idempotencyKey: randomUUID(), outcomeReason: reason },
+            asCollector(ready),
+          ),
         );
         expect(collected.outcomeReason).toBe(reason);
         expect(collected.actualParcelCount).toBe(0);
@@ -1813,7 +2066,7 @@ describe("pickup", () => {
           pickups.collect(
             ready.id,
             { idempotencyKey: randomUUID(), outcomeReason: "DRIVER_OVERSLEPT" },
-            ctx,
+            asCollector(ready),
           ),
         ),
       ).rejects.toThrow();
@@ -1825,12 +2078,17 @@ describe("pickup", () => {
       const addressId = await seedAddress(tenantId);
       const ready = await readyPickup(tenantId, merchantId, addressId, 3);
 
-      await scanOne(tenantId, ready.id, ready.driverId, ready.shipments[0]?.trackingNumber ?? "");
+      await scanOne(
+        tenantId,
+        ready.id,
+        ready.collector.userId,
+        ready.shipments[0]?.trackingNumber ?? "",
+      );
       const collected = await asTenant(tenantId, () =>
         pickups.collect(
           ready.id,
           { idempotencyKey: randomUUID(), outcomeReason: "MERCHANT_NOT_READY" },
-          ctx,
+          asCollector(ready),
         ),
       );
 
@@ -1848,10 +2106,10 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantId, merchantId, addressId, 2);
 
       for (const s of ready.shipments) {
-        await scanOne(tenantId, ready.id, ready.driverId, s.trackingNumber);
+        await scanOne(tenantId, ready.id, ready.collector.userId, s.trackingNumber);
       }
       const collected = await asTenant(tenantId, () =>
-        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, ctx),
+        pickups.collect(ready.id, { idempotencyKey: randomUUID() }, asCollector(ready)),
       );
       expect(collected.outcomeReason).toBeNull();
 
@@ -1877,21 +2135,20 @@ describe("pickup", () => {
       expect(payload?.["actorId"]).toBe(actorId);
     });
 
-    it("pickup.assigned includes driverId and routeStopId", async () => {
+    it("pickup.assigned names the collector by login, and the route stop", async () => {
       const tenantId = await seedTenant("pk-ev-asg");
       const merchantId = await seedMerchant(tenantId);
       const addressId = await seedAddress(tenantId);
 
       const { id } = await requestPickup(tenantId, merchantId, addressId);
       await asTenant(tenantId, () => pickups.accept(id, { idempotencyKey: randomUUID() }, ctx));
-      const driverId = randomUUID();
       const routeStopId = randomUUID();
-      await asTenant(tenantId, () =>
-        pickups.assign(id, { idempotencyKey: randomUUID(), driverId, routeStopId }, ctx),
-      );
+      const collector = await assignDriver(tenantId, id, { routeStopId });
 
       const payload = await payloadFor(tenantId, "pickup.assigned", id);
-      expect(payload?.["driverId"]).toBe(driverId);
+      expect(payload?.["collectorUserId"]).toBe(collector.userId);
+      // The key says what it holds: a user id is never published as `driverId`.
+      expect(payload).not.toHaveProperty("driverId");
       expect(payload?.["routeStopId"]).toBe(routeStopId);
     });
 
@@ -2010,7 +2267,7 @@ describe("pickup", () => {
       expect(page.items[0]?.merchantId).toBe(m1);
     });
 
-    it("filters by driverId", async () => {
+    it("filters by the assigned collector", async () => {
       const tenantId = await seedTenant("pk-list-driver");
       const merchantId = await seedMerchant(tenantId);
       const addressId = await seedAddress(tenantId);
@@ -2018,15 +2275,13 @@ describe("pickup", () => {
       const { id: id1 } = await requestPickup(tenantId, merchantId, addressId);
       await requestPickup(tenantId, merchantId, addressId);
 
-      const driverId = randomUUID();
       await asTenant(tenantId, () => pickups.accept(id1, { idempotencyKey: randomUUID() }, ctx));
-      await asTenant(tenantId, () =>
-        pickups.assign(id1, { idempotencyKey: randomUUID(), driverId }, ctx),
-      );
+      const collector = await assignDriver(tenantId, id1);
 
-      const page = await asTenant(tenantId, () => pickups.list({ driverId }));
+      // The filter matches what is stored: the collector's login (0044).
+      const page = await asTenant(tenantId, () => pickups.list({ driverId: collector.userId }));
       expect(page.items).toHaveLength(1);
-      expect(page.items[0]?.assignedDriverId).toBe(driverId);
+      expect(page.items[0]?.assignedDriverId).toBe(collector.userId);
     });
 
     it("returns empty page when no results match", async () => {
@@ -2245,7 +2500,12 @@ describe("pickup", () => {
       const ready = await readyPickup(tenantA, merchantId, addressId, 1);
 
       await expect(
-        scanOne(tenantB, ready.id, ready.driverId, ready.shipments[0]?.trackingNumber ?? ""),
+        scanOne(
+          tenantB,
+          ready.id,
+          ready.collector.userId,
+          ready.shipments[0]?.trackingNumber ?? "",
+        ),
       ).rejects.toBeInstanceOf(NotFoundError);
     });
 
@@ -2376,7 +2636,11 @@ describe("pickup", () => {
 
       await expect(
         asTenant(tenantId, () =>
-          pickups.collect(ready.id, { idempotencyKey: randomUUID(), actualParcelCount: 1 }, ctx),
+          pickups.collect(
+            ready.id,
+            { idempotencyKey: randomUUID(), actualParcelCount: 1 },
+            asCollector(ready),
+          ),
         ),
       ).rejects.toThrow();
     });
@@ -2450,7 +2714,7 @@ describe("pickup", () => {
       const tracking = ready.shipments[0]?.trackingNumber ?? "";
 
       const settled = await Promise.allSettled([
-        scanOne(tenantId, ready.id, ready.driverId, tracking),
+        scanOne(tenantId, ready.id, ready.collector.userId, tracking),
         scanOne(tenantId, ready.id, randomUUID(), tracking),
       ]);
 

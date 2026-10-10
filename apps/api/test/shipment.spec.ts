@@ -14,14 +14,20 @@ import { AuditService } from "../src/modules/platform/application/audit.service.
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
-import { BusinessRuleError, ForbiddenError, NotFoundError } from "../src/shared/errors/index.js";
+import {
+  BusinessRuleError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "../src/shared/errors/index.js";
 import {
   createTenant,
   createTestDatabase,
   deleteTenants,
+  seedDriverLogin,
   withTenantContext,
 } from "./database.harness.js";
-import type { TestDatabase } from "./database.harness.js";
+import type { DriverLogin, TestDatabase } from "./database.harness.js";
 
 /**
  * Shipment aggregate: the state machine, the immutable custody ledger, POD, COD,
@@ -91,12 +97,22 @@ describe("shipment", () => {
     };
   }
 
-  /** Drives a shipment CREATED → OUT_FOR_DELIVERY, returning its id. */
+  /** The command context of a real, logged-in driver (invariant I26). */
+  function as(login: DriverLogin): CommandContext {
+    return { actor: { actorType: "DRIVER", actorId: login.userId } };
+  }
+
+  /**
+   * Drives a shipment CREATED → OUT_FOR_DELIVERY in a real driver's custody.
+   * Returns the shipment and the driver carrying it, the only caller allowed to
+   * record its outcome.
+   */
   async function toOutForDelivery(
     tenantId: string,
     overrides: Record<string, unknown> = {},
-  ): Promise<string> {
-    return asTenant(tenantId, async () => {
+  ): Promise<{ id: string; courier: DriverLogin }> {
+    const courier = await seedDriverLogin(database.migrator, tenantId);
+    const id = await asTenant(tenantId, async () => {
       const shipment = await shipments.create(createInput(overrides), dispatcher);
       await shipments.recordEvent(
         shipment.id,
@@ -105,16 +121,17 @@ describe("shipment", () => {
       );
       await shipments.recordPickup(
         shipment.id,
-        { idempotencyKey: randomUUID(), driverId: randomUUID() },
-        driver(),
+        { idempotencyKey: randomUUID(), driverId: courier.driverId },
+        dispatcher,
       );
       await shipments.recordEvent(
         shipment.id,
-        { eventType: "out_for_delivery", idempotencyKey: randomUUID() },
+        { eventType: "out_for_delivery", idempotencyKey: randomUUID(), driverId: courier.driverId },
         dispatcher,
       );
       return shipment.id;
     });
+    return { id, courier };
   }
 
   function signaturePod(): Record<string, unknown> {
@@ -129,7 +146,12 @@ describe("shipment", () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
     outbox = new OutboxService();
-    const merchants = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
+    const merchants = new MerchantService(
+      db,
+      outbox,
+      new AuditService(db),
+      new AddressService(db, outbox, new ManualGeocodingProvider()),
+    );
     const recipients = new RecipientService(db);
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
     const events = new ShipmentEventService(outbox);
@@ -204,7 +226,12 @@ describe("shipment", () => {
 
     it("rejects a shipment for a suspended merchant", async () => {
       const tenantId = await seedTenant("ship-susp");
-      const merchants = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
+      const merchants = new MerchantService(
+        db,
+        outbox,
+        new AuditService(db),
+        new AddressService(db, outbox, new ManualGeocodingProvider()),
+      );
       const merchantId = await asTenant(tenantId, async () => {
         const m = await merchants.create({ name: "Suspended Co" });
         await merchants.suspend(m.id, "unpaid");
@@ -221,18 +248,17 @@ describe("shipment", () => {
   describe("lifecycle", () => {
     it("runs the full happy path to DELIVERED with a POD", async () => {
       const tenantId = await seedTenant("ship-deliver");
-      const id = await toOutForDelivery(tenantId);
+      const { id, courier } = await toOutForDelivery(tenantId);
 
       const delivered = await asTenant(tenantId, () =>
         shipments.confirmDelivery(
           id,
           {
             idempotencyKey: randomUUID(),
-            driverId: randomUUID(),
             location: { lat: 36.8624, lng: 10.1955 },
             pod: signaturePod(),
           },
-          driver(),
+          as(courier),
         ),
       );
 
@@ -265,17 +291,16 @@ describe("shipment", () => {
 
     it("collects COD on delivery and posts cod.collected", async () => {
       const tenantId = await seedTenant("ship-cod-deliver");
-      const id = await toOutForDelivery(tenantId, { codAmountMinor: 45500 });
+      const { id, courier } = await toOutForDelivery(tenantId, { codAmountMinor: 45500 });
       const delivered = await asTenant(tenantId, () =>
         shipments.confirmDelivery(
           id,
           {
             idempotencyKey: randomUUID(),
-            driverId: randomUUID(),
             codCollected: true,
             pod: signaturePod(),
           },
-          driver(),
+          as(courier),
         ),
       );
       expect(delivered.status).toBe("DELIVERED");
@@ -285,13 +310,13 @@ describe("shipment", () => {
 
     it("refuses to deliver a COD shipment without collecting the cash", async () => {
       const tenantId = await seedTenant("ship-cod-nocash");
-      const id = await toOutForDelivery(tenantId, { codAmountMinor: 45500 });
+      const { id, courier } = await toOutForDelivery(tenantId, { codAmountMinor: 45500 });
       await expect(
         asTenant(tenantId, () =>
           shipments.confirmDelivery(
             id,
-            { idempotencyKey: randomUUID(), driverId: randomUUID(), pod: signaturePod() },
-            driver(),
+            { idempotencyKey: randomUUID(), pod: signaturePod() },
+            as(courier),
           ),
         ),
       ).rejects.toBeInstanceOf(BusinessRuleError);
@@ -299,18 +324,17 @@ describe("shipment", () => {
 
     it("refuses a contactless POD for a COD delivery", async () => {
       const tenantId = await seedTenant("ship-cod-contactless");
-      const id = await toOutForDelivery(tenantId, { codAmountMinor: 45500 });
+      const { id, courier } = await toOutForDelivery(tenantId, { codAmountMinor: 45500 });
       await expect(
         asTenant(tenantId, () =>
           shipments.confirmDelivery(
             id,
             {
               idempotencyKey: randomUUID(),
-              driverId: randomUUID(),
               codCollected: true,
               pod: { podType: "contactless", recipientName: "Sonia" },
             },
-            driver(),
+            as(courier),
           ),
         ),
       ).rejects.toBeInstanceOf(BusinessRuleError);
@@ -318,22 +342,248 @@ describe("shipment", () => {
 
     it("sends a shipment to RETURN_PENDING when attempts are exhausted", async () => {
       const tenantId = await seedTenant("ship-exhaust");
-      const id = await toOutForDelivery(tenantId, { maxAttempts: 1 });
+      const { id, courier } = await toOutForDelivery(tenantId, { maxAttempts: 1 });
       const failed = await asTenant(tenantId, () =>
         shipments.recordFailedAttempt(
           id,
           {
             idempotencyKey: randomUUID(),
-            driverId: randomUUID(),
             reasonCode: "CUSTOMER_UNAVAILABLE",
           },
-          driver(),
+          as(courier),
         ),
       );
       expect(failed.status).toBe("RETURN_PENDING");
       const emitted = await outboxEventTypes(tenantId);
       expect(emitted).toContain("delivery.failed");
       expect(emitted).toContain("shipment.return_initiated");
+    });
+  });
+
+  // ── Driver identity and custody (I26) ────────────────────────────────────────
+
+  describe("driver identity and custody (I26)", () => {
+    async function payloadsOf(tenantId: string, eventType: string): Promise<unknown[]> {
+      const rows = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<{ payload: unknown }[]>`
+          select payload from outbox where event_type = ${eventType} order by seq`,
+      );
+      return rows.map((r) => r.payload);
+    }
+
+    async function eventDrivers(tenantId: string, id: string): Promise<(string | null)[]> {
+      const rows = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<{ driver_id: string | null }[]>`
+          select driver_id from shipment_events
+           where shipment_id = ${id} and event_type in ('delivery_attempted', 'delivered')
+           order by sequence`,
+      );
+      return rows.map((r) => r.driver_id);
+    }
+
+    it("books the delivery and its COD to the calling driver, resolved from the login", async () => {
+      const tenantId = await seedTenant("i26-attribution");
+      const { id, courier } = await toOutForDelivery(tenantId, { codAmountMinor: 45500 });
+
+      await asTenant(tenantId, () =>
+        shipments.confirmDelivery(
+          id,
+          { idempotencyKey: randomUUID(), codCollected: true, pod: signaturePod() },
+          as(courier),
+        ),
+      );
+
+      // The driver id — not the user id the token carries — on every fact the
+      // ledger and reporting read.
+      expect(await eventDrivers(tenantId, id)).toEqual([courier.driverId, courier.driverId]);
+      expect(await payloadsOf(tenantId, "cod.collected")).toEqual([
+        expect.objectContaining({ driverId: courier.driverId, amountMinor: "45500" }),
+      ]);
+    });
+
+    it("rejects a driverId in the body instead of silently ignoring it", async () => {
+      const tenantId = await seedTenant("i26-body");
+      const { id, courier } = await toOutForDelivery(tenantId);
+
+      await expect(
+        asTenant(tenantId, () =>
+          shipments.confirmDelivery(
+            id,
+            { idempotencyKey: randomUUID(), driverId: courier.driverId, pod: signaturePod() },
+            as(courier),
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        asTenant(tenantId, () =>
+          shipments.recordFailedAttempt(
+            id,
+            {
+              idempotencyKey: randomUUID(),
+              driverId: courier.driverId,
+              reasonCode: "CUSTOMER_UNAVAILABLE",
+            },
+            as(courier),
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("refuses a delivery by a driver who does not hold the parcel, and writes nothing", async () => {
+      const tenantId = await seedTenant("i26-other-deliver");
+      const { id } = await toOutForDelivery(tenantId, { codAmountMinor: 45500 });
+      const colleague = await seedDriverLogin(database.migrator, tenantId);
+      const before = await asTenant(tenantId, () => shipments.getById(id));
+
+      await expect(
+        asTenant(tenantId, () =>
+          shipments.confirmDelivery(
+            id,
+            { idempotencyKey: randomUUID(), codCollected: true, pod: signaturePod() },
+            as(colleague),
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+
+      const after = await asTenant(tenantId, () => shipments.getById(id));
+      expect(after.status).toBe("OUT_FOR_DELIVERY");
+      expect(after.lastSequence).toBe(before.lastSequence);
+      expect(after.codStatus).toBe("PENDING");
+      expect(await payloadsOf(tenantId, "cod.collected")).toEqual([]);
+      expect(await outboxEventTypes(tenantId)).not.toContain("delivery.attempted");
+    });
+
+    it("refuses a failed attempt by a driver who does not hold the parcel", async () => {
+      const tenantId = await seedTenant("i26-other-fail");
+      const { id } = await toOutForDelivery(tenantId);
+      const colleague = await seedDriverLogin(database.migrator, tenantId);
+
+      await expect(
+        asTenant(tenantId, () =>
+          shipments.recordFailedAttempt(
+            id,
+            { idempotencyKey: randomUUID(), reasonCode: "CUSTOMER_UNAVAILABLE" },
+            as(colleague),
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+
+      const after = await asTenant(tenantId, () => shipments.getById(id));
+      expect(after.status).toBe("OUT_FOR_DELIVERY");
+      expect(after.attemptCount).toBe(0);
+    });
+
+    it("refuses a caller with no driver record, whatever their permissions", async () => {
+      const tenantId = await seedTenant("i26-staff");
+      const { id } = await toOutForDelivery(tenantId);
+
+      // An OWNER holds `shipment:deliver` through the wildcard role, but capturing
+      // POD is a driver act (01-mvp-scope §6) and there is no one to book it to.
+      await expect(
+        asTenant(tenantId, () =>
+          shipments.confirmDelivery(
+            id,
+            { idempotencyKey: randomUUID(), pod: signaturePod() },
+            { actor: { actorType: "DISPATCHER", actorId: randomUUID() }, canOverride: true },
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    it("refuses a parcel sent out with no driver named — custody nobody holds", async () => {
+      const tenantId = await seedTenant("i26-no-custodian");
+      const courier = await seedDriverLogin(database.migrator, tenantId);
+      const id = await asTenant(tenantId, async () => {
+        const shipment = await shipments.create(createInput(), dispatcher);
+        await shipments.recordEvent(
+          shipment.id,
+          { eventType: "assigned", idempotencyKey: randomUUID() },
+          dispatcher,
+        );
+        await shipments.recordPickup(
+          shipment.id,
+          { idempotencyKey: randomUUID(), driverId: courier.driverId },
+          dispatcher,
+        );
+        await shipments.recordEvent(
+          shipment.id,
+          { eventType: "out_for_delivery", idempotencyKey: randomUUID() },
+          dispatcher,
+        );
+        return shipment.id;
+      });
+
+      // Fail closed: a DRIVER custody with no driver id is not "anyone's".
+      await expect(
+        asTenant(tenantId, () =>
+          shipments.confirmDelivery(
+            id,
+            { idempotencyKey: randomUUID(), pod: signaturePod() },
+            as(courier),
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    it("replays an applied delivery for its driver even though custody has been released", async () => {
+      const tenantId = await seedTenant("i26-replay");
+      const { id, courier } = await toOutForDelivery(tenantId);
+      const key = randomUUID();
+      const deliver = () =>
+        asTenant(tenantId, () =>
+          shipments.confirmDelivery(id, { idempotencyKey: key, pod: signaturePod() }, as(courier)),
+        );
+
+      const first = await deliver();
+      // Offline retry: the parcel is DELIVERED and in nobody's custody now, but
+      // the same idempotency key must answer with the original result.
+      const second = await deliver();
+
+      expect(second.status).toBe("DELIVERED");
+      expect(second.lastSequence).toBe(first.lastSequence);
+    });
+
+    it("answers a late outcome on a delivered parcel with the state machine, not a 403", async () => {
+      const tenantId = await seedTenant("i26-late");
+      const { id, courier } = await toOutForDelivery(tenantId);
+      await asTenant(tenantId, () =>
+        shipments.confirmDelivery(
+          id,
+          { idempotencyKey: randomUUID(), pod: signaturePod() },
+          as(courier),
+        ),
+      );
+
+      // A NEW key (a double tap that minted another): the app must learn the
+      // parcel is already delivered, not that it was never this driver's.
+      await expect(
+        asTenant(tenantId, () =>
+          shipments.recordFailedAttempt(
+            id,
+            { idempotencyKey: randomUUID(), reasonCode: "CUSTOMER_UNAVAILABLE" },
+            as(courier),
+          ),
+        ),
+      ).rejects.toMatchObject({ code: "SHIPMENT_INVALID_TRANSITION" });
+    });
+
+    it("cannot link one login to two drivers (migration 0043)", async () => {
+      const tenantId = await seedTenant("i26-unique");
+      const courier = await seedDriverLogin(database.migrator, tenantId);
+
+      await expect(
+        withTenantContext(
+          database.migrator,
+          tenantId,
+          (tx) => tx`
+            insert into drivers (tenant_id, user_id, employee_code, full_name, phone, status, employment_type)
+            values (${tenantId}, ${courier.userId}, 'D-TWIN', 'Twin', '+21629999999', 'ACTIVE', 'EMPLOYEE')`,
+        ),
+      ).rejects.toThrow(/drivers_tenant_user_uq/);
     });
   });
 
@@ -377,7 +627,7 @@ describe("shipment", () => {
 
     it("requires OWNER override to cancel an in-custody shipment", async () => {
       const tenantId = await seedTenant("ship-cancel-custody");
-      const id = await toOutForDelivery(tenantId);
+      const { id } = await toOutForDelivery(tenantId);
 
       await expect(
         asTenant(tenantId, () =>

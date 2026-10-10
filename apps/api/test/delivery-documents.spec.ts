@@ -21,7 +21,12 @@ import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
 import { BusinessRuleError } from "../src/shared/errors/index.js";
 import { CurrencyService } from "../src/shared/money/index.js";
-import { createTenant, createTestDatabase, deleteTenants } from "./database.harness.js";
+import {
+  createTenant,
+  createTestDatabase,
+  deleteTenants,
+  seedDriverLogin,
+} from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
 
 /**
@@ -44,7 +49,6 @@ describe("delivery documents", () => {
   let createdTenants: string[] = [];
 
   const ctx = { actor: { actorType: "DISPATCHER" as const, actorId: randomUUID() } };
-  const driverCtx = { actor: { actorType: "DRIVER" as const, actorId: randomUUID() } };
 
   async function asStaff<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
     return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "system" }, fn);
@@ -90,6 +94,8 @@ describe("delivery documents", () => {
   /** Drives a shipment to RETURN_PENDING through the reason policy. */
   async function returning(tenantId: string): Promise<string> {
     const shipmentId = await makeShipment(tenantId);
+    // A real driver carries it: only the custodian may record the failed attempt (I26).
+    const courier = await seedDriverLogin(database.migrator, tenantId);
     await asStaff(tenantId, () =>
       shipments.recordEvent(
         shipmentId,
@@ -100,14 +106,14 @@ describe("delivery documents", () => {
     await asStaff(tenantId, () =>
       shipments.recordPickup(
         shipmentId,
-        { idempotencyKey: randomUUID(), driverId: randomUUID() },
+        { idempotencyKey: randomUUID(), driverId: courier.driverId },
         ctx,
       ),
     );
     await asStaff(tenantId, () =>
       shipments.recordEvent(
         shipmentId,
-        { idempotencyKey: randomUUID(), eventType: "out_for_delivery" },
+        { idempotencyKey: randomUUID(), eventType: "out_for_delivery", driverId: courier.driverId },
         ctx,
       ),
     );
@@ -116,11 +122,10 @@ describe("delivery documents", () => {
         shipmentId,
         {
           idempotencyKey: randomUUID(),
-          driverId: randomUUID(),
           // Not re-attemptable, so the reason policy returns it immediately.
           reasonCode: "CUSTOMER_REFUSED",
         },
-        driverCtx,
+        { actor: { actorType: "DRIVER", actorId: courier.userId } },
       ),
     );
     return shipmentId;
@@ -131,7 +136,12 @@ describe("delivery documents", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
-    merchants = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
+    merchants = new MerchantService(
+      db,
+      outbox,
+      new AuditService(db),
+      new AddressService(db, outbox, new ManualGeocodingProvider()),
+    );
     const recipients = new RecipientService(db);
     const events = new ShipmentEventService(outbox);
     const operatingConfig = new OperatingConfigService(db);

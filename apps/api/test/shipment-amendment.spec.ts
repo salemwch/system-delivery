@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { AddressService, MerchantService, RecipientService } from "../src/modules/directory/index.js";
+import {
+  AddressService,
+  MerchantService,
+  RecipientService,
+} from "../src/modules/directory/index.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
 import {
   AuditService,
@@ -25,6 +29,7 @@ import {
   createTenant,
   createTestDatabase,
   deleteTenants,
+  seedDriverLogin,
   withTenantContext,
 } from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
@@ -52,16 +57,10 @@ describe("shipment amendments", () => {
   const ACTOR_ID = randomUUID();
 
   function asStaff<T>(tenantId: string, fn: () => Promise<T>, actorId = ACTOR_ID): Promise<T> {
-    return TenantContext.run(
-      { tenantId: asTenantId(tenantId), actorType: "user", actorId },
-      fn,
-    );
+    return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "user", actorId }, fn);
   }
 
   const dispatcher: CommandContext = { actor: { actorType: "DISPATCHER", actorId: ACTOR_ID } };
-  const driver = (): CommandContext => ({
-    actor: { actorType: "DRIVER", actorId: randomUUID() },
-  });
 
   async function seedTenant(label: string): Promise<string> {
     const id = await createTenant(database.migrator, label);
@@ -194,7 +193,9 @@ describe("shipment amendments", () => {
 
     it("refuses a request that asks for nothing", async () => {
       await expect(
-        asStaff(tenantId, () => amendments.request(shipmentId, { reason: "juste comme ça" }, userId, false)),
+        asStaff(tenantId, () =>
+          amendments.request(shipmentId, { reason: "juste comme ça" }, userId, false),
+        ),
       ).rejects.toBeInstanceOf(ValidationError);
     });
 
@@ -391,7 +392,9 @@ describe("shipment amendments", () => {
       // Without it, 12500 is 12.500 dinars or 125.00 euros — and the queue
       // screen a dispatcher approves cash from would have to guess.
       expect(amendment.currency).toBe("TND");
-      expect((await asStaff(tenantId, () => amendments.getById(amendment.id))).currency).toBe("TND");
+      expect((await asStaff(tenantId, () => amendments.getById(amendment.id))).currency).toBe(
+        "TND",
+      );
       const page = await asStaff(tenantId, () => amendments.list());
       expect(page.items[0]?.currency).toBe("TND");
     });
@@ -421,7 +424,11 @@ describe("shipment amendments", () => {
     it("refuses to change a CANCELLED parcel", async () => {
       const shipmentId = await seedShipment(tenantId);
       await asStaff(tenantId, () =>
-        shipments.cancel(shipmentId, { idempotencyKey: randomUUID(), reason: "client" }, dispatcher),
+        shipments.cancel(
+          shipmentId,
+          { idempotencyKey: randomUUID(), reason: "client" },
+          dispatcher,
+        ),
       );
 
       await expect(
@@ -433,7 +440,7 @@ describe("shipment amendments", () => {
 
     it("refuses to change a DELIVERED parcel", async () => {
       const shipmentId = await seedShipment(tenantId);
-      const driverId = randomUUID();
+      const courier = await seedDriverLogin(database.migrator, tenantId);
       await asStaff(tenantId, async () => {
         await shipments.recordEvent(
           shipmentId,
@@ -442,26 +449,29 @@ describe("shipment amendments", () => {
         );
         await shipments.recordPickup(
           shipmentId,
-          { idempotencyKey: randomUUID(), driverId },
-          driver(),
+          { idempotencyKey: randomUUID(), driverId: courier.driverId },
+          dispatcher,
         );
         await shipments.recordEvent(
           shipmentId,
-          { eventType: "out_for_delivery", idempotencyKey: randomUUID() },
+          {
+            eventType: "out_for_delivery",
+            idempotencyKey: randomUUID(),
+            driverId: courier.driverId,
+          },
           dispatcher,
         );
         await shipments.confirmDelivery(
           shipmentId,
           {
             idempotencyKey: randomUUID(),
-            driverId,
             pod: {
               podType: "signature",
               signatureObjectKey: "pods/sig.png",
               recipientName: "Sonia Gharbi",
             },
           },
-          driver(),
+          { actor: { actorType: "DRIVER", actorId: courier.userId } },
         );
       });
 
@@ -553,7 +563,9 @@ describe("shipment amendments", () => {
       const first = await seedShipment(tenantId);
       const second = await seedShipment(tenantId);
 
-      await asStaff(tenantId, () => amendments.request(first, { recipientName: "A" }, userId, false));
+      await asStaff(tenantId, () =>
+        amendments.request(first, { recipientName: "A" }, userId, false),
+      );
       const b = await asStaff(tenantId, () =>
         amendments.request(second, { recipientName: "B" }, userId, false),
       );
@@ -573,8 +585,12 @@ describe("shipment amendments", () => {
         amendments.request(mine, { recipientName: "A" }, userId, false),
       );
       await asStaff(tenantId, () => amendments.reject(a.id, { reason: "non" }, userId));
-      await asStaff(tenantId, () => amendments.request(mine, { recipientName: "B" }, userId, false));
-      await asStaff(tenantId, () => amendments.request(other, { recipientName: "C" }, userId, false));
+      await asStaff(tenantId, () =>
+        amendments.request(mine, { recipientName: "B" }, userId, false),
+      );
+      await asStaff(tenantId, () =>
+        amendments.request(other, { recipientName: "C" }, userId, false),
+      );
 
       const history = await asStaff(tenantId, () => amendments.list({ shipmentId: mine }));
       // Newest first on a parcel's own panel.

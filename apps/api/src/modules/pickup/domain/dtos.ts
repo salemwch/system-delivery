@@ -57,6 +57,7 @@ export type AcceptPickupRequestInput = z.infer<typeof acceptPickupRequestSchema>
 
 export const assignPickupRequestSchema = z.strictObject({
   idempotencyKey: nonEmpty("idempotencyKey").max(200),
+  /** A `drivers.id`. The service stores that driver's LOGIN as the collector. */
   driverId: z.uuid(),
   routeStopId: z.uuid().optional(),
 });

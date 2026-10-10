@@ -135,6 +135,22 @@ export const recordPickupSchema = z.strictObject({
 });
 export type RecordPickupInput = z.infer<typeof recordPickupSchema>;
 
+/**
+ * The same fact arriving from a pickup scan (`pickup.parcel_scanned`), never
+ * over HTTP.
+ *
+ * `driverId` is optional only here. A commercial collecting their own
+ * merchant's parcels is not a driver, and inventing a driver id for them
+ * (their user id, as the scan path once did) would put a non-driver id in
+ * `shipment_events.driver_id` and the custody projection. The HTTP command
+ * above stays strict: staff recording a pickup must name the driver.
+ */
+export const recordPickupScanSchema = z.strictObject({
+  ...recordPickupSchema.shape,
+  driverId: z.uuid().optional(),
+});
+export type RecordPickupScanInput = z.infer<typeof recordPickupScanSchema>;
+
 const podSchema = z.strictObject({
   podType: z.enum(["signature", "photo", "otp", "id_check", "contactless"]),
   signatureObjectKey: z.string().trim().min(1).optional(),
@@ -146,9 +162,15 @@ const podSchema = z.strictObject({
   deviceMetadata: z.record(z.string(), z.unknown()).optional(),
 });
 
+/**
+ * ⚠️ No `driverId` — on this command, the failed attempt, or the return. The
+ * driver is the authenticated caller, resolved from the token (invariant I26).
+ * A body field would let any holder of `shipment:deliver` book a delivery, and
+ * its COD, to a colleague. `strictObject` makes a client that still sends one
+ * fail loudly with VALIDATION_FAILED rather than have the field silently ignored.
+ */
 export const confirmDeliverySchema = z.strictObject({
   idempotencyKey,
-  driverId: z.uuid(),
   legId: z.uuid().optional(),
   routeId: z.uuid().optional(),
   routeStopId: z.uuid().optional(),
@@ -165,7 +187,6 @@ export type ConfirmDeliveryInput = z.infer<typeof confirmDeliverySchema>;
 
 export const recordFailedAttemptSchema = z.strictObject({
   idempotencyKey,
-  driverId: z.uuid(),
   legId: z.uuid().optional(),
   routeId: z.uuid().optional(),
   routeStopId: z.uuid().optional(),
@@ -195,11 +216,13 @@ export type InitiateReturnInput = z.infer<typeof initiateReturnSchema>;
  * a return handed back at a hub counter often has no signature — but recorded
  * when it exists, since a merchant disputing that a parcel came back is the one
  * moment this record is read.
+ *
+ * The driver who handed it back is the caller when the caller is a driver, and
+ * nobody when it is staff at a counter — never a value from the body (I26).
  */
 export const completeReturnSchema = z.strictObject({
   idempotencyKey,
   receivedByName: z.string().trim().min(1).max(200).optional(),
-  driverId: z.uuid().optional(),
   occurredAt: z.coerce.date().optional(),
 });
 
@@ -275,10 +298,13 @@ export const requestAmendmentSchema = z
       value.codAmountMinor !== undefined,
     { message: "an amendment must request at least one change" },
   )
-  .refine((value) => value.destinationCity === undefined || value.destinationRawInput !== undefined, {
-    message: "destinationCity needs destinationRawInput",
-    path: ["destinationCity"],
-  });
+  .refine(
+    (value) => value.destinationCity === undefined || value.destinationRawInput !== undefined,
+    {
+      message: "destinationCity needs destinationRawInput",
+      path: ["destinationCity"],
+    },
+  );
 export type RequestAmendmentInput = z.infer<typeof requestAmendmentSchema>;
 
 export const rejectAmendmentSchema = z.strictObject({

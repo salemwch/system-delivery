@@ -11,16 +11,18 @@ import { AuditService } from "../src/modules/platform/application/audit.service.
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { ShipmentEventService } from "../src/modules/shipment/application/shipment-event.service.js";
 import { ShipmentService } from "../src/modules/shipment/application/shipment.service.js";
+import type { CommandContext } from "../src/modules/shipment/application/shipment.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
-import { BusinessRuleError } from "../src/shared/errors/index.js";
+import { BusinessRuleError, ForbiddenError, ValidationError } from "../src/shared/errors/index.js";
 import {
   createTenant,
   createTestDatabase,
   deleteTenants,
+  seedDriverLogin,
   withTenantContext,
 } from "./database.harness.js";
-import type { TestDatabase } from "./database.harness.js";
+import type { DriverLogin, TestDatabase } from "./database.harness.js";
 
 /**
  * Return-to-origin (docs/01-mvp-scope.md §4.2 #2.8, domain §3.6 rule 9, §3.7 rule 6).
@@ -42,7 +44,18 @@ describe("return lifecycle", () => {
   let createdTenants: string[] = [];
 
   const ctx = { actor: { actorType: "DISPATCHER" as const, actorId: randomUUID() } };
-  const driverCtx = { actor: { actorType: "DRIVER" as const, actorId: randomUUID() } };
+
+  /** The driver carrying each shipment this spec sends out (invariant I26). */
+  const couriers = new Map<string, DriverLogin>();
+
+  /** The command context of the driver carrying `shipmentId`. */
+  function courierOf(shipmentId: string): CommandContext {
+    const courier = couriers.get(shipmentId);
+    if (courier === undefined) {
+      throw new Error(`no courier was seeded for shipment ${shipmentId}`);
+    }
+    return { actor: { actorType: "DRIVER", actorId: courier.userId } };
+  }
 
   async function asStaff<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
     return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "system" }, fn);
@@ -85,7 +98,7 @@ describe("return lifecycle", () => {
     // CREATED → ASSIGNED → PICKED_UP → OUT_FOR_DELIVERY. The state machine has no
     // shortcut from CREATED; a parcel must be assigned before anyone can take
     // custody of it.
-    const driverId = randomUUID();
+    const courier = await seedDriverLogin(database.migrator, tenantId);
     await asStaff(tenantId, () =>
       shipments.recordEvent(
         created.id,
@@ -94,15 +107,20 @@ describe("return lifecycle", () => {
       ),
     );
     await asStaff(tenantId, () =>
-      shipments.recordPickup(created.id, { idempotencyKey: randomUUID(), driverId }, ctx),
+      shipments.recordPickup(
+        created.id,
+        { idempotencyKey: randomUUID(), driverId: courier.driverId },
+        ctx,
+      ),
     );
     await asStaff(tenantId, () =>
       shipments.recordEvent(
         created.id,
-        { idempotencyKey: randomUUID(), eventType: "out_for_delivery" },
+        { idempotencyKey: randomUUID(), eventType: "out_for_delivery", driverId: courier.driverId },
         ctx,
       ),
     );
+    couriers.set(created.id, courier);
     return created.id;
   }
 
@@ -121,10 +139,9 @@ describe("return lifecycle", () => {
         shipmentId,
         {
           idempotencyKey: randomUUID(),
-          driverId: randomUUID(),
           reasonCode: "CUSTOMER_UNAVAILABLE",
         },
-        driverCtx,
+        courierOf(shipmentId),
       ),
     );
     return shipmentId;
@@ -160,7 +177,12 @@ describe("return lifecycle", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
-    merchants = new MerchantService(db, outbox, new AuditService(db), new AddressService(db, outbox, new ManualGeocodingProvider()));
+    merchants = new MerchantService(
+      db,
+      outbox,
+      new AuditService(db),
+      new AddressService(db, outbox, new ManualGeocodingProvider()),
+    );
     const recipients = new RecipientService(db);
     const events = new ShipmentEventService(outbox);
     const operatingConfig = new OperatingConfigService(db);
@@ -178,6 +200,7 @@ describe("return lifecycle", () => {
   afterEach(async () => {
     await deleteTenants(database.migrator, createdTenants);
     createdTenants = [];
+    couriers.clear();
   });
 
   afterAll(async () => {
@@ -320,11 +343,10 @@ describe("return lifecycle", () => {
             shipmentId,
             {
               idempotencyKey: randomUUID(),
-              driverId: randomUUID(),
               // `allows_reattempt = false` — one refusal ends it (migration 0026).
               reasonCode: "CUSTOMER_REFUSED",
             },
-            driverCtx,
+            courierOf(shipmentId),
           ),
         );
         return shipmentId;
@@ -369,7 +391,11 @@ describe("return lifecycle", () => {
         const shipmentId = await refused(tenantId);
 
         const returned = await asStaff(tenantId, () =>
-          shipments.completeReturn(shipmentId, { idempotencyKey: randomUUID() }, driverCtx),
+          shipments.completeReturn(
+            shipmentId,
+            { idempotencyKey: randomUUID() },
+            courierOf(shipmentId),
+          ),
         );
         expect(returned.status).toBe("RETURNED");
         expect(returned.codStatus).toBe("CANCELLED");
@@ -400,7 +426,7 @@ describe("return lifecycle", () => {
         shipments.completeReturn(
           shipmentId,
           { idempotencyKey: randomUUID(), receivedByName: "Ines (Boutique)" },
-          driverCtx,
+          courierOf(shipmentId),
         ),
       );
 
@@ -415,7 +441,11 @@ describe("return lifecycle", () => {
       expect(before.codStatus).toBe("PENDING");
 
       await asStaff(tenantId, () =>
-        shipments.completeReturn(shipmentId, { idempotencyKey: randomUUID() }, driverCtx),
+        shipments.completeReturn(
+          shipmentId,
+          { idempotencyKey: randomUUID() },
+          courierOf(shipmentId),
+        ),
       );
 
       const after = await asStaff(tenantId, () => shipments.getById(shipmentId));
@@ -435,7 +465,11 @@ describe("return lifecycle", () => {
       const shipmentId = await returning(tenantId, 0);
 
       await asStaff(tenantId, () =>
-        shipments.completeReturn(shipmentId, { idempotencyKey: randomUUID() }, driverCtx),
+        shipments.completeReturn(
+          shipmentId,
+          { idempotencyKey: randomUUID() },
+          courierOf(shipmentId),
+        ),
       );
 
       const after = await asStaff(tenantId, () => shipments.getById(shipmentId));
@@ -447,7 +481,11 @@ describe("return lifecycle", () => {
       const shipmentId = await returning(tenantId);
 
       await asStaff(tenantId, () =>
-        shipments.completeReturn(shipmentId, { idempotencyKey: randomUUID() }, driverCtx),
+        shipments.completeReturn(
+          shipmentId,
+          { idempotencyKey: randomUUID() },
+          courierOf(shipmentId),
+        ),
       );
 
       const legs = await legsOf(tenantId, shipmentId);
@@ -459,7 +497,11 @@ describe("return lifecycle", () => {
       const shipmentId = await returning(tenantId);
 
       await asStaff(tenantId, () =>
-        shipments.completeReturn(shipmentId, { idempotencyKey: randomUUID() }, driverCtx),
+        shipments.completeReturn(
+          shipmentId,
+          { idempotencyKey: randomUUID() },
+          courierOf(shipmentId),
+        ),
       );
 
       const rows = await withTenantContext(
@@ -482,10 +524,10 @@ describe("return lifecycle", () => {
       const key = randomUUID();
 
       await asStaff(tenantId, () =>
-        shipments.completeReturn(shipmentId, { idempotencyKey: key }, driverCtx),
+        shipments.completeReturn(shipmentId, { idempotencyKey: key }, courierOf(shipmentId)),
       );
       await asStaff(tenantId, () =>
-        shipments.completeReturn(shipmentId, { idempotencyKey: key }, driverCtx),
+        shipments.completeReturn(shipmentId, { idempotencyKey: key }, courierOf(shipmentId)),
       );
 
       const types = await eventTypesOf(tenantId, shipmentId);
@@ -499,7 +541,11 @@ describe("return lifecycle", () => {
 
       await expect(
         asStaff(tenantId, () =>
-          shipments.completeReturn(shipmentId, { idempotencyKey: randomUUID() }, driverCtx),
+          shipments.completeReturn(
+            shipmentId,
+            { idempotencyKey: randomUUID() },
+            courierOf(shipmentId),
+          ),
         ),
         // OUT_FOR_DELIVERY → RETURNED is not in the state machine. A parcel
         // cannot be marked "back with the merchant" without a return first.
@@ -511,7 +557,11 @@ describe("return lifecycle", () => {
       const shipmentId = await returning(tenantId);
 
       await asStaff(tenantId, () =>
-        shipments.completeReturn(shipmentId, { idempotencyKey: randomUUID() }, driverCtx),
+        shipments.completeReturn(
+          shipmentId,
+          { idempotencyKey: randomUUID() },
+          courierOf(shipmentId),
+        ),
       );
 
       // Domain rule 11: terminal states accept no further lifecycle events.
@@ -549,7 +599,11 @@ describe("return lifecycle", () => {
       const tenantId = await seedTenant("rto");
       const shipmentId = await returning(tenantId);
       await asStaff(tenantId, () =>
-        shipments.completeReturn(shipmentId, { idempotencyKey: randomUUID() }, driverCtx),
+        shipments.completeReturn(
+          shipmentId,
+          { idempotencyKey: randomUUID() },
+          courierOf(shipmentId),
+        ),
       );
 
       const types = await eventTypesOf(tenantId, shipmentId);
@@ -559,6 +613,101 @@ describe("return lifecycle", () => {
       expect(types.indexOf("shipment.return_initiated")).toBeLessThan(
         types.indexOf("shipment.returned"),
       );
+    });
+
+    // ── Who handed it back (invariant I26) ─────────────────────────────────
+
+    async function returnedBy(tenantId: string, shipmentId: string): Promise<string | null> {
+      const rows = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<{ driver_id: string | null }[]>`
+          select driver_id from shipment_events
+           where shipment_id = ${shipmentId} and event_type = 'returned'`,
+      );
+      const row = rows[0];
+      if (row === undefined) {
+        throw new Error("no returned event");
+      }
+      return row.driver_id;
+    }
+
+    it("books the return to the driver who handed it back, from the login", async () => {
+      const tenantId = await seedTenant("rto");
+      const shipmentId = await returning(tenantId);
+
+      await asStaff(tenantId, () =>
+        shipments.completeReturn(
+          shipmentId,
+          { idempotencyKey: randomUUID() },
+          courierOf(shipmentId),
+        ),
+      );
+
+      expect(await returnedBy(tenantId, shipmentId)).toBe(couriers.get(shipmentId)?.driverId);
+    });
+
+    it("refuses a driver closing a return another driver is carrying", async () => {
+      const tenantId = await seedTenant("rto");
+      const shipmentId = await returning(tenantId);
+      const colleague = await seedDriverLogin(database.migrator, tenantId);
+
+      await expect(
+        asStaff(tenantId, () =>
+          shipments.completeReturn(
+            shipmentId,
+            { idempotencyKey: randomUUID() },
+            { actor: { actorType: "DRIVER", actorId: colleague.userId } },
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+
+      const after = await asStaff(tenantId, () => shipments.getById(shipmentId));
+      expect(after.status).toBe("RETURN_PENDING");
+      expect(after.codStatus).toBe("PENDING");
+    });
+
+    it("lets staff close a return at the counter, booked to no driver", async () => {
+      const tenantId = await seedTenant("rto");
+      const shipmentId = await returning(tenantId);
+
+      const returned = await asStaff(tenantId, () =>
+        shipments.completeReturn(shipmentId, { idempotencyKey: randomUUID() }, ctx),
+      );
+
+      expect(returned.status).toBe("RETURNED");
+      expect(await returnedBy(tenantId, shipmentId)).toBeNull();
+    });
+
+    it("refuses a driver login with no driver record behind it", async () => {
+      const tenantId = await seedTenant("rto");
+      const shipmentId = await returning(tenantId);
+
+      await expect(
+        asStaff(tenantId, () =>
+          shipments.completeReturn(
+            shipmentId,
+            { idempotencyKey: randomUUID() },
+            { actor: { actorType: "DRIVER", actorId: randomUUID() } },
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    it("rejects a driverId in the body instead of trusting it", async () => {
+      const tenantId = await seedTenant("rto");
+      const shipmentId = await returning(tenantId);
+      const colleague = await seedDriverLogin(database.migrator, tenantId);
+
+      await expect(
+        asStaff(tenantId, () =>
+          shipments.completeReturn(
+            shipmentId,
+            { idempotencyKey: randomUUID(), driverId: colleague.driverId },
+            ctx,
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ValidationError);
     });
   });
 });

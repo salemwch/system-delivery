@@ -4,7 +4,12 @@ import { and, asc, count, desc, eq, gt, lt, sql } from "drizzle-orm";
 import type { TenantTransaction } from "../../../shared/database/index.js";
 import { DatabaseService, TenantContext } from "../../../shared/database/index.js";
 import { isUniqueViolation } from "../../../shared/database/pg-errors.js";
-import { BusinessRuleError, ConflictError, NotFoundError } from "../../../shared/errors/index.js";
+import {
+  BusinessRuleError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from "../../../shared/errors/index.js";
 import { parseWithZod } from "../../../shared/http/zod-parse.js";
 import { OutboxService } from "../../platform/index.js";
 import {
@@ -27,6 +32,13 @@ import type { PickupRequest } from "../domain/schema.js";
 
 const CODE_ALLOCATION_RETRIES = 5;
 
+/**
+ * The authenticated caller. `actorId` is a USER id (the token's `sub`), never a
+ * `drivers.id`. A collector is a user, because the person who physically collects
+ * is not always a driver (a commercial claims their own runs). That is why
+ * `pickup_requests.assigned_driver_id` and `pickup_shipments.scanned_by_driver_id`
+ * hold user ids despite their names (column comments, migration 0044).
+ */
 interface CommandContext {
   readonly actorId: string;
 }
@@ -91,7 +103,14 @@ interface ScanCommand {
   readonly trackingNumber: string;
   readonly idempotencyKey: string;
   readonly scannedAt: Date;
-  readonly driverId: string;
+  /** The user who scanned: the pickup's assigned collector. */
+  readonly collectorUserId: string;
+  /**
+   * That collector's `drivers.id`, or null when they are not a driver (a
+   * commercial). Shipment custody is keyed on driver ids; a user id there is the
+   * telemetry bug again (see `ShiftService.openShiftForUser`).
+   */
+  readonly driverId: string | null;
 }
 
 export interface PickupShipmentView {
@@ -227,10 +246,19 @@ export class PickupService {
     );
   }
 
-  /** Dispatch names who will go and collect. Requires `pickup:assign`. */
+  /**
+   * Dispatch names who will go and collect. Requires `pickup:assign`.
+   *
+   * `driverId` is a `drivers.id`, the id dispatch picks from the fleet. What is
+   * STORED is that driver's login (`drivers.user_id`), the same kind of id
+   * {@link claim} stores and every scan is checked against. Storing the driver
+   * id here gave one column two meanings: a dispatched driver could never be
+   * matched as the collector of their own run, and the web's "assigned to you"
+   * never lit up for them.
+   */
   async assign(id: string, input: unknown, ctx: CommandContext): Promise<PickupRequest> {
     const dto = parseWithZod(assignPickupRequestSchema, input);
-    return this.assignTo(id, dto.driverId, dto.routeStopId, ctx);
+    return this.assignTo(id, (tx) => collectorLoginOf(tx, dto.driverId), dto.routeStopId, ctx);
   }
 
   /**
@@ -252,7 +280,7 @@ export class PickupService {
    */
   async claim(id: string, input: unknown, ctx: CommandContext): Promise<PickupRequest> {
     parseWithZod(claimPickupRequestSchema, input);
-    return this.assignTo(id, ctx.actorId, undefined, ctx);
+    return this.assignTo(id, () => Promise.resolve(ctx.actorId), undefined, ctx);
   }
 
   /**
@@ -262,22 +290,23 @@ export class PickupService {
    * are identical whichever way the collector was chosen — a second copy would
    * be a second place for `assign` and `claim` to drift apart.
    *
-   * `collectorId` is a bare user id by design: `assigned_driver_id` carries no
+   * The collector is a bare USER id by design: `assigned_driver_id` carries no
    * foreign key to `drivers`, because the person who physically collects is not
-   * always a driver. A commercial is the case that proves it.
+   * always a driver. A commercial is the case that proves it. It is resolved
+   * inside the transition's transaction, so it is read under the row lock.
    */
   private async assignTo(
     id: string,
-    collectorId: string,
+    collector: (tx: TenantTransaction) => Promise<string>,
     routeStopId: string | undefined,
     ctx: CommandContext,
   ): Promise<PickupRequest> {
-    return this.transition(id, "ASSIGNED", ctx, (tx, row) =>
+    return this.transition(id, "ASSIGNED", ctx, async (tx, row) =>
       tx
         .update(pickupRequests)
         .set({
           status: "ASSIGNED" as const,
-          assignedDriverId: collectorId,
+          assignedDriverId: await collector(tx),
           assignedAt: new Date(),
           ...(routeStopId === undefined ? {} : { assignedRouteStopId: routeStopId }),
           updatedAt: new Date(),
@@ -293,11 +322,13 @@ export class PickupService {
     const dto = parseWithZod(scanPickupSchema, input);
     return this.database.withTenant(async (tx) => {
       const pickup = await lockAssignedPickup(tx, id);
+      assertCollector(pickup, ctx);
       const applied = await this.applyScan(tx, pickup, {
         trackingNumber: dto.trackingNumber,
         idempotencyKey: dto.idempotencyKey,
         scannedAt: dto.scannedAt ?? new Date(),
-        driverId: ctx.actorId,
+        collectorUserId: ctx.actorId,
+        driverId: await driverIdOfUser(tx, ctx.actorId),
       });
       return { ...applied, summary: await computeScanSummary(tx, pickup.id) };
     });
@@ -316,6 +347,10 @@ export class PickupService {
     const dto = parseWithZod(batchScanPickupSchema, input);
     return this.database.withTenant(async (tx) => {
       const pickup = await lockAssignedPickup(tx, id);
+      assertCollector(pickup, ctx);
+      // Resolved once for the whole batch, not per item: a 200-scan sync would
+      // otherwise repeat the same lookup 200 times inside one transaction.
+      const driverId = await driverIdOfUser(tx, ctx.actorId);
 
       const results: ScanItemResult[] = [];
       let accepted = 0;
@@ -326,7 +361,8 @@ export class PickupService {
             trackingNumber: item.trackingNumber,
             idempotencyKey: item.idempotencyKey,
             scannedAt: item.scannedAt,
-            driverId: ctx.actorId,
+            collectorUserId: ctx.actorId,
+            driverId,
           });
           results.push({
             index,
@@ -355,6 +391,7 @@ export class PickupService {
   async collect(id: string, input: unknown, ctx: CommandContext): Promise<PickupRequest> {
     const dto = parseWithZod(collectPickupRequestSchema, input);
     return this.transition(id, "COLLECTED", ctx, async (tx, row) => {
+      assertCollector(row, ctx);
       const scannedCount = await countByStatus(tx, row.id, "SCANNED");
 
       if (scannedCount === 0 && dto.outcomeReason === undefined) {
@@ -565,7 +602,7 @@ export class PickupService {
     }
 
     if (row.scanStatus === "SCANNED") {
-      if (row.scannedByDriverId !== cmd.driverId) {
+      if (row.scannedByDriverId !== cmd.collectorUserId) {
         throw new ConflictError(
           "SCAN_CONFLICT_DIFFERENT_DRIVER",
           `Shipment ${cmd.trackingNumber} was already scanned by a different driver`,
@@ -588,7 +625,7 @@ export class PickupService {
         scanStatus: "SCANNED",
         scannedAt: cmd.scannedAt,
         recordedAt: new Date(),
-        scannedByDriverId: cmd.driverId,
+        scannedByDriverId: cmd.collectorUserId,
         idempotencyKey: cmd.idempotencyKey,
       })
       .where(eq(pickupShipments.id, row.id));
@@ -603,6 +640,11 @@ export class PickupService {
         pickupRequestId: pickup.id,
         shipmentId: row.shipmentId,
         trackingNumber: row.trackingNumber,
+        // Two ids, because they answer two questions. `collectorUserId` is WHO
+        // scanned. `driverId` is the custody holder the shipment ledger records,
+        // and must be a `drivers.id` or null (a commercial is not a driver). A
+        // user id here would put a non-driver id in `shipment_events.driver_id`.
+        collectorUserId: cmd.collectorUserId,
         driverId: cmd.driverId,
         scannedAt: cmd.scannedAt.toISOString(),
       },
@@ -646,11 +688,11 @@ export class PickupService {
       };
 
       if (target === "ASSIGNED") {
-        payload["driverId"] = updated.assignedDriverId;
+        payload["collectorUserId"] = updated.assignedDriverId;
         payload["routeStopId"] = updated.assignedRouteStopId;
       }
       if (target === "COLLECTED") {
-        payload["driverId"] = updated.assignedDriverId;
+        payload["collectorUserId"] = updated.assignedDriverId;
         payload["actualParcelCount"] = updated.actualParcelCount;
         payload["estimatedParcelCount"] = updated.estimatedParcelCount;
         payload["countVariance"] =
@@ -895,6 +937,68 @@ async function lockAssignedPickup(tx: TenantTransaction, id: string): Promise<Pi
     );
   }
   return pickup;
+}
+
+/**
+ * Only the assigned collector may scan parcels into a run or close it.
+ *
+ * ⚠️ `pickup:collect` is held by every driver, hub operator and commercial in
+ * the tenant. Without this check any of them could scan parcels into a
+ * colleague's run. Each scan moves real custody (`pickup.parcel_scanned` →
+ * `picked_up`), so the ledger would record the wrong person holding parcels
+ * they never touched. The check runs after the row lock, so the assignee cannot
+ * change between the check and the write.
+ */
+function assertCollector(pickup: PickupRequest, ctx: CommandContext): void {
+  if (pickup.assignedDriverId !== ctx.actorId) {
+    throw new ForbiddenError("This pickup is assigned to someone else.");
+  }
+}
+
+/**
+ * The `drivers.id` behind a login, or null when the user is not a driver.
+ *
+ * A raw, RLS-scoped read of the fleet module's table rather than an injected
+ * service, the same pattern `InvoiceService.partiesFor` uses. Pickup and fleet
+ * sit in the same layer and must not import each other. Unique by migration 0043.
+ */
+async function driverIdOfUser(tx: TenantTransaction, userId: string): Promise<string | null> {
+  const rows = await tx.execute<{ id: string }>(
+    sql`select id from drivers where user_id = ${userId}`,
+  );
+  return rows[0]?.id ?? null;
+}
+
+/**
+ * The login of the driver dispatch is sending, the user id a collector is
+ * identified by from here on.
+ *
+ * Refuses a driver who could never act on the assignment: one with no login
+ * cannot authenticate to scan, and one who is not ACTIVE must not be sent out.
+ * Failing at assignment beats a run nobody can complete, discovered at the
+ * merchant's door.
+ */
+async function collectorLoginOf(tx: TenantTransaction, driverId: string): Promise<string> {
+  const rows = await tx.execute<{ user_id: string | null; status: string }>(
+    sql`select user_id, status from drivers where id = ${driverId}`,
+  );
+  const driver = rows[0];
+  if (driver === undefined) {
+    throw new NotFoundError("Driver");
+  }
+  if (driver.status !== "ACTIVE") {
+    throw new BusinessRuleError(
+      "DRIVER_NOT_ACTIVE",
+      `A ${driver.status} driver cannot be assigned a pickup.`,
+    );
+  }
+  if (driver.user_id === null) {
+    throw new BusinessRuleError(
+      "DRIVER_HAS_NO_LOGIN",
+      "This driver has no login yet, so they could not scan the parcels. Link a user account first.",
+    );
+  }
+  return driver.user_id;
 }
 
 async function countByStatus(

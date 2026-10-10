@@ -50,12 +50,12 @@ export class PickupScanEventHandler implements EventHandler {
     }
 
     const shipmentId = uuidOf(event.payload["shipmentId"]);
-    const driverId = uuidOf(event.payload["driverId"]);
     const pickupRequestId = uuidOf(event.payload["pickupRequestId"]);
-    if (shipmentId === null || driverId === null || pickupRequestId === null) {
+    const { collectorUserId, driverId } = collectorOf(event.payload);
+    if (shipmentId === null || collectorUserId === null || pickupRequestId === null) {
       throw new BusinessRuleError(
         "PICKUP_SCAN_EVENT_MALFORMED",
-        `pickup.parcel_scanned ${event.eventId} is missing shipmentId/driverId/pickupRequestId`,
+        `pickup.parcel_scanned ${event.eventId} is missing shipmentId/collectorUserId/pickupRequestId`,
       );
     }
 
@@ -64,7 +64,14 @@ export class PickupScanEventHandler implements EventHandler {
     // and is what the custody ledger must record (domain §3.4 rule 5), not the
     // moment the sync happened to reach us.
     const occurredAt = dateOf(event.payload["scannedAt"]) ?? event.occurredAt;
-    const actor: EventActor = { actorType: "DRIVER", actorId: driverId };
+    // The event actor is WHO scanned, a user id, as on every other command
+    // (`ctxOf` in the controller). A non-driver collector is recorded as staff,
+    // the type every non-driver user already maps to.
+    const actor: EventActor = {
+      actorType: driverId === null ? "DISPATCHER" : "DRIVER",
+      actorId: collectorUserId,
+    };
+    const driver = driverId === null ? {} : { driverId };
 
     // Consumers run outside any request, so tenant context is re-established from
     // the envelope before anything touches an RLS-protected table.
@@ -88,7 +95,7 @@ export class PickupScanEventHandler implements EventHandler {
             {
               eventType: "assigned",
               idempotencyKey: `pickup-scan:${event.eventId}#assigned`,
-              driverId,
+              ...driver,
               occurredAt,
               payload: {
                 pickupRequestId,
@@ -100,11 +107,11 @@ export class PickupScanEventHandler implements EventHandler {
           );
         }
 
-        await this.shipments.recordPickup(
+        await this.shipments.recordPickupScan(
           shipmentId,
           {
             idempotencyKey: `pickup-scan:${event.eventId}`,
-            driverId,
+            ...driver,
             occurredAt,
             ...(trackingNumber === null ? {} : { scannedBarcode: trackingNumber }),
             metadata: { pickupRequestId },
@@ -114,6 +121,27 @@ export class PickupScanEventHandler implements EventHandler {
       },
     );
   }
+}
+
+/**
+ * Who scanned, and which driver (if any) now holds the parcel.
+ *
+ * Current events carry both: `collectorUserId` (a user) and `driverId` (a
+ * `drivers.id`, or null for a non-driver collector). Events published before
+ * that split carried only `driverId`, and it held the scanner's USER id. Such an
+ * event still in a stream or the dead-letter queue is read as "collector = that
+ * user, driver unknown". Its user id never reaches a driver-id column again,
+ * and route start assigns real driver custody when the parcel goes out.
+ */
+function collectorOf(payload: Readonly<Record<string, unknown>>): {
+  readonly collectorUserId: string | null;
+  readonly driverId: string | null;
+} {
+  const collectorUserId = uuidOf(payload["collectorUserId"]);
+  if (collectorUserId === null) {
+    return { collectorUserId: uuidOf(payload["driverId"]), driverId: null };
+  }
+  return { collectorUserId, driverId: uuidOf(payload["driverId"]) };
 }
 
 function strOf(value: unknown): string | null {

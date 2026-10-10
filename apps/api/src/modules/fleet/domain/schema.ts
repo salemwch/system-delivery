@@ -89,6 +89,8 @@ export const drivers = pgTable(
   (table) => [
     uniqueIndex("drivers_tenant_employee_uq").on(table.tenantId, table.employeeCode),
     uniqueIndex("drivers_tenant_phone_uq").on(table.tenantId, table.phone),
+    // I26: one login is at most one driver (migration 0043).
+    uniqueIndex("drivers_tenant_user_uq").on(table.tenantId, table.userId),
     index("drivers_tenant_status_idx").on(table.tenantId, table.status),
   ],
 );
