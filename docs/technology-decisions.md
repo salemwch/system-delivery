@@ -227,7 +227,7 @@ Versions verified against official sources on **2026-07-22**. Anything marked *"
 | Component | Pinned version | Support status |
 |---|---|---|
 | Node.js | **24.x LTS** | Active LTS, EOL 2028-04-30 |
-| NestJS | **11.1.28** | Current stable; v12 deferred (see §3.1) |
+| NestJS | **11.2.7** | Current stable; v12 deferred (see §3.1). Raised from 11.1.28 on 2026-10-10 for a `@nestjs/platform-fastify` middleware bypass |
 | TypeScript | 5.x — pin at kickoff | — |
 | Go | **1.26.5** | Current stable (2026-07-07) |
 | Python | **3.14.6** | Current stable (2026-06-10); 3.15 in beta — not for production |
@@ -237,7 +237,8 @@ Versions verified against official sources on **2026-07-22**. Anything marked *"
 | Valkey | 8.1+ | BSD-3-Clause, Linux Foundation |
 | Redpanda (V2) | pin at V2 kickoff | Kafka API compatible |
 | OpenSearch (V2) | 3.x | Apache-2.0 |
-| Next.js | **16.2.x** | Note: a security release landed 2026-07-21 — pin to that patch or later |
+| Next.js | **16.3.8** | Raised from 16.2.12 on 2026-10-10: 16.2.x has unauthenticated RCE advisories (Image Optimizer, `next/og`). 16.3.8 is the lowest release clearing all of them |
+| Fastify | **5.12.5** | Raised from 5.10.0 on 2026-10-10 (authentication-bypass advisory). Forced for the Nest adapter too via `pnpm-workspace.yaml` `overrides` |
 | React | **19.2** | Bundled with Next.js 16 |
 | Expo SDK | **57** | Ships React Native 0.86; New Architecture always enabled |
 | React Native | **0.86** | Via Expo SDK 57 |

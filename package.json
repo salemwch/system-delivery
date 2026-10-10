@@ -43,7 +43,7 @@
     "eslint-plugin-import-x": "4.17.1",
     "globals": "16.5.0",
     "knip": "6.29.0",
-    "markdownlint-cli2": "0.23.1",
+    "markdownlint-cli2": "0.23.3",
     "prettier": "3.9.6",
     "turbo": "2.10.6",
     "typescript": "5.9.3",

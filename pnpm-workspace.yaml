@@ -8,3 +8,27 @@ onlyBuiltDependencies:
   - "@swc/core"
   - esbuild
   - unrs-resolver
+
+# Security overrides: EXACT versions only, each with the reason it exists.
+# Remove an entry once the parent that pins the vulnerable version ships a fix.
+overrides:
+  # @nestjs/platform-fastify@11.2.7 pins its own fastify at 5.11.3, below the
+  # 5.12.2 fix for an authentication bypass via malformed URLs (and 5.12.5 for
+  # a DoS). The adapter builds the HTTP server from THAT copy, so bumping the
+  # api's direct dependency alone would leave the vulnerable one serving.
+  fastify: 5.12.5
+  # eslint-plugin-boundaries (7.1.0, and still 7.2.0) pins handlebars 4.7.9:
+  # critical JavaScript-injection advisories, fixed in 4.7.10. Patch-level, so
+  # the plugin's template use is unchanged. Dev-only (lint time).
+  handlebars: 4.7.10
+
+# Audit exceptions: one GHSA per entry, each with why it is unreachable here.
+# Reviewed 2026-10-10. Re-check whenever the parent package is upgraded.
+auditConfig:
+  ignoreGhsas:
+    # braces@3.0.3 (stack-exhaustion DoS on deeply nested brace patterns). The
+    # advisory has NO patched version. It is reached only through micromatch in
+    # eslint-plugin-boundaries, which expands glob patterns written in this
+    # repo's own lint config at lint time. The exploit needs attacker-controlled
+    # patterns, and nothing in the shipped apps depends on it.
+    - GHSA-vfj7-8cjw-p6xm
