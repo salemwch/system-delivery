@@ -15,7 +15,7 @@
 | **Content type** | `application/json; charset=utf-8` |
 | **Auth** | `Authorization: Bearer <JWT>` — except `/track/*` (token in path) and `/auth/*` |
 | **Tenant** | Resolved **from the token claim only**. A client-supplied `X-Tenant-Id` header is rejected |
-| **Idempotency** | `Idempotency-Key: <UUIDv7>` **required on every** `POST`/`PATCH`/`DELETE` |
+| **Idempotency** | `Idempotency-Key: <UUIDv7>` **required on every** `POST`/`PATCH`/`DELETE`. For shipment commands a key is bound to the shipment, the caller, the command and a fingerprint of the request (invariant I29). A replay of the same request by the same caller returns the **original** response with `Idempotency-Replayed: true` and repeats no effect. Any other reuse is `422 IDEMPOTENCY_KEY_REUSED`. Follows [draft-ietf-httpapi-idempotency-key-header-07](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header), with one deliberate difference: a duplicate that arrives **while the first is still running** waits for it and then replays, instead of the draft's `409`, because the shipment row lock already serialises them. Keys do not expire yet; an expiry policy is an open item (§13) |
 | **Locale** | `Accept-Language: ar \| fr \| en` — drives error messages and notification language |
 | **Correlation** | `X-Request-Id` echoed in responses and logs; generated if absent |
 
@@ -53,7 +53,7 @@ Clients branch on `code`, **never** on `detail` text (which is localised).
 | `VEHICLE_IN_USE` | 409 | Vehicle already in an open shift |
 | `ROUTE_NOT_DRAFT` | 409 | Mutation attempted on a published route |
 | `MANIFEST_SEALED` | 409 | Contents immutable |
-| `IDEMPOTENCY_KEY_REUSED` | 422 | Same key, different body |
+| `IDEMPOTENCY_KEY_REUSED` | 422 | Same key, different request: another shipment, caller, command or body. Says nothing about the earlier use |
 | `POD_REQUIRED` | 422 | Delivery attempted without proof |
 | `COD_AMOUNT_MISMATCH` | 422 | Collected ≠ expected without an allowed reason |
 | `VARIANCE_REASON_REQUIRED` | 422 | Remittance variance without explanation |
@@ -852,3 +852,4 @@ Approve is rejected with `403 FORBIDDEN` when the approver created the draft —
 | AC2 | Confirm failure-reason taxonomy with a real Tunisian courier | MVP-O4 / DM5 |
 | AC3 | Decide whether partial COD collection needs an API shape | H3 / DM3 |
 | AC4 | Confirm driver token TTL of 1 hour against real connectivity in rural governorates | Field test |
+| AC5 | Idempotency-key expiry: how long `shipment_command_keys` rows are kept, and the retention job that purges them. Must exceed the longest offline window of the driver app | Driver-app offline budget + retention jobs (S5) |

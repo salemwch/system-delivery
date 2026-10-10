@@ -281,7 +281,7 @@ Eight roles, fixed. Custom role definition is deferred.
 | **Register a merchant** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | **Mint a merchant portal login** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ➖ portfolio |
 | **Assign a merchant's commercial** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Read the recipient address book | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Read the recipient address book | ✅ | ✅ | ✅ | ✅ | ➖ own shipments' recipients (I28, 2026-10-10) | ❌ | ❌ |
 | Post ledger adjustment | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Manage users & roles | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Override shipment status | ✅ | ➖ audited | ❌ | ❌ | ❌ | ❌ | ❌ |

@@ -661,11 +661,13 @@ describe("shipment", () => {
       );
       const key = randomUUID();
       const driverId = randomUUID();
+      // A replay is the SAME caller sending the same request again (I29). The
+      // staff command is recorded by one dispatcher, twice.
       const first = await asTenant(tenantId, () =>
-        shipments.recordPickup(shipment.id, { idempotencyKey: key, driverId }, driver()),
+        shipments.recordPickup(shipment.id, { idempotencyKey: key, driverId }, dispatcher),
       );
       const second = await asTenant(tenantId, () =>
-        shipments.recordPickup(shipment.id, { idempotencyKey: key, driverId }, driver()),
+        shipments.recordPickup(shipment.id, { idempotencyKey: key, driverId }, dispatcher),
       );
       expect(first.lastSequence).toBe(second.lastSequence);
 

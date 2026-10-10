@@ -77,24 +77,26 @@ export class DatabaseService implements OnModuleDestroy {
         this.db.transaction(async (tx) => {
           const state = TenantContext.current();
 
-          // The two sub-tenant narrowings: one merchant (I24), or the portfolio
-          // of merchants a commercial manages (I25). Never both — but both are
-          // ALWAYS written, never conditionally, because leaving one unset would
-          // let a value from an earlier transaction on this pooled connection
-          // survive into this one. The empty string means "no narrowing", which
-          // is what the RLS predicates test for.
+          // The three sub-tenant narrowings: one merchant (I24), the portfolio
+          // of merchants a commercial manages (I25), or what one driver was
+          // assigned (I28). ALL are ALWAYS written, never conditionally, because
+          // leaving one unset would let a value from an earlier transaction on
+          // this pooled connection survive into this one. The empty string
+          // means "no narrowing", which is what the RLS predicates test for.
           //
-          // All three go in ONE statement: it is a single round trip instead of
-          // three on the hot path of every request, and the settings cannot end
+          // All four go in ONE statement: it is a single round trip instead of
+          // four on the hot path of every request, and the settings cannot end
           // up half-applied.
           const merchantScope = state?.merchantId ?? "";
           const accountManagerScope = state?.accountManagerId ?? "";
+          const driverScope = state?.driverId ?? "";
 
           await tx.execute(
             sql`select
                   set_config('app.current_tenant_id', ${scopedTenantId}, true),
                   set_config('app.current_merchant_id', ${merchantScope}, true),
-                  set_config('app.current_account_manager_id', ${accountManagerScope}, true)`,
+                  set_config('app.current_account_manager_id', ${accountManagerScope}, true),
+                  set_config('app.current_driver_id', ${driverScope}, true)`,
           );
 
           return fn(tx);

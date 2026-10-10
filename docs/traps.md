@@ -69,6 +69,14 @@ Reference for implementation pitfalls discovered during the build. Read the sect
 - **Never take a `driverId` from a driver's request body.** Resolve it from the login: `select id from drivers where user_id = <sub>`. Migration 0043 makes that lookup unique. A user id is not a driver id. Delivery and failure also require the parcel to be in that driver's custody (I26). A body field let any `shipment:deliver` holder book a colleague's COD.
 - **A pickup collector is a USER, the custody holder is a DRIVER.** `pickup_requests.assigned_driver_id` and `pickup_shipments.scanned_by_driver_id` hold user ids despite their names (0044). `pickup.parcel_scanned` carries `collectorUserId` (who) and `driverId` (a `drivers.id` or null). Only the assignee may scan or collect (I27). Never put a user id in a driver-id field.
 - **Driver test fixtures need a real login.** Use `seedDriverLogin` from `test/database.harness.ts`, and send `out_for_delivery` WITH that `driverId`. Without one, the parcel is in a DRIVER custody nobody holds and every delivery is refused.
+- **"Is this caller a driver?" is the ROLE claim, never the login channel.** `principal.actorType === "driver"` only means a phone-code session; a DRIVER who used a password is still a driver. `commandContextOf` and `TenantContextInterceptor` both key on `roles.includes("DRIVER")` (audit F1).
+- **Driver reads are scoped in RLS (I28).** `app.current_driver_id` is always written by `withTenant`, like the other two scopes. Ownership is `shipments.last_driver_id`, set ONLY by `ShipmentEventService.applyTo` when an event names a driver; nothing else may write it. A new child table of `shipments` must narrow by `EXISTS` on its parent for driver sessions, or it becomes a way around the scope.
+- **Idempotency keys go through `runCommand` (I29), never a bare "is this key in shipment_events?" check.** That check was tenant-wide and ran before authorization. A test that "replays" with a fresh random caller each time is two callers, and correctly gets 422.
+
+## Idempotency
+
+- **Binding:** `caller` for client keys (shipment, caller, command, request fingerprint must all match); `fact` for server-derived keys of internal orchestration (shipment and command only), so a second dispatcher can retry a half-published route. Never expose a `fact` command over HTTP.
+- **Replay returns the RECORDED outcome**, decoded through `shipment-snapshot.ts`. Its `_SnapshotIsShipment` type proof fails compilation when a `shipments` column changes and the codec does not. Fix the codec; do not loosen the proof.
 
 ## PII / Crypto
 

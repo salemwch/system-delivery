@@ -35,7 +35,15 @@ import type {
   RecordPickupScanInput,
 } from "../domain/dtos.js";
 import { haversineMetres } from "../domain/geo.js";
-import { pod, shipmentEvents, shipmentLegs, shipments } from "../domain/schema.js";
+import { requestFingerprint } from "../domain/request-fingerprint.js";
+import { decodeShipment, encodeShipment } from "../domain/shipment-snapshot.js";
+import {
+  pod,
+  shipmentCommandKeys,
+  shipmentEvents,
+  shipmentLegs,
+  shipments,
+} from "../domain/schema.js";
 import type { Shipment } from "../domain/schema.js";
 import { generateTrackingNumber } from "../domain/tracking-number.js";
 import { checkTransition, isInCustody, toShipmentStatus } from "../domain/shipment-status.js";
@@ -143,14 +151,37 @@ export class ShipmentService {
     private readonly operatingConfig: OperatingConfigService,
   ) {}
 
+  /**
+   * Outcomes returned from a replayed idempotency key (I29), so the HTTP layer
+   * can mark the response `Idempotency-Replayed: true` without every command
+   * changing its return type. A WeakSet keyed by object identity: each replay
+   * decodes a fresh object, nothing is shared between requests, and entries
+   * are collected with the response.
+   */
+  private readonly replays = new WeakSet<Shipment>();
+
+  /** Whether `shipment` is a recorded outcome returned by a replay. */
+  isReplay(shipment: Shipment): boolean {
+    return this.replays.has(shipment);
+  }
+
   // ── Create ─────────────────────────────────────────────────────────────────
 
   async create(input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(createShipmentSchema, input);
+    const spec: CommandSpec = {
+      command: "create",
+      binding: "caller",
+      idempotencyKey: dto.idempotencyKey,
+      request: dto,
+    };
+    const requestHash = requestFingerprint(spec.request);
 
-    // Idempotent replay: a retried create returns the shipment already made and
-    // resolves no addresses a second time.
-    const prior = await this.findByIdempotencyKey(dto.idempotencyKey);
+    // Idempotent replay (I29): a retried create returns the shipment exactly as
+    // first created and resolves no addresses a second time. Only for the same
+    // caller and the same request; anything else is IDEMPOTENCY_KEY_REUSED,
+    // where this used to hand back whatever shipment the key had made.
+    const prior = await this.createReplay(spec, ctx, requestHash);
     if (prior !== null) {
       return prior;
     }
@@ -273,7 +304,9 @@ export class ShipmentService {
             }),
           });
 
-          return this.reload(tx, shipment.id);
+          const outcome = await this.reload(tx, shipment.id);
+          await this.recordUse(tx, outcome, spec, actorIdOf(ctx), requestHash);
+          return outcome;
         });
       } catch (error) {
         if (
@@ -290,12 +323,14 @@ export class ShipmentService {
             `A shipment with external reference "${dto.externalReference ?? ""}" already exists for this merchant.`,
           );
         }
-        if (isUniqueViolation(error, "shipment_events_tenant_idempotency_uq")) {
-          // A concurrent identical create won the race — return its result.
-          const raced = await this.findByIdempotencyKey(dto.idempotencyKey);
+        if (isKeyConflict(error)) {
+          // Another create holding this key committed first. Identical request
+          // from the same caller: return its outcome. Anything else: 422.
+          const raced = await this.createReplay(spec, ctx, requestHash);
           if (raced !== null) {
             return raced;
           }
+          throw keyReused();
         }
         throw error;
       }
@@ -337,7 +372,10 @@ export class ShipmentService {
 
   /** Staff record a collection on a driver's behalf. The driver is required. */
   async recordPickup(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
-    return this.applyPickup(id, parseWithZod(recordPickupSchema, input), ctx);
+    return this.applyPickup(id, parseWithZod(recordPickupSchema, input), ctx, {
+      command: "pickup",
+      binding: "caller",
+    });
   }
 
   /**
@@ -346,17 +384,24 @@ export class ShipmentService {
    * is optional; see {@link recordPickupScanSchema}.
    */
   async recordPickupScan(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
-    return this.applyPickup(id, parseWithZod(recordPickupScanSchema, input), ctx);
+    // `fact`: the key is `pickup-scan:<event id>`, and a redelivered event is
+    // exactly the retry it exists to absorb.
+    return this.applyPickup(id, parseWithZod(recordPickupScanSchema, input), ctx, {
+      command: "pickup_scan",
+      binding: "fact",
+    });
   }
 
   private async applyPickup(
     id: string,
     dto: RecordPickupScanInput,
     ctx: CommandContext,
+    kind: Pick<CommandSpec, "command" | "binding">,
   ): Promise<Shipment> {
     const occurredAt = dto.occurredAt ?? new Date();
+    const spec: CommandSpec = { ...kind, idempotencyKey: dto.idempotencyKey, request: dto };
 
-    return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+    return this.runCommand(id, spec, ctx, async (tx, shipment) => {
       const legId = dto.legId ?? (await this.firstLegId(tx, shipment.id));
       await this.events.applyTo(tx, snapshotOf(shipment), {
         eventType: "picked_up",
@@ -397,13 +442,20 @@ export class ShipmentService {
   async confirmDelivery(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(confirmDeliverySchema, input);
     const occurredAt = dto.occurredAt ?? new Date();
+    await this.requireLinkedDriver(ctx);
 
     // Distance is computed from the destination geocode; read it before the write
     // transaction so we never open a nested transaction on the address service.
     const pre = await this.getById(id);
     const distanceM = await this.podDistance(pre.destinationAddressId, dto.location);
 
-    return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+    const spec: CommandSpec = {
+      command: "deliver",
+      binding: "caller",
+      idempotencyKey: dto.idempotencyKey,
+      request: dto,
+    };
+    return this.runCommand(id, spec, ctx, async (tx, shipment) => {
       // Who delivered is decided before anything about HOW: authority first, so
       // a caller with no business touching this parcel learns nothing from the
       // COD and POD rules below.
@@ -547,11 +599,18 @@ export class ShipmentService {
   async recordFailedAttempt(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(recordFailedAttemptSchema, input);
     const occurredAt = dto.occurredAt ?? new Date();
+    await this.requireLinkedDriver(ctx);
 
     const pre = await this.getById(id);
     const distanceM = await this.podDistance(pre.destinationAddressId, dto.location);
 
-    return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+    const spec: CommandSpec = {
+      command: "fail",
+      binding: "caller",
+      idempotencyKey: dto.idempotencyKey,
+      request: dto,
+    };
+    return this.runCommand(id, spec, ctx, async (tx, shipment) => {
       const driverId = await this.requireCustodian(tx, shipment, "delivery_failed", ctx);
 
       const legId = dto.legId ?? (await this.firstLegId(tx, shipment.id));
@@ -697,7 +756,13 @@ export class ShipmentService {
     const dto = parseWithZod(initiateReturnSchema, input);
     const occurredAt = dto.occurredAt ?? new Date();
 
-    return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+    const spec: CommandSpec = {
+      command: "return",
+      binding: "caller",
+      idempotencyKey: dto.idempotencyKey,
+      request: dto,
+    };
+    return this.runCommand(id, spec, ctx, async (tx, shipment) => {
       const returnToAddressId = dto.returnToAddressId ?? shipment.originAddressId;
 
       await this.events.applyTo(tx, snapshotOf(shipment), {
@@ -744,8 +809,19 @@ export class ShipmentService {
   async completeReturn(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(completeReturnSchema, input);
     const occurredAt = dto.occurredAt ?? new Date();
+    // A DRIVER-role caller must be a linked driver (I26). Staff are not asked:
+    // a counter hand-back is booked to no driver by design.
+    if (ctx.actor.actorType === "DRIVER") {
+      await this.requireLinkedDriver(ctx);
+    }
 
-    return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+    const spec: CommandSpec = {
+      command: "return_complete",
+      binding: "caller",
+      idempotencyKey: dto.idempotencyKey,
+      request: dto,
+    };
+    return this.runCommand(id, spec, ctx, async (tx, shipment) => {
       const driverId = await this.returningDriver(tx, shipment, ctx);
       const legId = await this.openReturnLegId(tx, shipment.id);
 
@@ -879,7 +955,13 @@ export class ShipmentService {
     const dto = parseWithZod(cancelShipmentSchema, input);
     const occurredAt = dto.occurredAt ?? new Date();
 
-    return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+    const spec: CommandSpec = {
+      command: "cancel",
+      binding: "caller",
+      idempotencyKey: dto.idempotencyKey,
+      request: dto,
+    };
+    return this.runCommand(id, spec, ctx, async (tx, shipment) => {
       const status = toShipmentStatus(shipment.status);
       const wasInCustody = isInCustody(status);
       await this.events.applyTo(tx, snapshotOf(shipment), {
@@ -913,7 +995,15 @@ export class ShipmentService {
     const dto = parseWithZod(recordEventSchema, input);
     const occurredAt = dto.occurredAt ?? new Date();
 
-    return this.runCommand(id, dto.idempotencyKey, async (tx, shipment) => {
+    // `fact`: internal only (no HTTP route). Its keys are server-derived and
+    // name one fact about one shipment; see IdempotencyBinding.
+    const spec: CommandSpec = {
+      command: `event:${dto.eventType}`,
+      binding: "fact",
+      idempotencyKey: dto.idempotencyKey,
+      request: dto,
+    };
+    return this.runCommand(id, spec, ctx, async (tx, shipment) => {
       const legId = dto.legId ?? (await this.firstLegId(tx, shipment.id));
       await this.events.applyTo(tx, snapshotOf(shipment), {
         eventType: dto.eventType,
@@ -1119,24 +1209,126 @@ export class ShipmentService {
   // ── Internals ────────────────────────────────────────────────────────────────
 
   /**
-   * Runs a mutating command in one tenant transaction: locks the shipment row
-   * (which serialises concurrent events and makes the sequence monotonic), skips
-   * the work if this idempotency key was already applied, and returns the fresh
-   * shipment. `fn` performs the appends via {@link ShipmentEventService}.
+   * Runs a mutating command in one tenant transaction, exactly once per
+   * idempotency key (invariant I29).
+   *
+   * Order is the security property:
+   *   1. Lock the shipment row. Under RLS, so a caller who cannot see the
+   *      shipment gets 404 before any idempotency state is consulted.
+   *   2. Look the key up. A prior use must match this request's binding
+   *      ({@link assertSameRequest}) or it is a 422 that discloses nothing. A
+   *      match returns the RECORDED outcome; nothing is re-applied.
+   *   3. Otherwise apply `fn` and record the key, with its binding and the
+   *      resulting shipment, in the same transaction.
+   *
+   * ⚠️ This replaced a tenant-wide "does any event carry this key?" check that
+   * ran before authorization: a key from parcel X turned a delivery of parcel Y
+   * into a silent 200, and a non-custodian got 200 instead of 403 by reusing a
+   * key (audit finding F2).
+   *
+   * Concurrency: identical requests serialise on the row lock, and the second
+   * finds the first's key. Requests reusing one key on DIFFERENT shipments race
+   * to insert it; the loser's unique violation rolls back its whole command and
+   * becomes the 422 ({@link isKeyConflict}).
    */
   private async runCommand(
     id: string,
-    idempotencyKey: string,
+    spec: CommandSpec,
+    ctx: CommandContext,
     fn: (tx: TenantTransaction, shipment: Shipment) => Promise<void>,
   ): Promise<Shipment> {
-    return this.database.withTenant(async (tx) => {
-      const shipment = await this.lock(tx, id);
-      const applied = await this.isApplied(tx, shipment.tenantId, idempotencyKey);
-      if (!applied) {
+    const requestHash = requestFingerprint(spec.request);
+    try {
+      return await this.database.withTenant(async (tx) => {
+        const shipment = await this.lock(tx, id);
+        const prior = await this.priorUse(tx, spec.idempotencyKey);
+        if (prior !== null) {
+          assertSameRequest(prior, spec, { shipmentId: id, actorId: actorIdOf(ctx), requestHash });
+          return this.recordedOutcome(tx, spec.idempotencyKey);
+        }
         await fn(tx, shipment);
+        const outcome = await this.reload(tx, id);
+        await this.recordUse(tx, outcome, spec, actorIdOf(ctx), requestHash);
+        return outcome;
+      });
+    } catch (error) {
+      if (isKeyConflict(error)) {
+        throw keyReused();
       }
-      return this.reload(tx, id);
+      throw error;
+    }
+  }
+
+  /** How an idempotency key was last used, or null if never (I29). */
+  private async priorUse(tx: TenantTransaction, idempotencyKey: string): Promise<PriorUse | null> {
+    const rows = await tx
+      .select({
+        shipmentId: shipmentCommandKeys.shipmentId,
+        actorId: shipmentCommandKeys.actorId,
+        command: shipmentCommandKeys.command,
+        requestHash: shipmentCommandKeys.requestHash,
+      })
+      .from(shipmentCommandKeys)
+      .where(eq(shipmentCommandKeys.idempotencyKey, idempotencyKey))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Records a key's use, with the shipment as the command left it.
+   *
+   * The outcome goes through {@link encodeShipment}, whose schema is proven
+   * equal to `Shipment` at compile time, so the replay decodes the same typed
+   * row: bigints as bigints, instants as Dates.
+   */
+  private async recordUse(
+    tx: TenantTransaction,
+    outcome: Shipment,
+    spec: CommandSpec,
+    actorId: string | null,
+    requestHash: string,
+  ): Promise<void> {
+    await tx.insert(shipmentCommandKeys).values({
+      tenantId: outcome.tenantId,
+      idempotencyKey: spec.idempotencyKey,
+      shipmentId: outcome.id,
+      actorId,
+      command: spec.command,
+      requestHash,
+      result: encodeShipment(outcome),
     });
+  }
+
+  /** The shipment exactly as the original command left it. */
+  private async recordedOutcome(tx: TenantTransaction, idempotencyKey: string): Promise<Shipment> {
+    const rows = await tx
+      .select({ result: shipmentCommandKeys.result })
+      .from(shipmentCommandKeys)
+      .where(eq(shipmentCommandKeys.idempotencyKey, idempotencyKey))
+      .limit(1);
+    const row = rows[0];
+    if (row === undefined) {
+      throw new NotFoundError("Shipment");
+    }
+    const outcome = decodeShipment(row.result);
+    this.replays.add(outcome);
+    return outcome;
+  }
+
+  /**
+   * Refuses a driver-only command from a login with no driver record, before
+   * anything about the shipment is read (invariant I26).
+   *
+   * Up front, not only inside the transaction: under the driver read scope (I28)
+   * an unlinked DRIVER sees no shipment at all, and answering 404 would tell
+   * the client the parcel does not exist when the truth is that this login
+   * may not act. The in-transaction checks still run, under the row lock.
+   */
+  private async requireLinkedDriver(ctx: CommandContext): Promise<void> {
+    const driverId = await this.database.withTenant((tx) => this.callerDriverId(tx, ctx));
+    if (driverId === null) {
+      throw new ForbiddenError("This login is not linked to a driver.");
+    }
   }
 
   /**
@@ -1253,47 +1445,32 @@ export class ShipmentService {
     return row;
   }
 
-  private async isApplied(
-    tx: TenantTransaction,
-    tenantId: string,
-    idempotencyKey: string,
-  ): Promise<boolean> {
-    const rows = await tx
-      .select({ id: shipmentEvents.id })
-      .from(shipmentEvents)
-      .where(
-        and(
-          eq(shipmentEvents.tenantId, tenantId),
-          eq(shipmentEvents.idempotencyKey, idempotencyKey),
-        ),
-      )
-      .limit(1);
-    return rows.length > 0;
-  }
-
-  private async findByIdempotencyKey(idempotencyKey: string): Promise<Shipment | null> {
+  /**
+   * The recorded outcome of an earlier create with this key, or null if the key
+   * is unused (I29).
+   *
+   * A create names no shipment up front, so its binding is caller, command and
+   * request. The recorded row is read from the key table, not from `shipments`,
+   * so a replay returns the shipment as first created.
+   */
+  private async createReplay(
+    spec: CommandSpec,
+    ctx: CommandContext,
+    requestHash: string,
+  ): Promise<Shipment | null> {
     return this.database.withTenant(async (tx) => {
-      const tenantId = TenantContext.requireTenantId();
-      const rows = await tx
-        .select({ shipmentId: shipmentEvents.shipmentId })
-        .from(shipmentEvents)
-        .where(
-          and(
-            eq(shipmentEvents.tenantId, tenantId),
-            eq(shipmentEvents.idempotencyKey, idempotencyKey),
-          ),
-        )
-        .limit(1);
-      const found = rows[0];
-      if (found === undefined) {
+      const prior = await this.priorUse(tx, spec.idempotencyKey);
+      if (prior === null) {
         return null;
       }
-      const shipmentRows = await tx
-        .select()
-        .from(shipments)
-        .where(eq(shipments.id, found.shipmentId))
-        .limit(1);
-      return shipmentRows[0] ?? null;
+      // The shipment id is taken from the prior use itself: there is no other
+      // to compare, so the binding reduces to caller, command and request.
+      assertSameRequest(prior, spec, {
+        shipmentId: prior.shipmentId,
+        actorId: actorIdOf(ctx),
+        requestHash,
+      });
+      return this.recordedOutcome(tx, spec.idempotencyKey);
     });
   }
 
@@ -1404,6 +1581,80 @@ function advance(
   result: { status: ShipmentSnapshot["status"]; sequence: bigint },
 ): ShipmentSnapshot {
   return { ...snap, status: result.status, lastSequence: result.sequence };
+}
+
+/**
+ * What an idempotency key must stay bound to (invariant I29).
+ *
+ * - `caller`: client-supplied keys on HTTP commands. A replay must be the same
+ *   shipment, the same authenticated caller, the same command, and the same
+ *   request (fingerprint), or it is IDEMPOTENCY_KEY_REUSED.
+ * - `fact`: server-derived keys on internal orchestration (`assign:<stop>:<leg>`,
+ *   `ofd:<route>:<leg>`, `pickup-scan:<event>`). The key already names one fact
+ *   about one shipment, and the system retries it on purpose: any dispatcher
+ *   may retry a half-published route, and an event may be redelivered. Binding
+ *   those to caller or payload would turn a legitimate retry into a 422. Only
+ *   shipment and command must match. None of these entry points is reachable
+ *   over HTTP.
+ */
+type IdempotencyBinding = "caller" | "fact";
+
+interface CommandSpec {
+  readonly command: string;
+  readonly idempotencyKey: string;
+  /** The validated request; the key itself is excluded from the fingerprint. */
+  readonly request: Readonly<Record<string, unknown>>;
+  readonly binding: IdempotencyBinding;
+}
+
+interface PriorUse {
+  readonly shipmentId: string;
+  readonly actorId: string | null;
+  readonly command: string;
+  readonly requestHash: string;
+}
+
+const IDEMPOTENCY_CONSTRAINTS = [
+  // Two commands racing to record the same key.
+  "shipment_command_keys_pkey",
+  // An event-level collision: a key already carried by an earlier event,
+  // including events recorded before the key table existed (0046).
+  "shipment_events_tenant_idempotency_uq",
+] as const;
+
+function keyReused(): BusinessRuleError {
+  // Deliberately says nothing about the earlier use: not which shipment, not
+  // whose, not what it did. docs/05-api-contracts.md §1.2.
+  return new BusinessRuleError(
+    "IDEMPOTENCY_KEY_REUSED",
+    "This idempotency key was already used for a different request.",
+  );
+}
+
+/** A replay is honoured only when it is the same request (I29). */
+function assertSameRequest(
+  prior: PriorUse,
+  spec: CommandSpec,
+  current: {
+    readonly shipmentId: string;
+    readonly actorId: string | null;
+    readonly requestHash: string;
+  },
+): void {
+  const sameFact = prior.shipmentId === current.shipmentId && prior.command === spec.command;
+  const sameCaller = prior.actorId === current.actorId && prior.requestHash === current.requestHash;
+  if (!sameFact || (spec.binding === "caller" && !sameCaller)) {
+    throw keyReused();
+  }
+}
+
+/** Whether `error` is a unique violation on an idempotency constraint: a reused key. */
+function isKeyConflict(error: unknown): boolean {
+  return IDEMPOTENCY_CONSTRAINTS.some((name) => isUniqueViolation(error, name));
+}
+
+function actorIdOf(ctx: CommandContext): string | null {
+  return ctx.actor.actorId ?? null;
 }
 
 /** Whether `driverId` physically holds the parcel, according to the custody projection. */

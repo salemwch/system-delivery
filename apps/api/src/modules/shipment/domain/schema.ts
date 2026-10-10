@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   smallint,
   text,
@@ -89,6 +90,11 @@ export const shipments = pgTable(
       .default(sql`'{}'::text[]`),
     currentCustodyType: text("current_custody_type"),
     currentCustodyId: uuid("current_custody_id"),
+    /**
+     * The drivers.id most recently named on the custody chain (invariant I28).
+     * Written only by ShipmentEventService.applyTo; drives the driver read scope.
+     */
+    lastDriverId: uuid("last_driver_id"),
     customFields: jsonb("custom_fields")
       .notNull()
       .default(sql`'{}'::jsonb`),
@@ -102,6 +108,9 @@ export const shipments = pgTable(
     index("shipments_tenant_status_idx").on(table.tenantId, table.status),
     index("shipments_tenant_merchant_idx").on(table.tenantId, table.merchantId),
     index("shipments_tenant_recipient_idx").on(table.tenantId, table.recipientId),
+    index("shipments_tenant_last_driver_idx")
+      .on(table.tenantId, table.lastDriverId)
+      .where(sql`${table.lastDriverId} is not null`),
   ],
 );
 
@@ -245,6 +254,31 @@ export const shipmentAmendments = pgTable(
     uniqueIndex("shipment_amendments_one_pending_uq").on(table.shipmentId),
     index("shipment_amendments_queue_idx").on(table.tenantId, table.createdAt),
     index("shipment_amendments_shipment_idx").on(table.shipmentId, table.createdAt),
+  ],
+);
+
+/**
+ * Idempotency keys of shipment commands, bound to what they were used for
+ * (invariant I29, migration 0046). Append-only: the app role holds no UPDATE.
+ */
+export const shipmentCommandKeys = pgTable(
+  "shipment_command_keys",
+  {
+    tenantId: uuid("tenant_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    shipmentId: uuid("shipment_id").notNull(),
+    /** The authenticated user, or null for system work. */
+    actorId: uuid("actor_id"),
+    command: text("command").notNull(),
+    /** SHA-256 hex of the canonical request, key excluded. */
+    requestHash: text("request_hash").notNull(),
+    /** The shipment row as the command left it (the replayed outcome). */
+    result: jsonb("result").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.tenantId, table.idempotencyKey] }),
+    index("shipment_command_keys_shipment_idx").on(table.tenantId, table.shipmentId),
   ],
 );
 

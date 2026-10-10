@@ -1,10 +1,20 @@
 import { Injectable } from "@nestjs/common";
 import type { CallHandler, ExecutionContext, NestInterceptor } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import { Observable } from "rxjs";
 
-import { TenantContext, asTenantId } from "../../../shared/database/index.js";
+import {
+  DatabaseService,
+  NO_DRIVER,
+  TenantContext,
+  asTenantId,
+} from "../../../shared/database/index.js";
+import type { Principal } from "../application/token.service.js";
 import { accountManagerScope } from "../domain/permissions.js";
 import type { AuthenticatedRequest } from "./request-context.js";
+
+/** The role whose reads are narrowed to its own assignments (invariant I28). */
+const DRIVER_ROLE = "DRIVER";
 
 /**
  * A user agent is attacker-controlled and unbounded. Truncated before it is
@@ -39,6 +49,8 @@ const MAX_USER_AGENT_LENGTH = 512;
  */
 @Injectable()
 export class TenantContextInterceptor implements NestInterceptor {
+  constructor(private readonly database: DatabaseService) {}
+
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const principal = request.principal;
@@ -55,7 +67,7 @@ export class TenantContextInterceptor implements NestInterceptor {
     // Spread conditionally rather than assigning `undefined`: under
     // `exactOptionalPropertyTypes` an explicit undefined is not an absent
     // property.
-    const state = {
+    const base = {
       tenantId: asTenantId(principal.tenantId),
       actorId: principal.userId,
       actorType: principal.actorType,
@@ -81,17 +93,61 @@ export class TenantContextInterceptor implements NestInterceptor {
 
     return new Observable((subscriber) => {
       let teardown: (() => void) | undefined;
+      let closed = false;
 
-      TenantContext.run(state, () => {
-        const subscription = next.handle().subscribe({
-          next: (value) => subscriber.next(value),
-          error: (error: unknown) => subscriber.error(error),
-          complete: () => subscriber.complete(),
-        });
-        teardown = () => subscription.unsubscribe();
-      });
+      // The driver scope needs one lookup, so the handler is subscribed only
+      // once it is known. It must be bound before the handler runs: a handler
+      // that started unscoped would read the whole tenant.
+      void this.driverScopeOf(principal).then(
+        (driverId) => {
+          if (closed) {
+            return;
+          }
+          const state = driverId === null ? base : { ...base, driverId };
+          TenantContext.run(state, () => {
+            const subscription = next.handle().subscribe({
+              next: (value) => subscriber.next(value),
+              error: (error: unknown) => subscriber.error(error),
+              complete: () => subscriber.complete(),
+            });
+            teardown = () => subscription.unsubscribe();
+          });
+        },
+        // No scope, no handler: a failed lookup must not degrade to unscoped.
+        (error: unknown) => subscriber.error(error),
+      );
 
-      return () => teardown?.();
+      return () => {
+        closed = true;
+        teardown?.();
+      };
     });
+  }
+
+  /**
+   * The `drivers.id` that narrows this request (invariant I28), or null when
+   * the caller does not hold the DRIVER role.
+   *
+   * Keyed on the signed ROLE claim, never on how the user signed in: a DRIVER
+   * who used a password is still a driver. A DRIVER with no driver record
+   * gets {@link NO_DRIVER}, which RLS matches against nothing. That is the case
+   * that once fell through to the staff path (audit finding F1).
+   *
+   * Looked up per request rather than carried in the token, so unlinking a
+   * driver takes effect on the next request instead of at token expiry. One
+   * indexed probe (`drivers_tenant_user_uq`, 0043), only for driver sessions.
+   * A raw RLS-scoped read of the fleet table, the pattern
+   * `InvoiceService.partiesFor` uses, because identity must not import fleet.
+   */
+  private async driverScopeOf(principal: Principal): Promise<string | null> {
+    if (!principal.roles.includes(DRIVER_ROLE)) {
+      return null;
+    }
+    const rows = await this.database.withTenant(
+      (tx) =>
+        tx.execute<{ id: string }>(sql`select id from drivers where user_id = ${principal.userId}`),
+      asTenantId(principal.tenantId),
+    );
+    return rows[0]?.id ?? NO_DRIVER;
   }
 }

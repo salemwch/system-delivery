@@ -137,6 +137,11 @@ export class ShipmentEventService {
           : { currentCustodyType: custody.type, currentCustodyId: custody.id }),
         ...(params.incrementAttempt === true ? { attemptCount: sql`attempt_count + 1` } : {}),
         ...(params.codStatus === undefined ? {} : { codStatus: params.codStatus }),
+        // The driver read scope (I28): whoever an event names becomes the driver
+        // this shipment belongs to. Written here, in the projection's own
+        // statement, so it can never disagree with the event that set it, and
+        // so a driver's delivery passes its own RLS WITH CHECK.
+        ...(params.driverId === undefined ? {} : { lastDriverId: params.driverId }),
       })
       .where(sql`${shipments.id} = ${current.id}`);
 

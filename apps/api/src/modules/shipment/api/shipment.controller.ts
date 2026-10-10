@@ -8,7 +8,9 @@ import {
   Param,
   Post,
   Query,
+  Res,
 } from "@nestjs/common";
+import type { FastifyReply } from "fastify";
 import { z } from "zod";
 
 import { asTenantId } from "../../../shared/database/index.js";
@@ -33,7 +35,8 @@ import type {
   MerchantStats,
 } from "../application/shipment-stats.service.js";
 import { ShipmentService } from "../application/shipment.service.js";
-import type { CommandContext, ShipmentEventView } from "../application/shipment.service.js";
+import type { ShipmentEventView } from "../application/shipment.service.js";
+import { commandContextOf } from "./command-context.js";
 import { ShipmentTraceabilityService } from "../application/traceability.service.js";
 import type {
   AuditLogView,
@@ -181,16 +184,6 @@ interface PageResponse<T> {
   readonly page: { readonly nextCursor: string | null; readonly hasMore: boolean };
 }
 
-function ctxOf(principal: Principal): CommandContext {
-  return {
-    actor: {
-      actorType: principal.actorType === "driver" ? "DRIVER" : "DISPATCHER",
-      actorId: principal.userId,
-    },
-    canOverride: principal.permissions.has("shipment:override_status"),
-  };
-}
-
 const bulkCreateSchema = z.strictObject({
   items: z
     .array(
@@ -236,6 +229,20 @@ export class ShipmentController {
   /** One currency's minor-unit exponent. Cached per process by CurrencyService. */
   private async exponentOf(currency: string): Promise<number> {
     return this.currencies.exponentOf(currency);
+  }
+
+  /**
+   * A command's response. A replayed idempotency key returns the recorded
+   * outcome and says so with `Idempotency-Replayed: true`
+   * (docs/05-api-contracts.md §3), so an offline client can tell "done now"
+   * from "already done". `passthrough` keeps Nest serialising the body
+   * (https://docs.nestjs.com/controllers#library-specific-approach).
+   */
+  private async respond(shipment: Shipment, reply: FastifyReply): Promise<ShipmentResponse> {
+    if (this.shipments.isReplay(shipment)) {
+      void reply.header("Idempotency-Replayed", "true");
+    }
+    return toResponse(shipment, await this.exponentOf(shipment.currency));
   }
 
   /**
@@ -406,7 +413,7 @@ export class ShipmentController {
       input: item.data,
       idempotencyKey: item.idempotencyKey,
     }));
-    const result = await this.bulkService.createBulk(items, ctxOf(principal));
+    const result = await this.bulkService.createBulk(items, commandContextOf(principal));
     const exponents = await this.exponentsFor(
       result.results.flatMap((r) => (r.shipment === null ? [] : [r.shipment.currency])),
     );
@@ -418,9 +425,10 @@ export class ShipmentController {
   async create(
     @Body(zodBody(createShipmentSchema)) body: z.infer<typeof createShipmentSchema>,
     @CurrentPrincipal() principal: Principal,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ShipmentResponse> {
-    const shipment = await this.shipments.create(body, ctxOf(principal));
-    return toResponse(shipment, await this.exponentOf(shipment.currency));
+    const shipment = await this.shipments.create(body, commandContextOf(principal));
+    return this.respond(shipment, reply);
   }
 
   @Get()
@@ -504,9 +512,10 @@ export class ShipmentController {
     @Param("id") id: string,
     @Body(zodBody(recordPickupSchema)) body: z.infer<typeof recordPickupSchema>,
     @CurrentPrincipal() principal: Principal,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ShipmentResponse> {
-    const shipment = await this.shipments.recordPickup(id, body, ctxOf(principal));
-    return toResponse(shipment, await this.exponentOf(shipment.currency));
+    const shipment = await this.shipments.recordPickup(id, body, commandContextOf(principal));
+    return this.respond(shipment, reply);
   }
 
   @Post(":id/deliver")
@@ -516,9 +525,10 @@ export class ShipmentController {
     @Param("id") id: string,
     @Body(zodBody(confirmDeliverySchema)) body: z.infer<typeof confirmDeliverySchema>,
     @CurrentPrincipal() principal: Principal,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ShipmentResponse> {
-    const shipment = await this.shipments.confirmDelivery(id, body, ctxOf(principal));
-    return toResponse(shipment, await this.exponentOf(shipment.currency));
+    const shipment = await this.shipments.confirmDelivery(id, body, commandContextOf(principal));
+    return this.respond(shipment, reply);
   }
 
   @Post(":id/fail")
@@ -528,9 +538,14 @@ export class ShipmentController {
     @Param("id") id: string,
     @Body(zodBody(recordFailedAttemptSchema)) body: z.infer<typeof recordFailedAttemptSchema>,
     @CurrentPrincipal() principal: Principal,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ShipmentResponse> {
-    const shipment = await this.shipments.recordFailedAttempt(id, body, ctxOf(principal));
-    return toResponse(shipment, await this.exponentOf(shipment.currency));
+    const shipment = await this.shipments.recordFailedAttempt(
+      id,
+      body,
+      commandContextOf(principal),
+    );
+    return this.respond(shipment, reply);
   }
 
   @Post(":id/return")
@@ -540,9 +555,10 @@ export class ShipmentController {
     @Param("id") id: string,
     @Body(zodBody(initiateReturnSchema)) body: z.infer<typeof initiateReturnSchema>,
     @CurrentPrincipal() principal: Principal,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ShipmentResponse> {
-    const shipment = await this.shipments.initiateReturn(id, body, ctxOf(principal));
-    return toResponse(shipment, await this.exponentOf(shipment.currency));
+    const shipment = await this.shipments.initiateReturn(id, body, commandContextOf(principal));
+    return this.respond(shipment, reply);
   }
 
   /**
@@ -560,9 +576,10 @@ export class ShipmentController {
     @Param("id") id: string,
     @Body(zodBody(completeReturnSchema)) body: z.infer<typeof completeReturnSchema>,
     @CurrentPrincipal() principal: Principal,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ShipmentResponse> {
-    const shipment = await this.shipments.completeReturn(id, body, ctxOf(principal));
-    return toResponse(shipment, await this.exponentOf(shipment.currency));
+    const shipment = await this.shipments.completeReturn(id, body, commandContextOf(principal));
+    return this.respond(shipment, reply);
   }
 
   @Post(":id/cancel")
@@ -572,9 +589,10 @@ export class ShipmentController {
     @Param("id") id: string,
     @Body(zodBody(cancelShipmentSchema)) body: z.infer<typeof cancelShipmentSchema>,
     @CurrentPrincipal() principal: Principal,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ShipmentResponse> {
-    const shipment = await this.shipments.cancel(id, body, ctxOf(principal));
-    return toResponse(shipment, await this.exponentOf(shipment.currency));
+    const shipment = await this.shipments.cancel(id, body, commandContextOf(principal));
+    return this.respond(shipment, reply);
   }
 }
 

@@ -27,6 +27,13 @@ export function asTenantId(value: string): TenantId {
  */
 export const NO_TENANT = asTenantId("00000000-0000-0000-0000-000000000000");
 
+/**
+ * The driver scope of a DRIVER-role login with no `drivers` record. A real UUID
+ * that names no driver, so the I28 predicates match zero rows: fail closed,
+ * exactly like {@link NO_TENANT}.
+ */
+export const NO_DRIVER = "00000000-0000-0000-0000-000000000000";
+
 export interface TenantContextState {
   readonly tenantId: TenantId;
   /** Present for authenticated actors; absent for system/background work. */
@@ -54,6 +61,17 @@ export interface TenantContextState {
    * portfolio into a single account.
    */
   readonly accountManagerId?: string;
+  /**
+   * Narrows a DRIVER login to the shipments, pickups and recipients it was
+   * assigned (invariant I28). This is a `drivers.id`, not a user id.
+   *
+   * Resolved per request from the signed role claim (TenantContextInterceptor)
+   * and written to `app.current_driver_id` for RLS. A DRIVER-role login with no
+   * driver record gets {@link NO_DRIVER}, which matches nothing: an unlinked
+   * account must never fall through to the unscoped, staff-shaped view.
+   * Absent for every other role, where the policies are a no-op.
+   */
+  readonly driverId?: string;
   /** Correlates a request with everything it causes, including async fan-out. */
   readonly requestId?: string;
   /**
