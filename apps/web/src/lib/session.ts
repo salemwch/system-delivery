@@ -1,10 +1,11 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
+import { scryptSync } from "node:crypto";
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { isProduction, sessionSecret } from "./config";
 import { SESSION_COOKIE_NAME } from "./session-cookie";
+import { open, seal } from "./session-seal";
 
 /**
  * The staff session, held in an ENCRYPTED, httpOnly cookie.
@@ -34,36 +35,22 @@ function key(): Buffer {
   return scryptSync(sessionSecret(), KEY_SALT, 32);
 }
 
-function seal(session: Session): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key(), iv);
-  const body = Buffer.concat([cipher.update(JSON.stringify(session), "utf8"), cipher.final()]);
-  return [
-    iv.toString("base64url"),
-    cipher.getAuthTag().toString("base64url"),
-    body.toString("base64url"),
-  ].join(".");
+/** The session sealed with AES-256-GCM and a 128-bit tag (see session-seal.ts). */
+function sealSession(session: Session): string {
+  return seal(JSON.stringify(session), key());
 }
 
-function open(value: string): Session | null {
-  const parts = value.split(".");
-  if (parts.length !== 3) {
-    return null;
-  }
-  const [ivPart, tagPart, bodyPart] = parts;
-  if (ivPart === undefined || tagPart === undefined || bodyPart === undefined) {
+function openSession(value: string): Session | null {
+  const plain = open(value, key());
+  if (plain === null) {
     return null;
   }
   try {
-    const decipher = createDecipheriv("aes-256-gcm", key(), Buffer.from(ivPart, "base64url"));
-    decipher.setAuthTag(Buffer.from(tagPart, "base64url"));
-    const plain = Buffer.concat([
-      decipher.update(Buffer.from(bodyPart, "base64url")),
-      decipher.final(),
-    ]).toString("utf8");
     const parsed: unknown = JSON.parse(plain);
     return isSession(parsed) ? parsed : null;
   } catch {
+    // Authentic but not JSON: only possible if the format ever changed under
+    // the same secret. Treated as no session, like every other bad cookie.
     return null;
   }
 }
@@ -87,7 +74,7 @@ function isSession(value: unknown): value is Session {
 export async function readSession(): Promise<Session | null> {
   const store = await cookies();
   const raw = store.get(COOKIE_NAME)?.value;
-  return raw === undefined ? null : open(raw);
+  return raw === undefined ? null : openSession(raw);
 }
 
 /**
@@ -108,7 +95,7 @@ export async function requireSession(locale: string): Promise<Session> {
 
 export async function writeSession(session: Session): Promise<void> {
   const store = await cookies();
-  store.set(COOKIE_NAME, seal(session), {
+  store.set(COOKIE_NAME, sealSession(session), {
     httpOnly: true,
     sameSite: "lax",
     secure: isProduction(),

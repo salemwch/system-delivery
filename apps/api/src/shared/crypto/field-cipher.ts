@@ -18,6 +18,16 @@ import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "
 const VERSION = "v1";
 const IV_BYTES = 12; // 96-bit nonce, the GCM standard.
 const KEY_BYTES = 32; // AES-256.
+/**
+ * 128-bit authentication tag, pinned on both sides.
+ *
+ * ⚠️ Node accepts GCM tags as short as 32 bits unless `authTagLength` is given,
+ * so a forged token with a truncated tag faced a far weaker integrity check
+ * than designed (audit finding F3, Semgrep `gcm-no-tag-length`). Node
+ * deprecated that in v22 and refuses it from v26:
+ * https://nodejs.org/api/crypto.html#deciphersetauthtagbuffer-encoding
+ */
+const TAG_BYTES = 16;
 
 export class FieldCipher {
   private readonly key: Buffer;
@@ -33,7 +43,7 @@ export class FieldCipher {
   /** Encrypts UTF-8 plaintext to a `v1:<iv>:<tag>:<ct>` token. */
   encrypt(plaintext: string): string {
     const iv = randomBytes(IV_BYTES);
-    const cipher = createCipheriv("aes-256-gcm", this.key, iv);
+    const cipher = createCipheriv("aes-256-gcm", this.key, iv, { authTagLength: TAG_BYTES });
     const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
     const tag = cipher.getAuthTag();
     return [VERSION, b64(iv), b64(tag), b64(ciphertext)].join(":");
@@ -59,7 +69,12 @@ export class FieldCipher {
     if (iv.length !== IV_BYTES) {
       throw new Error("FieldCipher: bad IV length.");
     }
-    const decipher = createDecipheriv("aes-256-gcm", this.key, iv);
+    // Checked before Node sees it, so the refusal is ours and uniform; the
+    // option below makes Node enforce the same length as a second guard.
+    if (tag.length !== TAG_BYTES) {
+      throw new Error("FieldCipher: bad authentication tag length.");
+    }
+    const decipher = createDecipheriv("aes-256-gcm", this.key, iv, { authTagLength: TAG_BYTES });
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
   }
@@ -90,9 +105,17 @@ function b64(buffer: Buffer): string {
   return buffer.toString("base64");
 }
 
+/** RFC 4648 §4, padded: exactly what {@link b64} writes. Empty is valid (empty plaintext). */
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
 function fromB64(value: string | undefined): Buffer {
   if (value === undefined) {
     throw new Error("FieldCipher: missing token segment.");
+  }
+  // Node's decoder silently skips characters outside the alphabet, so a
+  // mangled segment would decode to *something*. Refuse it instead.
+  if (!BASE64.test(value)) {
+    throw new Error("FieldCipher: malformed token segment.");
   }
   return Buffer.from(value, "base64");
 }
