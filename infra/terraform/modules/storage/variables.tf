@@ -14,7 +14,7 @@ variable "spaces_region" {
     `fra1` keeps POD media in the EU alongside the database. Splitting them
     across jurisdictions would mean two answers to the same residency question.
   EOT
-  default = "fra1"
+  default     = "fra1"
 }
 
 variable "allowed_origins" {

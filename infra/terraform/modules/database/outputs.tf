@@ -70,7 +70,7 @@ output "telemetry_database_url" {
     for connections. This is pool isolation, not a new privilege boundary, which
     is why it deliberately reuses the app role.
   EOT
-  sensitive = true
+  sensitive   = true
   value = format(
     "postgresql://%s:%s@%s:%d/%s%s",
     digitalocean_database_user.app.name,

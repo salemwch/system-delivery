@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { Redis } from "ioredis";
 import type { PinoLogger } from "nestjs-pino";
@@ -18,7 +18,7 @@ import { DatabaseService } from "../src/shared/database/database.service.js";
 import { createTenant, createTestDatabase, deleteTenants } from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
 
-const JWT_SECRET = "test-secret-that-is-at-least-32-characters-long";
+const JWT_SECRET = randomBytes(32).toString("hex");
 
 /** A config stub — the real service demands a fully valid environment. */
 function tokenConfig() {

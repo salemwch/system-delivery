@@ -48,7 +48,7 @@ function testConfig(overrides: Record<string, unknown> = {}) {
 /** Token config for the realtime gateway telemetry publishes through. */
 function tokenConfig() {
   const values: Record<string, unknown> = {
-    JWT_ACCESS_SECRET: "test-secret-that-is-at-least-32-characters-long",
+    JWT_ACCESS_SECRET: randomBytes(32).toString("hex"),
     JWT_ACCESS_TTL_SECONDS: 900,
     DRIVER_ACCESS_TTL_SECONDS: 3_600,
     JWT_ISSUER: "delivery-platform",

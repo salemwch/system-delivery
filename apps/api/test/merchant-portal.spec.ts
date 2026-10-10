@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import jsQR from "jsqr";
 import { PNG } from "pngjs";
@@ -31,7 +31,7 @@ import type { TestDatabase } from "./database.harness.js";
 
 function tokenConfig() {
   const values: Record<string, unknown> = {
-    JWT_ACCESS_SECRET: "test-secret-that-is-at-least-32-characters-long",
+    JWT_ACCESS_SECRET: randomBytes(32).toString("hex"),
     JWT_ACCESS_TTL_SECONDS: 900,
     DRIVER_ACCESS_TTL_SECONDS: 3_600,
   };

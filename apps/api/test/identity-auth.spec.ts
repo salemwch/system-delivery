@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { AuthService } from "../src/modules/identity/application/auth.service.js";
@@ -38,7 +40,7 @@ describe("identity", () => {
   let tenantA: TenantId;
   let tenantB: TenantId;
 
-  const PASSWORD = "correct-horse-battery-staple-9271";
+  const PASSWORD = `pw-${randomBytes(18).toString("hex")}`;
 
   /** Creates an ACTIVE user with roles, returning its id. */
   async function seedUser(

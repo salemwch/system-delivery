@@ -1,0 +1,20 @@
+# gitleaks exceptions: exact fingerprints only (commit:file:rule:line), never
+# paths or patterns, so nothing else can be hidden by them.
+#
+# All four are TEST FIXTURES committed in July 2026: a JWT signing secret and a
+# login password that only ever existed inside a spec, never matched a real
+# environment's value (checked against .env on 2026-10-10), and secured nothing.
+# They remain in git history, which is not rewritten. The current files now
+# generate these values at run time (randomBytes), so no new commit
+# reintroduces a literal.
+#
+# Reviewed 2026-10-10. Format: https://github.com/gitleaks/gitleaks#gitleaksignore
+
+# apps/api/test/merchant-portal.spec.ts: JWT_ACCESS_SECRET of the test config stub
+e27cd7213fe3701b66b15eaacc0b196ed0dd381c:apps/api/test/merchant-portal.spec.ts:generic-api-key:31
+# apps/api/test/tracking.spec.ts: JWT_ACCESS_SECRET of the test config stub
+68c3b70de0d7b73eb8bcbee959e06a2fabcbab15:apps/api/test/tracking.spec.ts:generic-api-key:51
+# apps/api/test/realtime.spec.ts: JWT secret signing test-only WebSocket tokens
+68c3b70de0d7b73eb8bcbee959e06a2fabcbab15:apps/api/test/realtime.spec.ts:generic-api-key:20
+# apps/api/test/identity-auth.spec.ts: password of seeded test users
+aa2682560d24819fbd8670a5fea8bf13f34d5313:apps/api/test/identity-auth.spec.ts:generic-api-key:40
