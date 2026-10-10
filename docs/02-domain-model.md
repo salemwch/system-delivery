@@ -668,6 +668,7 @@ OPEN → SEALED → IN_TRANSIT → RECEIVED → RECONCILED
 6. Remittances are **never deleted**. A wrong remittance is corrected by a reversing adjustment.
 7. All amounts share one currency — the tenant's. Mixed-currency remittance is out of scope until V3.
 8. `DISPUTED` freezes the driver's ability to take new COD shipments until resolved.
+9. **A driver remits only their own cash.** When the caller is a driver, `driverId` must be the driver record behind their own login (I26); a colleague's id, or a DRIVER login with no driver record, is refused without saying whether the other driver exists or what they hold. A remittance submitted in another driver's name would move that driver's cash balance and disclose their expected amount in the response.
 
 **Lifecycle**
 

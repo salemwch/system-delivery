@@ -13,6 +13,12 @@ import { MerchantService } from "../src/modules/directory/application/merchant.s
 import { RecipientService } from "../src/modules/directory/application/recipient.service.js";
 import { RecipientController } from "../src/modules/directory/api/recipient.controller.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
+import { FinanceController } from "../src/modules/finance/api/finance.controller.js";
+import { LedgerService } from "../src/modules/finance/application/ledger.service.js";
+import { PaymentNoteService } from "../src/modules/finance/application/payment-note.service.js";
+import { ReconciliationService } from "../src/modules/finance/application/reconciliation.service.js";
+import { RemittanceService } from "../src/modules/finance/application/remittance.service.js";
+import { SettlementService } from "../src/modules/finance/application/settlement.service.js";
 import { AuthController } from "../src/modules/identity/api/auth.controller.js";
 import { AuthGuard } from "../src/modules/identity/api/auth.guard.js";
 import { PermissionGuard } from "../src/modules/identity/api/permission.guard.js";
@@ -218,13 +224,14 @@ describe("driver authorization over HTTP", () => {
       new AuditService(db),
     );
 
-    // Routes under test use only ShipmentService, RecipientService and
-    // CurrencyService. The controller's other collaborators back routes this
-    // spec never calls, so they are inert placeholders, never invoked.
+    // Routes under test use only ShipmentService, RecipientService,
+    // RemittanceService and CurrencyService. The controllers' other
+    // collaborators back routes this spec never calls, so they are inert
+    // placeholders, never invoked.
     const unused = (token: InjectionToken): Provider => ({ provide: token, useValue: {} });
 
     @Module({
-      controllers: [AuthController, ShipmentController, RecipientController],
+      controllers: [AuthController, ShipmentController, RecipientController, FinanceController],
       providers: [
         { provide: AppConfigService, useValue: stubConfig() },
         { provide: POSTGRES_CLIENT, useValue: database.app },
@@ -242,6 +249,12 @@ describe("driver authorization over HTTP", () => {
         { provide: ShipmentService, useValue: shipments },
         { provide: RecipientService, useValue: recipients },
         { provide: AddressService, useValue: addresses },
+        OutboxService,
+        LedgerService,
+        RemittanceService,
+        unused(SettlementService),
+        unused(ReconciliationService),
+        unused(PaymentNoteService),
         unused(ShipmentStatsService),
         unused(ParcelStateService),
         unused(BulkShipmentService),
@@ -391,6 +404,44 @@ describe("driver authorization over HTTP", () => {
       expect(reused.statusCode).toBe(422);
       expect(JSON.parse(reused.body)).toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED" });
       expect((await inTenant(() => shipments.getById(second))).status).toBe("OUT_FOR_DELIVERY");
+    });
+  });
+
+  describe("a DRIVER remitting COD cash (driver identity, 9318622 release review)", () => {
+    function remittance(driverId: string): object {
+      return { driverId, hubId: randomUUID(), declaredAmountMinor: "1000", currency: "TND" };
+    }
+
+    it("is refused a colleague's driverId with 403 that names nothing about them", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const b = await seedAccount(["DRIVER"], true);
+      const token = await login(a);
+
+      const response = await call(
+        "POST",
+        "/v1/finance/remittances",
+        token,
+        remittance(b.driverId ?? ""),
+      );
+      expect(response.statusCode).toBe(403);
+      expect(response.body).not.toContain(b.driverId ?? "");
+      expect(response.body).not.toMatch(/expectedAmountMinor/u);
+    });
+
+    it("remits their own cash, and still cannot read a remittance back", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const token = await login(a);
+
+      const own = await call(
+        "POST",
+        "/v1/finance/remittances",
+        token,
+        remittance(a.driverId ?? ""),
+      );
+      expect(own.statusCode).toBe(201);
+      const { id } = JSON.parse(own.body) as { id: string };
+      // Reading, confirming or disputing a remittance is staff work.
+      expect((await call("GET", `/v1/finance/remittances/${id}`, token)).statusCode).toBe(403);
     });
   });
 

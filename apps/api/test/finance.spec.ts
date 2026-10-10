@@ -19,14 +19,16 @@ import { formatMinorUnits, parseMinorUnits } from "../src/shared/money/index.js"
 import { OutboxService } from "../src/modules/platform/index.js";
 import type { ConsumedEvent } from "../src/modules/platform/index.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
+import { ForbiddenError } from "../src/shared/errors/index.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
 import {
   createTenant,
   createTestDatabase,
   deleteTenants,
+  seedDriverLogin,
   withTenantContext,
 } from "./database.harness.js";
-import type { TestDatabase } from "./database.harness.js";
+import type { DriverLogin, TestDatabase } from "./database.harness.js";
 
 /**
  * Finance module — the double-entry ledger — against a real PostgreSQL with the
@@ -398,7 +400,8 @@ describe("finance", () => {
 
   // ── Remittance (increment 2): the driver → hub cash handoff ──────────────────
   describe("RemittanceService", () => {
-    const ctx = { actorUserId: randomUUID() };
+    // Staff (not a driver): may record a remittance on a driver's behalf.
+    const ctx = { actorUserId: randomUUID(), actorIsDriver: false };
 
     function service(): RemittanceService {
       return new RemittanceService(db, ledger, currency, new OutboxService());
@@ -564,6 +567,86 @@ describe("finance", () => {
 
       const resolved = await asTenant(tenantId, () => svc.resolve(submitted.id, ctx));
       expect(resolved.status).toBe("RESOLVED");
+    });
+
+    // ── A driver remits only their own cash (found in the 9318622 RC review) ──
+
+    describe("driver identity", () => {
+      function asDriver(login: DriverLogin): { actorUserId: string; actorIsDriver: boolean } {
+        return { actorUserId: login.userId, actorIsDriver: true };
+      }
+
+      async function remittanceCount(tenantId: string): Promise<number> {
+        const rows = await withTenantContext(
+          database.migrator,
+          tenantId,
+          (tx) => tx<{ n: number }[]>`select count(*)::int as n from cod_remittances`,
+        );
+        return rows[0]?.n ?? -1;
+      }
+
+      it("lets a driver remit their own cash", async () => {
+        const tenantId = await seedTenant("rem-own");
+        const a = await seedDriverLogin(database.migrator, tenantId);
+        await collect(tenantId, a.driverId, 5000n);
+
+        const filed = await asTenant(tenantId, () =>
+          service().submit(
+            {
+              driverId: a.driverId,
+              hubId: randomUUID(),
+              declaredAmountMinor: "5000",
+              currency: "TND",
+            },
+            asDriver(a),
+          ),
+        );
+        expect(filed.driverId).toBe(a.driverId);
+      });
+
+      it("refuses a driver remitting in a colleague's name, and records nothing", async () => {
+        const tenantId = await seedTenant("rem-other");
+        const a = await seedDriverLogin(database.migrator, tenantId);
+        const b = await seedDriverLogin(database.migrator, tenantId);
+        await collect(tenantId, b.driverId, 9000n);
+
+        const refusal = await asTenant(tenantId, () =>
+          service().submit(
+            {
+              driverId: b.driverId,
+              hubId: randomUUID(),
+              declaredAmountMinor: "9000",
+              currency: "TND",
+            },
+            asDriver(a),
+          ),
+        ).then(
+          () => null,
+          (error: unknown) => error,
+        );
+        expect(refusal).toBeInstanceOf(ForbiddenError);
+        // Nothing about B leaks: not B's cash balance, not whether B exists.
+        expect(String((refusal as Error).message)).not.toMatch(/9000|[0-9a-f]{8}-/u);
+        expect(await remittanceCount(tenantId)).toBe(0);
+      });
+
+      it("refuses a DRIVER login with no driver record", async () => {
+        const tenantId = await seedTenant("rem-unlinked");
+        const b = await seedDriverLogin(database.migrator, tenantId);
+        await expect(
+          asTenant(tenantId, () =>
+            service().submit(
+              {
+                driverId: b.driverId,
+                hubId: randomUUID(),
+                declaredAmountMinor: "1",
+                currency: "TND",
+              },
+              { actorUserId: randomUUID(), actorIsDriver: true },
+            ),
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenError);
+      });
     });
   });
 
@@ -777,11 +860,15 @@ describe("finance", () => {
       const submitted = await asTenant(tenantId, () =>
         remit.submit(
           { driverId, hubId: randomUUID(), declaredAmountMinor: "20000", currency: "TND" },
-          { actorUserId: randomUUID() },
+          { actorUserId: randomUUID(), actorIsDriver: false },
         ),
       );
       await asTenant(tenantId, () =>
-        remit.confirm(submitted.id, { countedAmountMinor: "20000" }, { actorUserId: randomUUID() }),
+        remit.confirm(
+          submitted.id,
+          { countedAmountMinor: "20000" },
+          { actorUserId: randomUUID(), actorIsDriver: false },
+        ),
       );
 
       const recon = new ReconciliationService(db);

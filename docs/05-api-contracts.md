@@ -681,6 +681,8 @@ Finalise → `200`
 
 ### `POST /v1/finance/remittances`
 
+**Auth.** `cod:collect` (Driver; Owner holds every permission). A driver may name only their own driver record in `driverId`; any other id, or a DRIVER login with no driver record, is `403 FORBIDDEN` and records nothing. The error says nothing about the named driver (domain §3.13 rule 9).
+
 ```json
 { "driverId": "018f7a99-...", "hubId": "018f7b00-...", "declaredAmountMinor": 486500, "currency": "TND" }
 ```

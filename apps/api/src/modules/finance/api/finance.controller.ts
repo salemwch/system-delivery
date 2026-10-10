@@ -91,8 +91,9 @@ interface SettlementResponse {
   readonly updatedAt: string;
 }
 
+/** The remittance caller, with the DRIVER role taken from the signed role claim. */
 function remittanceCtx(principal: Principal): RemittanceContext {
-  return { actorUserId: principal.userId };
+  return { actorUserId: principal.userId, actorIsDriver: principal.roles.includes("DRIVER") };
 }
 
 function settlementCtx(principal: Principal): SettlementContext {
