@@ -1,0 +1,5 @@
+# Bulk formatting with no behaviour change. GitHub's blame view skips these
+# automatically; locally: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: apply prettier to the whole tree
+2a7d2527556210bfdfeefa2bfb68a0703420bb9c
