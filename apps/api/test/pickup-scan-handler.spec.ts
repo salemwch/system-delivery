@@ -129,6 +129,7 @@ describe("pickup scan → shipment custody", () => {
       new RecipientService(db),
       addresses,
       new OperatingConfigService(db),
+      new AuditService(db),
     );
     handler = new PickupScanEventHandler(shipments);
   }, 240_000);

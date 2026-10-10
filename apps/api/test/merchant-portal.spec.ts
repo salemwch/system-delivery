@@ -144,6 +144,7 @@ describe("merchant portal", () => {
       recipients,
       addresses,
       operatingConfig,
+      new AuditService(db),
     );
     labels = new LabelService(shipments);
     addressBook = new AddressBookService(db);

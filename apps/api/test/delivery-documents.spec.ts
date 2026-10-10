@@ -153,6 +153,7 @@ describe("delivery documents", () => {
       recipients,
       addresses,
       operatingConfig,
+      new AuditService(db),
     );
     const tenants = new TenantService(db, outbox, operatingConfig, new AuditService(db));
     documents = new DocumentService(shipments, addresses, tenants, new CurrencyService(db));

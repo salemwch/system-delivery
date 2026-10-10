@@ -194,6 +194,7 @@ describe("return lifecycle", () => {
       recipients,
       addresses,
       operatingConfig,
+      new AuditService(db),
     );
   }, 240_000);
 
@@ -677,6 +678,99 @@ describe("return lifecycle", () => {
 
       expect(returned.status).toBe("RETURNED");
       expect(await returnedBy(tenantId, shipmentId)).toBeNull();
+
+      // Decision 2 (9318622 release review): a staff closure is audit-logged.
+      const audit = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<
+          { actor_id: string | null; changes: Record<string, { from: unknown; to: unknown }> }[]
+        >`select actor_id, changes from audit_log
+           where action = 'shipment.return_closed_by_staff' and resource_id = ${shipmentId}`,
+      );
+      expect(audit).toHaveLength(1);
+      expect(audit[0]?.actor_id).toBe(ctx.actor.actorId);
+      expect(audit[0]?.changes["codStatus"]).toEqual({ from: "PENDING", to: "CANCELLED" });
+    });
+
+    it("writes no staff audit entry when the carrying driver closes the return", async () => {
+      const tenantId = await seedTenant("rto");
+      const shipmentId = await returning(tenantId);
+
+      await asStaff(tenantId, () =>
+        shipments.completeReturn(
+          shipmentId,
+          { idempotencyKey: randomUUID() },
+          courierOf(shipmentId),
+        ),
+      );
+
+      const audit = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<{ n: number }[]>`
+          select count(*)::int as n from audit_log
+           where action = 'shipment.return_closed_by_staff' and resource_id = ${shipmentId}`,
+      );
+      expect(audit[0]?.n).toBe(0);
+    });
+
+    it("rolls a staff closure back whole when its audit entry cannot be written", async () => {
+      const tenantId = await seedTenant("rto");
+      const shipmentId = await returning(tenantId);
+      // Fault injection in the real database: refuse THIS shipment's audit row,
+      // the last write of the closure's transaction.
+      const refuse = `refuse_audit_${shipmentId.replaceAll("-", "")}`;
+      await database.migrator.unsafe(`
+        CREATE FUNCTION ${refuse}() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.resource_id = '${shipmentId}'::uuid THEN
+            RAISE EXCEPTION 'injected audit failure';
+          END IF;
+          RETURN NEW;
+        END $$`);
+      await database.migrator.unsafe(
+        `CREATE TRIGGER ${refuse} BEFORE INSERT ON audit_log
+           FOR EACH ROW EXECUTE FUNCTION ${refuse}()`,
+      );
+      const key = randomUUID();
+      try {
+        const failure = await asStaff(tenantId, () =>
+          shipments.completeReturn(shipmentId, { idempotencyKey: key }, ctx),
+        ).then(
+          () => null,
+          (error: unknown) => error,
+        );
+        // The injected failure itself, found down the driver's `.cause` chain.
+        const messages: string[] = [];
+        for (let e: unknown = failure; e instanceof Error; e = e.cause) {
+          messages.push(e.message);
+        }
+        expect(messages).toContain("injected audit failure");
+      } finally {
+        await database.migrator.unsafe(`DROP TRIGGER ${refuse} ON audit_log`);
+        await database.migrator.unsafe(`DROP FUNCTION ${refuse}()`);
+      }
+
+      // No closure without its record: status, COD, custody event and outbox
+      // all rolled back with the audit row.
+      const after = await asStaff(tenantId, () => shipments.getById(shipmentId));
+      expect(after.status).toBe("RETURN_PENDING");
+      expect(after.codStatus).toBe("PENDING");
+      expect(await eventTypesOf(tenantId, shipmentId)).not.toContain("shipment.returned");
+      // The idempotency key was not consumed either: the same request succeeds.
+      const retried = await asStaff(tenantId, () =>
+        shipments.completeReturn(shipmentId, { idempotencyKey: key }, ctx),
+      );
+      expect(retried.status).toBe("RETURNED");
+      const audit = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<{ n: number }[]>`
+          select count(*)::int as n from audit_log
+           where action = 'shipment.return_closed_by_staff' and resource_id = ${shipmentId}`,
+      );
+      expect(audit[0]?.n).toBe(1);
     });
 
     it("refuses a driver login with no driver record behind it", async () => {

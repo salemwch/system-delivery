@@ -130,6 +130,7 @@ describe("shipment idempotency (I29)", () => {
       new RecipientService(db),
       addresses,
       new OperatingConfigService(db),
+      new AuditService(db),
     );
   }, 240_000);
 

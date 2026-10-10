@@ -258,6 +258,7 @@ describe("custody", () => {
       recipients,
       addresses,
       operatingConfig,
+      new AuditService(db),
     );
     manifestsSvc = new ManifestService(db, outbox, shipmentsSvc, hubsSvc, features);
     hubScans = new HubScanService(shipmentsSvc, hubsSvc, features);

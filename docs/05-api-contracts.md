@@ -422,7 +422,9 @@ The two halves of the RTO lifecycle (01-mvp-scope §4.2 #2.8).
 { "receivedByName": "Ines (Boutique)", "occurredAt": "2026-07-25T09:12:00Z" }
 ```
 
-The return is booked to the caller's own driver record when the caller is a driver, and to no driver when staff close it at a counter. It is never booked to a `driverId` from the body; one is rejected with `400 VALIDATION_FAILED` (I26). A driver cannot close a return that another driver is carrying (`403 FORBIDDEN`).
+The return is booked to the caller's own driver record when the caller is a driver, and to no driver when staff close it at a counter. It is never booked to a `driverId` from the body; one is rejected with `400 VALIDATION_FAILED` (I26). A driver who is not the shipment's current driver gets `404 NOT_FOUND`: the shipment is outside their read scope (I28), so knowing its id grants nothing. A driver who can see it while another driver holds custody gets `403 FORBIDDEN`.
+
+A staff closure (no driver record behind the caller) also writes an `audit_log` entry, `shipment.return_closed_by_staff`, in the same transaction: the acting user, the status and `codStatus` change, `receivedByName`, and the custody holder at the moment of closure. Staff may close a return a driver is still carrying; the entry is what makes that assertion attributable. It does not reassign or hand over the parcel; those stay explicit workflows.
 
 → `200` with status `RETURNED`. Permission is **`shipment:deliver`**, not `shipment:update`: handing a parcel back is a custody transfer performed by the driver who carried it, and asserting that a parcel arrived somewhere is not an edit.
 
@@ -678,6 +680,7 @@ Finalise → `200`
 ```
 
 ### `POST /v1/finance/remittances`
+
 ```json
 { "driverId": "018f7a99-...", "hubId": "018f7b00-...", "declaredAmountMinor": 486500, "currency": "TND" }
 ```

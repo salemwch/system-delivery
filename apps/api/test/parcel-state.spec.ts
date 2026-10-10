@@ -171,6 +171,7 @@ describe("parcel state report", () => {
         new RecipientService(db),
         addresses,
         new OperatingConfigService(db),
+        new AuditService(db),
       );
       parcelState = new ParcelStateService(db, merchants, new CurrencyService(db));
     }, 240_000);

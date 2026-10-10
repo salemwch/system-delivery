@@ -62,6 +62,11 @@ export const AUDIT_ACTIONS = [
   // human asserting a status the custody chain did not produce.
   "shipment.status_overridden",
   "shipment.cancelled",
+  // Staff closing a return at the counter, booked to no driver (I26, Decision 2
+  // of the 9318622 release review). The custody chain records the event; this
+  // records that a PERSON asserted the parcel was handed back, including when a
+  // driver was still holding it.
+  "shipment.return_closed_by_staff",
   // A parcel changed after creation — modification colis. The shipment row only
   // ever shows the current recipient and address, so "the driver called the
   // wrong number" has no answer six weeks later without this.

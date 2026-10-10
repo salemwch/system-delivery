@@ -90,7 +90,16 @@ describe("operating config", () => {
     );
     const recipients = new RecipientService(db);
     const events = new ShipmentEventService(outbox);
-    shipments = new ShipmentService(db, events, outbox, merchants, recipients, addresses, config);
+    shipments = new ShipmentService(
+      db,
+      events,
+      outbox,
+      merchants,
+      recipients,
+      addresses,
+      config,
+      new AuditService(db),
+    );
   }, 240_000);
 
   afterEach(async () => {

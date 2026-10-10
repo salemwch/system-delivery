@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { AddressService, MerchantService, RecipientService } from "../../directory/index.js";
-import { OperatingConfigService, OutboxService } from "../../platform/index.js";
+import { AuditService, OperatingConfigService, OutboxService } from "../../platform/index.js";
 import {
   DatabaseService,
   TenantContext,
@@ -149,6 +149,7 @@ export class ShipmentService {
     private readonly recipients: RecipientService,
     private readonly addresses: AddressService,
     private readonly operatingConfig: OperatingConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -854,6 +855,36 @@ export class ShipmentService {
       }
 
       await this.closeUncollectedCod(tx, shipment);
+
+      // A staff closure is a person asserting the parcel was handed back,
+      // possibly while a driver still held it: audited, in this transaction,
+      // so the record exists exactly when the closure does. A driver's closure
+      // is already attributed to their driver record in the custody log.
+      if (driverId === null) {
+        await this.audit.record(tx, {
+          action: "shipment.return_closed_by_staff",
+          resourceType: "shipment",
+          resourceId: shipment.id,
+          actorType: "USER",
+          actorId: ctx.actor.actorId ?? null,
+          changes: {
+            status: { from: shipment.status, to: "RETURNED" },
+            codStatus: {
+              from: shipment.codStatus,
+              to: shipment.codStatus === "PENDING" ? "CANCELLED" : shipment.codStatus,
+            },
+          },
+          context: {
+            trackingNumber: shipment.trackingNumber,
+            receivedByName: dto.receivedByName ?? null,
+            // Who physically held the parcel when staff closed it.
+            custodyAtClosure: {
+              type: shipment.currentCustodyType,
+              id: shipment.currentCustodyId,
+            },
+          },
+        });
+      }
     });
   }
 

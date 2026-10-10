@@ -164,6 +164,7 @@ describe("shipment", () => {
       recipients,
       addresses,
       operatingConfig,
+      new AuditService(db),
     );
   }, 240_000);
 

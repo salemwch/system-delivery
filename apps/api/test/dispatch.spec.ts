@@ -204,6 +204,7 @@ describe("dispatch", () => {
       recipients,
       addresses,
       operatingConfig,
+      new AuditService(db),
     );
     const optimizer = new HeuristicOptimizationProvider();
     routesSvc = new RouteService(

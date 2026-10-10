@@ -215,6 +215,7 @@ describe("driver authorization over HTTP", () => {
       recipients,
       addresses,
       new OperatingConfigService(db),
+      new AuditService(db),
     );
 
     // Routes under test use only ShipmentService, RecipientService and
@@ -422,13 +423,84 @@ describe("driver authorization over HTTP", () => {
           { actor: { actorType: "DRIVER", actorId: a.userId } },
         ),
       );
-      const token = await login(await seedAccount(["OWNER"], false));
+      const owner = await seedAccount(["OWNER"], false);
+      const token = await login(owner);
+
+      const response = await call("POST", `/v1/shipments/${id}/return/complete`, token, {
+        idempotencyKey: randomUUID(),
+        receivedByName: "Counter staff",
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect((JSON.parse(response.body) as { status: string }).status).toBe("RETURNED");
+
+      // Decision 2: the staff closure is audit-logged, with who did it and
+      // which driver still held the parcel.
+      const audit = await database.migrator.begin(async (tx) => {
+        await tx`select set_config('app.current_tenant_id', ${tenant}, true)`;
+        return tx<
+          {
+            actor_type: string;
+            actor_id: string | null;
+            changes: Record<string, { from: unknown; to: unknown }>;
+            context: Record<string, unknown>;
+          }[]
+        >`select actor_type, actor_id, changes, context from audit_log
+           where action = 'shipment.return_closed_by_staff' and resource_id = ${id}`;
+      });
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({
+        actor_type: "USER",
+        actor_id: owner.userId,
+        changes: {
+          status: { from: "RETURN_PENDING", to: "RETURNED" },
+          // A non-COD fixture: nothing to cancel (COD closure is covered in
+          // return-lifecycle.spec).
+          codStatus: { from: "NOT_APPLICABLE", to: "NOT_APPLICABLE" },
+        },
+        context: {
+          receivedByName: "Counter staff",
+          custodyAtClosure: { type: "DRIVER", id: a.driverId },
+        },
+      });
+    });
+
+    it("refuses return closure to staff without the permission (a DISPATCHER)", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const id = await outForDelivery(a.driverId ?? "", "+21620000411");
+      await inTenant(() =>
+        shipments.recordFailedAttempt(
+          id,
+          { idempotencyKey: randomUUID(), reasonCode: "CUSTOMER_REFUSED" },
+          { actor: { actorType: "DRIVER", actorId: a.userId } },
+        ),
+      );
+      const token = await login(await seedAccount(["DISPATCHER"], false));
 
       const response = await call("POST", `/v1/shipments/${id}/return/complete`, token, {
         idempotencyKey: randomUUID(),
       });
-      expect(response.statusCode, response.body).toBe(200);
-      expect((JSON.parse(response.body) as { status: string }).status).toBe("RETURNED");
+      expect(response.statusCode).toBe(403);
+      expect((await inTenant(() => shipments.getById(id))).status).toBe("RETURN_PENDING");
+    });
+
+    it("refuses an unassigned LINKED driver who knows the shipment id", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const b = await seedAccount(["DRIVER"], true);
+      const id = await outForDelivery(a.driverId ?? "", "+21620000412");
+      await inTenant(() =>
+        shipments.recordFailedAttempt(
+          id,
+          { idempotencyKey: randomUUID(), reasonCode: "CUSTOMER_REFUSED" },
+          { actor: { actorType: "DRIVER", actorId: a.userId } },
+        ),
+      );
+
+      const response = await call("POST", `/v1/shipments/${id}/return/complete`, await login(b), {
+        idempotencyKey: randomUUID(),
+      });
+      // Not visible to B at all (I28): possession of the id grants nothing.
+      expect(response.statusCode).toBe(404);
+      expect((await inTenant(() => shipments.getById(id))).status).toBe("RETURN_PENDING");
     });
   });
 });

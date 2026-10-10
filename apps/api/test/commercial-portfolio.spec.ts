@@ -141,6 +141,7 @@ describe("commercial portfolio", () => {
       recipients,
       addresses,
       new OperatingConfigService(db),
+      new AuditService(db),
     );
     users = new UserService(db, new PasswordService(), outbox, audit);
   }, 240_000);

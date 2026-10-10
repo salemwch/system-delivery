@@ -133,6 +133,7 @@ describe("shipment amendments", () => {
       recipients,
       addresses,
       new OperatingConfigService(db),
+      new AuditService(db),
     );
     amendments = new ShipmentAmendmentService(db, audit, outbox, addresses, recipients);
   }, 240_000);

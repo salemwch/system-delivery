@@ -153,6 +153,7 @@ describe("driver read scope (I28)", () => {
       recipients,
       addresses,
       new OperatingConfigService(db),
+      new AuditService(db),
     );
     const hubs = new HubService(db, outbox, addresses);
     vehicles = new VehicleService(db, outbox, hubs);

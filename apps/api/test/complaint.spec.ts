@@ -196,6 +196,7 @@ describe("complaints", () => {
       recipients,
       addresses,
       operatingConfig,
+      new AuditService(db),
     );
     ledger = new LedgerService(db);
     complaints = new ComplaintService(db, outbox, audit, ledger, shipments);
