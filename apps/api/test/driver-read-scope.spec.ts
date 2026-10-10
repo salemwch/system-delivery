@@ -1,23 +1,33 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { sql } from "drizzle-orm";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
+import { DistributionNoteService } from "../src/modules/dispatch/application/distribution-note.service.js";
+import { HeuristicOptimizationProvider } from "../src/modules/dispatch/application/optimization.provider.js";
+import { RouteService } from "../src/modules/dispatch/application/route.service.js";
 import { AddressService } from "../src/modules/directory/application/address.service.js";
 import { MerchantService } from "../src/modules/directory/application/merchant.service.js";
 import { RecipientService } from "../src/modules/directory/application/recipient.service.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
+import { DriverService } from "../src/modules/fleet/application/driver.service.js";
+import { VehicleService } from "../src/modules/fleet/application/vehicle.service.js";
+import { HubService } from "../src/modules/network/application/hub.service.js";
 import { PickupService } from "../src/modules/pickup/application/pickup.service.js";
 import { AuditService } from "../src/modules/platform/application/audit.service.js";
+import { FeatureService } from "../src/modules/platform/application/feature.service.js";
 import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
+import { TenantService } from "../src/modules/platform/application/tenant.service.js";
 import { ShipmentEventService } from "../src/modules/shipment/application/shipment-event.service.js";
 import { ShipmentService } from "../src/modules/shipment/application/shipment.service.js";
 import type { CommandContext } from "../src/modules/shipment/application/shipment.service.js";
+import { FieldCipher } from "../src/shared/crypto/field-cipher.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { NO_DRIVER, TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
 import { NotFoundError } from "../src/shared/errors/index.js";
+import { CurrencyService } from "../src/shared/money/index.js";
 import {
   createTenant,
   createTestDatabase,
@@ -44,6 +54,9 @@ describe("driver read scope (I28)", () => {
   let pickups: PickupService;
   let merchants: MerchantService;
   let addresses: AddressService;
+  let vehicles: VehicleService;
+  let routes: RouteService;
+  let notes: DistributionNoteService;
   let createdTenants: string[] = [];
 
   const staff: CommandContext = { actor: { actorType: "DISPATCHER", actorId: randomUUID() } };
@@ -140,6 +153,29 @@ describe("driver read scope (I28)", () => {
       recipients,
       addresses,
       new OperatingConfigService(db),
+    );
+    const hubs = new HubService(db, outbox, addresses);
+    vehicles = new VehicleService(db, outbox, hubs);
+    const drivers = new DriverService(db, outbox, hubs, new FieldCipher(randomBytes(32)));
+    routes = new RouteService(
+      db,
+      outbox,
+      new FeatureService(db, new AuditService(db)),
+      new HeuristicOptimizationProvider(),
+      shipments,
+      vehicles,
+      drivers,
+      hubs,
+      addresses,
+    );
+    notes = new DistributionNoteService(
+      routes,
+      shipments,
+      addresses,
+      drivers,
+      vehicles,
+      new TenantService(db, outbox, new OperatingConfigService(db), new AuditService(db)),
+      new CurrencyService(db),
     );
   }, 240_000);
 
@@ -286,6 +322,148 @@ describe("driver read scope (I28)", () => {
 
       const book = await asDriver(tenantId, a, () => recipients.list({}));
       expect(book.items.map((r) => r.id)).toEqual([myRecipient]);
+    });
+  });
+
+  describe("routes and stops (migrations 0047, 0048)", () => {
+    /** A new shipment's leg, delivering to a known location in Ariana. */
+    async function plannedLeg(tenantId: string): Promise<string> {
+      return asStaff(tenantId, async () => {
+        const shipment = await shipments.create(
+          {
+            idempotencyKey: randomUUID(),
+            senderName: "Boutique",
+            senderPhone: "+21620000001",
+            origin: {
+              rawInput: "Tunis",
+              countryCode: "TN",
+              coordinates: { lat: 36.8, lng: 10.18 },
+            },
+            recipientName: "Route recipient",
+            recipientPhone: `+2162${String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0")}`,
+            destination: {
+              rawInput: "Ariana",
+              city: "Ariana",
+              countryCode: "TN",
+              coordinates: { lat: 36.86, lng: 10.19 },
+            },
+            currency: "TND",
+          },
+          staff,
+        );
+        const legs = await db.withTenant((tx) =>
+          tx.execute<{ id: string }>(
+            sql`select id from shipment_legs where shipment_id = ${shipment.id} limit 1`,
+          ),
+        );
+        const legId = legs[0]?.id;
+        if (legId === undefined) throw new Error("fixture shipment has no leg");
+        return legId;
+      });
+    }
+
+    /** A route published to `driver`, with one stop serving `legId` (a new leg if omitted). */
+    async function publishedRoute(
+      tenantId: string,
+      driver: DriverLogin,
+      legId?: string,
+    ): Promise<string> {
+      const leg = legId ?? (await plannedLeg(tenantId));
+      return asStaff(tenantId, async () => {
+        const vehicle = await vehicles.create({
+          plateNumber: `TUN-${randomUUID().slice(0, 6)}`,
+          type: "VAN",
+          capacityParcels: 60,
+          capacityWeightGrams: 500_000,
+        });
+        const route = await routes.create({
+          plannedDate: "2026-10-11",
+          driverId: driver.driverId,
+          vehicleId: vehicle.id,
+        });
+        await routes.addStops(route.id, { legIds: [leg] });
+        await routes.publish(route.id, { actor: staff.actor });
+        return route.id;
+      });
+    }
+
+    it("hides a colleague's route, its stops and its manifest (where the recipients live)", async () => {
+      const tenantId = await seedTenant();
+      const a = await seedDriverLogin(database.migrator, tenantId);
+      const b = await seedDriverLogin(database.migrator, tenantId);
+      const routeId = await publishedRoute(tenantId, a);
+
+      const listed = await asDriver(tenantId, b, () => routes.list({}));
+      expect(listed.items.map((r) => r.id)).not.toContain(routeId);
+      await expect(asDriver(tenantId, b, () => routes.getById(routeId))).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+      await expect(asDriver(tenantId, b, () => routes.getManifest(routeId))).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+      // The printable bon de distribution lists every recipient on the route.
+      await expect(asDriver(tenantId, b, () => notes.render(routeId))).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+      // The stop rows themselves, read directly: the database refuses too.
+      const stops = await asDriver(tenantId, b, () =>
+        db.withTenant((tx) =>
+          tx.execute<{ n: number }>(
+            sql`select count(*)::int as n from route_stops where route_id = ${routeId}`,
+          ),
+        ),
+      );
+      expect(stops[0]?.n).toBe(0);
+    });
+
+    it("shows a driver their own route manifest, stop address included", async () => {
+      const tenantId = await seedTenant();
+      const a = await seedDriverLogin(database.migrator, tenantId);
+      const routeId = await publishedRoute(tenantId, a);
+
+      const manifest = await asDriver(tenantId, a, () => routes.getManifest(routeId));
+      const stop = manifest.stops[0];
+      expect(stop?.latitude).toBeCloseTo(36.86, 2);
+      expect(stop?.shipments).toHaveLength(1);
+      expect((await asDriver(tenantId, a, () => routes.list({}))).items.map((r) => r.id)).toEqual([
+        routeId,
+      ]);
+    });
+
+    it("takes a re-planned parcel's stop off the previous driver's cancelled route", async () => {
+      // Re-planning a published route is cancel + a new route (domain §3.9
+      // rule 5). The cancelled route stays the first driver's, so a route-level
+      // check alone left them the stop's coordinates and address after the
+      // parcel had moved to a colleague. The stop follows its parcel (0048).
+      const tenantId = await seedTenant();
+      const a = await seedDriverLogin(database.migrator, tenantId);
+      const b = await seedDriverLogin(database.migrator, tenantId);
+      const legId = await plannedLeg(tenantId);
+      const first = await publishedRoute(tenantId, a, legId);
+      const before = await asDriver(tenantId, a, () => routes.getManifest(first));
+      expect(before.stops).toHaveLength(1);
+
+      await asStaff(tenantId, () => routes.cancel(first, { reason: "Driver unavailable" }));
+      const second = await publishedRoute(tenantId, b, legId);
+
+      const stale = await asDriver(tenantId, a, () => routes.getManifest(first));
+      expect(stale.status).toBe("CANCELLED");
+      expect(stale.stops).toEqual([]);
+      const current = await asDriver(tenantId, b, () => routes.getManifest(second));
+      expect(current.stops[0]?.latitude).toBeCloseTo(36.86, 2);
+      expect(current.stops[0]?.shipments).toHaveLength(1);
+      // Staff still see both routes whole.
+      const staffView = await asStaff(tenantId, () => routes.getManifest(first));
+      expect(staffView.stops).toHaveLength(1);
+    });
+
+    it("shows staff every route", async () => {
+      const tenantId = await seedTenant();
+      const a = await seedDriverLogin(database.migrator, tenantId);
+      const b = await seedDriverLogin(database.migrator, tenantId);
+      await publishedRoute(tenantId, a);
+      await publishedRoute(tenantId, b);
+      expect((await asStaff(tenantId, () => routes.list({}))).items).toHaveLength(2);
     });
   });
 
