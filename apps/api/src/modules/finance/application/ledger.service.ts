@@ -1,9 +1,7 @@
-import { randomUUID } from "node:crypto";
-
 import { Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 
-import { DatabaseService } from "../../../shared/database/index.js";
+import { DatabaseService, generateUuidV7 } from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
 import { BusinessRuleError } from "../../../shared/errors/index.js";
 import {
@@ -81,7 +79,7 @@ export class LedgerService {
   async postTransaction(tx: TenantTransaction, input: PostTransactionInput): Promise<string> {
     this.assertBalanced(input.lines);
 
-    const transactionId = randomUUID();
+    const transactionId = await generateUuidV7(tx);
     const occurredAt = input.occurredAt ?? new Date();
 
     for (const line of input.lines) {

@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
@@ -8,6 +6,7 @@ import { OperatingConfigService, OutboxService } from "../../platform/index.js";
 import {
   DatabaseService,
   TenantContext,
+  generateUuidV7,
   isUniqueViolation,
 } from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
@@ -427,7 +426,7 @@ export class ShipmentService {
       assertPodComplete(dto.pod);
 
       const legId = dto.legId ?? (await this.firstLegId(tx, shipment.id));
-      const attemptId = randomUUID();
+      const attemptId = await generateUuidV7(tx);
       const attemptNumber = shipment.attemptCount + 1;
       let snap = snapshotOf(shipment);
 
@@ -556,7 +555,7 @@ export class ShipmentService {
       const driverId = await this.requireCustodian(tx, shipment, "delivery_failed", ctx);
 
       const legId = dto.legId ?? (await this.firstLegId(tx, shipment.id));
-      const attemptId = randomUUID();
+      const attemptId = await generateUuidV7(tx);
       const attemptNumber = shipment.attemptCount + 1;
       const attemptsRemaining = Math.max(0, shipment.maxAttempts - attemptNumber);
       let snap = snapshotOf(shipment);
