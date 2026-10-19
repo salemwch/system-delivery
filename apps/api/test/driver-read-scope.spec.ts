@@ -137,11 +137,24 @@ describe("driver read scope (I28)", () => {
     return id;
   }
 
+  /** A merchant's pickup address, created as staff. */
+  async function merchantPickupAddress(tenantId: string): Promise<string> {
+    const address = await asStaff(tenantId, () =>
+      addresses.resolve({
+        rawInput: "Rue de la République, Tunis",
+        city: "Tunis",
+        countryCode: "TN",
+        coordinates: { lat: 36.8, lng: 10.18 },
+      }),
+    );
+    return address.addressId;
+  }
+
   beforeAll(async () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    addresses = new AddressService(db, outbox, new ManualGeocodingProvider(), new AuditService(db));
     merchants = new MerchantService(db, outbox, new AuditService(db), addresses);
     recipients = new RecipientService(db);
     pickups = new PickupService(db, outbox);
@@ -453,9 +466,52 @@ describe("driver read scope (I28)", () => {
       const current = await asDriver(tenantId, b, () => routes.getManifest(second));
       expect(current.stops[0]?.latitude).toBeCloseTo(36.86, 2);
       expect(current.stops[0]?.shipments).toHaveLength(1);
+      // The stop's address row follows the parcel too (0050): read by id, it is
+      // B's now and no longer A's.
+      const stopAddress = await withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) =>
+          tx<
+            { address_id: string }[]
+          >`select address_id from route_stops where route_id = ${first}`,
+      );
+      const addressId = stopAddress[0]?.address_id ?? "";
+      await expect(
+        asDriver(tenantId, a, () => addresses.getById(addressId)),
+      ).rejects.toBeInstanceOf(NotFoundError);
+      expect((await asDriver(tenantId, b, () => addresses.getById(addressId))).id).toBe(addressId);
       // Staff still see both routes whole.
       const staffView = await asStaff(tenantId, () => routes.getManifest(first));
       expect(staffView.stops).toHaveLength(1);
+    });
+
+    it("shows a stop's own address to the driver of its parcel, as on a return (0050)", async () => {
+      // A return stop delivers to the merchant's return address, which is
+      // neither the parcel's origin nor its destination: only the stop itself
+      // authorises it.
+      const tenantId = await seedTenant();
+      const a = await seedDriverLogin(database.migrator, tenantId);
+      const b = await seedDriverLogin(database.migrator, tenantId);
+      const legId = await plannedLeg(tenantId);
+      const routeId = await publishedRoute(tenantId, a, legId);
+      const returnAddress = await merchantPickupAddress(tenantId);
+      await withTenantContext(
+        database.migrator,
+        tenantId,
+        (
+          tx,
+        ) => tx`insert into route_stops (tenant_id, route_id, sequence, type, address_id, leg_ids)
+                   values (${tenantId}, ${routeId}, 99, 'DELIVERY', ${returnAddress},
+                           ARRAY[${legId}]::uuid[])`,
+      );
+
+      expect((await asDriver(tenantId, a, () => addresses.getById(returnAddress))).id).toBe(
+        returnAddress,
+      );
+      await expect(
+        asDriver(tenantId, b, () => addresses.getById(returnAddress)),
+      ).rejects.toBeInstanceOf(NotFoundError);
     });
 
     it("shows staff every route", async () => {
@@ -469,21 +525,21 @@ describe("driver read scope (I28)", () => {
   });
 
   describe("pickups", () => {
-    async function assignedPickup(tenantId: string, collector: DriverLogin): Promise<string> {
+    /** A pickup assigned to `collector`, at `pickupAddressId` (a new address if omitted). */
+    async function assignedPickup(
+      tenantId: string,
+      collector: DriverLogin,
+      pickupAddressId?: string,
+    ): Promise<string> {
       return asStaff(tenantId, async () => {
         const merchant = await merchants.create({ name: `M ${randomUUID().slice(0, 6)}` });
-        const address = await addresses.resolve({
-          rawInput: "Rue de la République, Tunis",
-          city: "Tunis",
-          countryCode: "TN",
-          coordinates: { lat: 36.8, lng: 10.18 },
-        });
+        const addressId = pickupAddressId ?? (await merchantPickupAddress(tenantId));
         const from = new Date(Date.now() + 3_600_000);
         const pickup = await pickups.request(
           {
             idempotencyKey: randomUUID(),
             merchantId: merchant.id,
-            pickupAddressId: address.addressId,
+            pickupAddressId: addressId,
             contactName: "Contact",
             contactPhone: "+21620123456",
             requestedWindowFrom: from.toISOString(),
@@ -515,6 +571,220 @@ describe("driver read scope (I28)", () => {
       );
       const listed = await asDriver(tenantId, a, () => pickups.list({}));
       expect(listed.items.map((p) => p.id)).toEqual([mine]);
+    });
+
+    it("shares one pickup address between the drivers sent there, and no one else (0050)", async () => {
+      // A merchant's standing pickup address is ONE row referenced by every
+      // pickup there. It is visible to each driver sent there, without copies.
+      const tenantId = await seedTenant();
+      const a = await seedDriverLogin(database.migrator, tenantId);
+      const b = await seedDriverLogin(database.migrator, tenantId);
+      const c = await seedDriverLogin(database.migrator, tenantId);
+      const shared = await merchantPickupAddress(tenantId);
+      await assignedPickup(tenantId, a, shared);
+      await assignedPickup(tenantId, b, shared);
+
+      expect((await asDriver(tenantId, a, () => addresses.getById(shared))).id).toBe(shared);
+      expect((await asDriver(tenantId, b, () => addresses.getById(shared))).id).toBe(shared);
+      await expect(asDriver(tenantId, c, () => addresses.getById(shared))).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+
+      // B's correction is A's too: one row, improved once for everyone sent there.
+      await asDriver(tenantId, b, () =>
+        addresses.applyDriverCorrection(shared, { coordinates: { lat: 36.81, lng: 10.19 } }),
+      );
+      const seenByA = await asDriver(tenantId, a, () => addresses.getById(shared));
+      expect(seenByA.geocodeSource).toBe("driver_corrected");
+      expect(seenByA.latitude).toBeCloseTo(36.81, 5);
+      await expect(
+        asDriver(tenantId, c, () =>
+          addresses.applyDriverCorrection(shared, { coordinates: { lat: 1, lng: 1 } }),
+        ),
+      ).rejects.toBeInstanceOf(NotFoundError);
+      expect((await asStaff(tenantId, () => addresses.getById(shared))).latitude).toBeCloseTo(
+        36.81,
+        5,
+      );
+    });
+  });
+
+  describe("addresses (migration 0050)", () => {
+    /** The two addresses of a shipment, read as staff. */
+    async function addressesOf(
+      tenantId: string,
+      shipmentId: string,
+    ): Promise<{ origin: string; destination: string }> {
+      const s = await asStaff(tenantId, () => shipments.getById(shipmentId));
+      return { origin: s.originAddressId, destination: s.destinationAddressId };
+    }
+
+    /** `address.geocode_corrected` audit rows for an address. */
+    async function correctionTrail(tenantId: string, addressId: string) {
+      return withTenantContext(
+        database.migrator,
+        tenantId,
+        (tx) => tx<
+          {
+            actor_type: string;
+            actor_id: string | null;
+            changes: Record<string, { from: unknown; to: unknown }>;
+            context: Record<string, unknown>;
+          }[]
+        >`select actor_type, actor_id, changes, context from audit_log
+           where action = 'address.geocode_corrected' and resource_id = ${addressId}`,
+      );
+    }
+
+    it("shows a driver their own parcel's addresses and hides a colleague's", async () => {
+      const tenantId = await seedTenant();
+      const a = await seedDriverLogin(database.migrator, tenantId);
+      const b = await seedDriverLogin(database.migrator, tenantId);
+      const own = await addressesOf(
+        tenantId,
+        await outForDelivery(tenantId, a.driverId, "+21620000501"),
+      );
+      const other = await addressesOf(
+        tenantId,
+        await outForDelivery(tenantId, b.driverId, "+21620000502"),
+      );
+
+      for (const id of [own.origin, own.destination]) {
+        expect((await asDriver(tenantId, a, () => addresses.getById(id))).id).toBe(id);
+      }
+      for (const id of [other.origin, other.destination]) {
+        await expect(asDriver(tenantId, a, () => addresses.getById(id))).rejects.toBeInstanceOf(
+          NotFoundError,
+        );
+        // Staff keep the whole tenant.
+        expect((await asStaff(tenantId, () => addresses.getById(id))).id).toBe(id);
+      }
+      // Read directly, past any service: the database refuses too.
+      const rows = await asDriver(tenantId, a, () =>
+        db.withTenant((tx) =>
+          tx.execute<{ n: number }>(
+            sql`select count(*)::int as n from addresses
+                 where id in (${other.origin}, ${other.destination})`,
+          ),
+        ),
+      );
+      expect(rows[0]?.n).toBe(0);
+    });
+
+    it("takes the address away when the parcel moves to a colleague", async () => {
+      const tenantId = await seedTenant();
+      const a = await seedDriverLogin(database.migrator, tenantId);
+      const b = await seedDriverLogin(database.migrator, tenantId);
+      const id = await assignedTo(tenantId, a.driverId, "+21620000503");
+      const { destination } = await addressesOf(tenantId, id);
+      expect((await asDriver(tenantId, a, () => addresses.getById(destination))).id).toBe(
+        destination,
+      );
+
+      await asStaff(tenantId, () =>
+        shipments.recordEvent(
+          id,
+          { eventType: "assigned", idempotencyKey: randomUUID(), driverId: b.driverId },
+          staff,
+        ),
+      );
+
+      await expect(
+        asDriver(tenantId, a, () => addresses.getById(destination)),
+      ).rejects.toBeInstanceOf(NotFoundError);
+      expect((await asDriver(tenantId, b, () => addresses.getById(destination))).id).toBe(
+        destination,
+      );
+    });
+
+    it("shows a DRIVER login with no driver record no address (fail closed)", async () => {
+      const tenantId = await seedTenant();
+      const a = await seedDriverLogin(database.migrator, tenantId);
+      const { destination } = await addressesOf(
+        tenantId,
+        await outForDelivery(tenantId, a.driverId, "+21620000504"),
+      );
+      const unlinked: DriverLogin = { userId: randomUUID(), driverId: NO_DRIVER };
+      await expect(
+        asDriver(tenantId, unlinked, () => addresses.getById(destination)),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("cannot reach another tenant's address, whoever asks", async () => {
+      const home = await seedTenant();
+      const away = await seedTenant();
+      const a = await seedDriverLogin(database.migrator, home);
+      const c = await seedDriverLogin(database.migrator, away);
+      const { destination } = await addressesOf(
+        away,
+        await outForDelivery(away, c.driverId, "+21620000505"),
+      );
+      await expect(asDriver(home, a, () => addresses.getById(destination))).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+      await expect(asStaff(home, () => addresses.getById(destination))).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+      await expect(
+        asStaff(home, () =>
+          addresses.applyDriverCorrection(destination, { coordinates: { lat: 1, lng: 1 } }),
+        ),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("corrects only an address the driver may see, and audits the pin it replaced", async () => {
+      const tenantId = await seedTenant();
+      const a = await seedDriverLogin(database.migrator, tenantId);
+      const b = await seedDriverLogin(database.migrator, tenantId);
+      const own = await addressesOf(
+        tenantId,
+        await outForDelivery(tenantId, a.driverId, "+21620000506"),
+      );
+      const other = await addressesOf(
+        tenantId,
+        await outForDelivery(tenantId, b.driverId, "+21620000507"),
+      );
+
+      const corrected = await asDriver(tenantId, a, () =>
+        addresses.applyDriverCorrection(own.destination, {
+          coordinates: { lat: 34.7412, lng: 10.7612 },
+          accessNotes: "Portail vert, 2e étage",
+        }),
+      );
+      expect(corrected.geocodeSource).toBe("driver_corrected");
+      expect(corrected.latitude).toBeCloseTo(34.7412, 5);
+      const trail = await correctionTrail(tenantId, own.destination);
+      expect(trail).toHaveLength(1);
+      expect(trail[0]).toMatchObject({
+        actor_type: "DRIVER",
+        actor_id: a.userId,
+        changes: { pinSource: { from: "manual", to: "driver_corrected" } },
+        context: { accessNotesChanged: true },
+      });
+      expect(Number(trail[0]?.changes["latitude"]?.from)).toBeCloseTo(34.74, 5);
+      expect(Number(trail[0]?.changes["latitude"]?.to)).toBeCloseTo(34.7412, 5);
+      // The trail records that the notes changed, never what they say.
+      expect(JSON.stringify(trail[0])).not.toContain("Portail vert");
+
+      // A colleague's pin: not found, unchanged, and nothing recorded.
+      const before = await asStaff(tenantId, () => addresses.getById(other.destination));
+      await expect(
+        asDriver(tenantId, a, () =>
+          addresses.applyDriverCorrection(other.destination, {
+            coordinates: { lat: 34.9, lng: 10.9 },
+          }),
+        ),
+      ).rejects.toBeInstanceOf(NotFoundError);
+      expect(await asStaff(tenantId, () => addresses.getById(other.destination))).toEqual(before);
+      expect(await correctionTrail(tenantId, other.destination)).toEqual([]);
+
+      // Staff may correct any address in the tenant.
+      await asStaff(tenantId, () =>
+        addresses.applyDriverCorrection(other.destination, {
+          coordinates: { lat: 34.8, lng: 10.8 },
+        }),
+      );
+      expect(await correctionTrail(tenantId, other.destination)).toHaveLength(1);
     });
   });
 

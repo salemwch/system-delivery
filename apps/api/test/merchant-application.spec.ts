@@ -96,7 +96,7 @@ describe("merchant applications", () => {
       db,
       outbox,
       audit,
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, outbox, new ManualGeocodingProvider(), new AuditService(db)),
     );
     applications = new MerchantApplicationService(db, audit, merchants);
   }, 240_000);

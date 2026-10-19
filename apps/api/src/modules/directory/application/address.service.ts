@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
 
-import { OutboxService } from "../../platform/index.js";
+import { AuditService, OutboxService } from "../../platform/index.js";
 import { DatabaseService, TenantContext } from "../../../shared/database/index.js";
 import { NotFoundError } from "../../../shared/errors/index.js";
 import { parseWithZod } from "../../../shared/http/index.js";
@@ -69,6 +69,7 @@ export class AddressService {
     private readonly database: DatabaseService,
     private readonly outbox: OutboxService,
     @Inject(GEOCODING_PROVIDER) private readonly geocoder: GeocodingProvider,
+    private readonly audit: AuditService,
   ) {}
 
   async resolve(input: unknown): Promise<ResolvedAddress> {
@@ -123,10 +124,24 @@ export class AddressService {
    * Applies a driver's on-the-ground correction: the strongest geocode signal.
    * Overwrites the location, marks the source `driver_corrected`, and announces
    * `address.geocode_corrected` so route matrices and caches are invalidated.
+   *
+   * Restricted to addresses the caller may see. Under a driver session RLS
+   * (migration 0050) hides every address that is not on one of their own
+   * shipments, route stops or pickups, so a colleague's address matches
+   * nothing and is a 404. Audit-logged in the same transaction, with the pin
+   * before and after: the destination pin is what the POD distance and
+   * no-attempt fraud checks measure against (docs/07 §9), so moving it is a
+   * change someone must be able to answer for.
    */
   async applyDriverCorrection(id: string, input: unknown): Promise<AddressView> {
     const dto = parseWithZod(correctAddressSchema, input);
     return this.database.withTenant(async (tx) => {
+      // Locked, so the "before" in the trail is the value this correction
+      // replaced, even when two corrections race.
+      const before = (await selectViews(tx, eq(addresses.id, id), { lock: true }))[0];
+      if (before === undefined) {
+        throw new NotFoundError("Address");
+      }
       const updated = await tx
         .update(addresses)
         .set({
@@ -160,6 +175,23 @@ export class AddressService {
         // Just updated in this transaction — unreachable, guards the type.
         throw new NotFoundError("Address");
       }
+
+      await this.audit.record(tx, {
+        action: "address.geocode_corrected",
+        resourceType: "address",
+        resourceId: id,
+        // `pin*`, not `geocode*`: the trail redacts any field whose name contains
+        // "code", and these values are not secrets.
+        changes: {
+          latitude: { from: before.latitude, to: row.latitude },
+          longitude: { from: before.longitude, to: row.longitude },
+          pinSource: { from: before.geocodeSource, to: row.geocodeSource },
+          pinConfidence: { from: before.geocodeConfidence, to: row.geocodeConfidence },
+        },
+        // Free-text access notes can carry a phone number or a name; the trail
+        // keeps seven years, so it records that they changed, not what they say.
+        context: { accessNotesChanged: dto.accessNotes !== undefined },
+      });
       return row;
     });
   }
@@ -197,8 +229,9 @@ type ViewRow = Omit<AddressView, "geocodeConfidence"> & { geocodeConfidence: str
 async function selectViews(
   tx: Parameters<Parameters<DatabaseService["withTenant"]>[0]>[0],
   where: ReturnType<typeof eq>,
+  options: { readonly lock: boolean } = { lock: false },
 ): Promise<AddressView[]> {
-  const rows: ViewRow[] = await tx
+  const query = tx
     .select({
       id: addresses.id,
       tenantId: addresses.tenantId,
@@ -220,6 +253,7 @@ async function selectViews(
     .from(addresses)
     .where(where)
     .limit(1);
+  const rows: ViewRow[] = options.lock ? await query.for("update") : await query;
 
   return rows.map((row) => ({
     ...row,

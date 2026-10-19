@@ -121,7 +121,12 @@ describe("shipment idempotency (I29)", () => {
     database = await createTestDatabase();
     const db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(
+      db,
+      outbox,
+      new ManualGeocodingProvider(),
+      new AuditService(db),
+    );
     shipments = new ShipmentService(
       db,
       new ShipmentEventService(outbox),

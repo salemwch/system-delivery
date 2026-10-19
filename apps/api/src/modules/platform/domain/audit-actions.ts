@@ -71,6 +71,10 @@ export const AUDIT_ACTIONS = [
   // ever shows the current recipient and address, so "the driver called the
   // wrong number" has no answer six weeks later without this.
   "shipment.amended",
+  // A driver moving a recipient's pin. The pin is what the POD distance and
+  // no-attempt fraud rules measure against (docs/07 §9), so a correction is
+  // recorded with the coordinates it replaced.
+  "address.geocode_corrected",
 
   // ── Money (§10: all ledger adjustments, variance, approvals) ───────────────
   "ledger.adjusted",

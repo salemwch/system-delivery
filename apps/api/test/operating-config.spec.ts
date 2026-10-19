@@ -81,12 +81,17 @@ describe("operating config", () => {
     config = new OperatingConfigService(db);
 
     const outbox = new OutboxService();
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(
+      db,
+      outbox,
+      new ManualGeocodingProvider(),
+      new AuditService(db),
+    );
     merchants = new MerchantService(
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, outbox, new ManualGeocodingProvider(), new AuditService(db)),
     );
     const recipients = new RecipientService(db);
     const events = new ShipmentEventService(outbox);

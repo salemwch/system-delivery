@@ -67,10 +67,20 @@ describe("directory", () => {
       dbService,
       outbox,
       new AuditService(dbService),
-      new AddressService(dbService, outbox, new ManualGeocodingProvider()),
+      new AddressService(
+        dbService,
+        outbox,
+        new ManualGeocodingProvider(),
+        new AuditService(dbService),
+      ),
     );
     recipients = new RecipientService(dbService);
-    addresses = new AddressService(dbService, outbox, new ManualGeocodingProvider());
+    addresses = new AddressService(
+      dbService,
+      outbox,
+      new ManualGeocodingProvider(),
+      new AuditService(dbService),
+    );
   }, 240_000);
 
   afterEach(async () => {
@@ -272,7 +282,12 @@ describe("directory", () => {
             source: "mapbox",
           }),
       };
-      const withGeocoder = new AddressService(dbService, new OutboxService(), stub);
+      const withGeocoder = new AddressService(
+        dbService,
+        new OutboxService(),
+        stub,
+        new AuditService(dbService),
+      );
       const resolved = await asTenant(tenantId, () =>
         withGeocoder.resolve({ rawInput: "Avenue Habib Bourguiba, Tunis", countryCode: "TN" }),
       );

@@ -94,7 +94,7 @@ describe("audit log", () => {
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, outbox, new ManualGeocodingProvider(), new AuditService(db)),
     );
     auth = buildAuthStack(db).auth;
   }, 240_000);

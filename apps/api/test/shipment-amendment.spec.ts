@@ -122,7 +122,12 @@ describe("shipment amendments", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     const audit = new AuditService(db);
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(
+      db,
+      outbox,
+      new ManualGeocodingProvider(),
+      new AuditService(db),
+    );
     const recipients = new RecipientService(db);
     const merchants = new MerchantService(db, outbox, audit, addresses);
     shipments = new ShipmentService(

@@ -148,7 +148,7 @@ describe("invoices", () => {
       db,
       outbox,
       audit,
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, outbox, new ManualGeocodingProvider(), new AuditService(db)),
     );
     invoices = new InvoiceService(
       db,

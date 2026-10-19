@@ -40,7 +40,9 @@ import { OperatingConfigService } from "../src/modules/platform/application/oper
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { NOTIFICATION_PROVIDER } from "../src/modules/platform/domain/notification-provider.js";
 import { commandContextOf } from "../src/modules/shipment/api/command-context.js";
+import { AddressBookController } from "../src/modules/shipment/api/address-book.controller.js";
 import { ShipmentController } from "../src/modules/shipment/api/shipment.controller.js";
+import { AddressBookService } from "../src/modules/shipment/application/address-book.service.js";
 import { BulkShipmentService } from "../src/modules/shipment/application/bulk-shipment.service.js";
 import { DocumentService } from "../src/modules/shipment/application/document.service.js";
 import { LabelService } from "../src/modules/shipment/application/label.service.js";
@@ -178,12 +180,16 @@ describe("driver authorization over HTTP", () => {
     });
   }
 
-  function inTenant<T>(fn: () => Promise<T>): Promise<T> {
-    return TenantContext.run({ tenantId: tenant, actorType: "system" }, fn);
+  function inTenant<T>(fn: () => Promise<T>, tenantId: TenantId = tenant): Promise<T> {
+    return TenantContext.run({ tenantId, actorType: "system" }, fn);
   }
 
   /** A shipment out for delivery with `driverId` (null: nobody's yet). */
-  async function outForDelivery(driverId: string, phone: string): Promise<string> {
+  async function outForDelivery(
+    driverId: string,
+    phone: string,
+    tenantId: TenantId = tenant,
+  ): Promise<string> {
     return inTenant(async () => {
       const s = await shipments.create(
         {
@@ -214,7 +220,7 @@ describe("driver authorization over HTTP", () => {
         staff,
       );
       return s.id;
-    });
+    }, tenantId);
   }
 
   beforeAll(async () => {
@@ -224,7 +230,12 @@ describe("driver authorization over HTTP", () => {
 
     const db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(
+      db,
+      outbox,
+      new ManualGeocodingProvider(),
+      new AuditService(db),
+    );
     const recipients = new RecipientService(db);
     shipments = new ShipmentService(
       db,
@@ -238,8 +249,9 @@ describe("driver authorization over HTTP", () => {
     );
     shiftsSvc = new ShiftService(db, outbox);
 
-    // Routes under test use only ShipmentService, RecipientService,
-    // RemittanceService, ShiftService and CurrencyService. The controllers' other
+    // Routes under test use only ShipmentService, ShipmentStatsService,
+    // AddressBookService, RecipientService, RemittanceService, ShiftService and
+    // CurrencyService. The controllers' other
     // collaborators back routes this spec never calls, so they are inert
     // placeholders, never invoked.
     const unused = (token: InjectionToken): Provider => ({ provide: token, useValue: {} });
@@ -251,6 +263,7 @@ describe("driver authorization over HTTP", () => {
         RecipientController,
         FinanceController,
         ShiftController,
+        AddressBookController,
       ],
       providers: [
         { provide: AppConfigService, useValue: stubConfig() },
@@ -276,7 +289,8 @@ describe("driver authorization over HTTP", () => {
         unused(SettlementService),
         unused(ReconciliationService),
         unused(PaymentNoteService),
-        unused(ShipmentStatsService),
+        ShipmentStatsService,
+        AddressBookService,
         unused(ParcelStateService),
         unused(BulkShipmentService),
         unused(TrackingService),
@@ -463,6 +477,78 @@ describe("driver authorization over HTTP", () => {
       const { id } = JSON.parse(own.body) as { id: string };
       // Reading, confirming or disputing a remittance is staff work.
       expect((await call("GET", `/v1/finance/remittances/${id}`, token)).statusCode).toBe(403);
+    });
+  });
+
+  describe("a DRIVER and customer addresses (address authorization, migration 0050)", () => {
+    it("finds only their own shipments' recipients in the address book", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const b = await seedAccount(["DRIVER"], true);
+      const mine = await outForDelivery(a.driverId ?? "", "+21620000601");
+      await outForDelivery(b.driverId ?? "", "+21620000602");
+      const token = await login(a);
+
+      const book = await call("GET", "/v1/address-book", token);
+      expect(book.statusCode).toBe(200);
+      const entries = (
+        JSON.parse(book.body) as {
+          data: { phone: string; lastDestinationAddressId: string | null }[];
+        }
+      ).data;
+      expect(entries.map((e) => e.phone)).toEqual(["+21620000601"]);
+      expect(entries[0]?.lastDestinationAddressId).toBe(
+        (await inTenant(() => shipments.getById(mine))).destinationAddressId,
+      );
+
+      // Searching for the colleague's recipient by phone finds nothing.
+      const search = await call("GET", "/v1/address-book?q=%2B21620000602", token);
+      expect(search.statusCode).toBe(200);
+      expect((JSON.parse(search.body) as { data: unknown[] }).data).toEqual([]);
+    });
+
+    it("reads their own parcel's addresses, and no shipment route returns a colleague's", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const b = await seedAccount(["DRIVER"], true);
+      const mine = await outForDelivery(a.driverId ?? "", "+21620000603");
+      const theirId = await outForDelivery(b.driverId ?? "", "+21620000604");
+      const their = await inTenant(() => shipments.getById(theirId));
+      const token = await login(a);
+
+      const own = await call("GET", `/v1/shipments/${mine}`, token);
+      expect(own.statusCode, own.body).toBe(200);
+      const detail = JSON.parse(own.body) as {
+        destination: { rawInput: string; latitude: number | null };
+      };
+      expect(detail.destination.rawInput).toBe("Sfax");
+      expect(detail.destination.latitude).toBeCloseTo(34.74, 5);
+
+      for (const url of [
+        `/v1/shipments/${theirId}`,
+        `/v1/shipments/lookup/${their.trackingNumber}`,
+      ]) {
+        const response = await call("GET", url, token);
+        expect(response.statusCode, url).toBe(404);
+        expect(response.body).not.toContain(their.destinationAddressId);
+      }
+      const list = await call("GET", "/v1/shipments", token);
+      expect(list.body).not.toContain(their.destinationAddressId);
+    });
+
+    it("cannot reach another tenant's parcel or its address", async () => {
+      const c = await seedAccount(["DRIVER"], true, otherTenant);
+      const awayId = await outForDelivery(c.driverId ?? "", "+21620000605", otherTenant);
+      const away = await inTenant(() => shipments.getById(awayId), otherTenant);
+
+      for (const token of [
+        await login(await seedAccount(["DRIVER"], true)),
+        await login(await seedAccount(["OWNER"], false)),
+      ]) {
+        const response = await call("GET", `/v1/shipments/${awayId}`, token);
+        expect(response.statusCode).toBe(404);
+        expect(response.body).not.toContain(away.destinationAddressId);
+        const book = await call("GET", "/v1/address-book?q=%2B21620000605", token);
+        expect((JSON.parse(book.body) as { data: unknown[] }).data).toEqual([]);
+      }
     });
   });
 

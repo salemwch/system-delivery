@@ -86,7 +86,7 @@ describe("notes", () => {
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, outbox, new ManualGeocodingProvider(), new AuditService(db)),
     );
   }, 240_000);
 

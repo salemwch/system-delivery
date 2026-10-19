@@ -6,6 +6,7 @@ import { GeofenceService } from "../src/modules/network/application/geofence.ser
 import { evaluateGeofences } from "../src/modules/network/domain/geofence-eval.js";
 import { AddressService } from "../src/modules/directory/application/address.service.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
+import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
@@ -97,7 +98,7 @@ describe("network", () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    addresses = new AddressService(db, outbox, new ManualGeocodingProvider(), new AuditService(db));
     hubs = new HubService(db, outbox, addresses);
     zonesSvc = new ZoneService(db, outbox);
     geofences = new GeofenceService(db, addresses);
