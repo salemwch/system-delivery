@@ -16,7 +16,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "../../../shared/errors/index.js";
-import { parseWithZod } from "../../../shared/http/index.js";
+import { parseWithZod, requestFingerprint } from "../../../shared/http/index.js";
 import {
   cancelShipmentSchema,
   completeReturnSchema,
@@ -35,7 +35,6 @@ import type {
   RecordPickupScanInput,
 } from "../domain/dtos.js";
 import { haversineMetres } from "../domain/geo.js";
-import { requestFingerprint } from "../domain/request-fingerprint.js";
 import { decodeShipment, encodeShipment } from "../domain/shipment-snapshot.js";
 import {
   pod,

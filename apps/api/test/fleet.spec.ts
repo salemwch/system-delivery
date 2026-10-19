@@ -9,7 +9,6 @@ import type { ShiftContext } from "../src/modules/fleet/application/shift.servic
 import { HubService } from "../src/modules/network/application/hub.service.js";
 import { AddressService } from "../src/modules/directory/application/address.service.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
-import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { FieldCipher } from "../src/shared/crypto/field-cipher.js";
 import { DatabaseService } from "../src/shared/database/database.service.js";
@@ -98,12 +97,7 @@ describe("fleet", () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    const addresses = new AddressService(
-      db,
-      outbox,
-      new ManualGeocodingProvider(),
-      new AuditService(db),
-    );
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     const hubs = new HubService(db, outbox, addresses);
     const cipher = new FieldCipher(randomBytes(32));
     vehicles = new VehicleService(db, outbox, hubs);

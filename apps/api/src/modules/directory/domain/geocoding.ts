@@ -59,3 +59,20 @@ export const MANUAL_PIN_CONFIDENCE = 1;
 
 /** Confidence for a driver's on-the-ground correction — the strongest signal. */
 export const DRIVER_CORRECTION_CONFIDENCE = 1;
+
+/**
+ * A driver correction that moves the pin further than this is held for a
+ * dispatcher's review instead of applied (docs/03-event-storming.md, command
+ * `CorrectAddressGeocode`: "moved > 2 km requires dispatcher review"). Two
+ * kilometres is a different neighbourhood, not a misplaced gate: more often a
+ * wrong parcel, a wrong address, or a fix taken somewhere else.
+ */
+export const CORRECTION_REVIEW_DISTANCE_M = 2000;
+
+/**
+ * How far ahead of the server a device clock may run. Within it, a correction's
+ * `occurredAt` is clamped to the server's time; beyond it the request is
+ * refused. Without the cap, one phone with its clock set a year ahead would
+ * make its pin "newest" forever and supersede every later correction.
+ */
+export const CORRECTION_CLOCK_SKEW_MS = 5 * 60 * 1000;

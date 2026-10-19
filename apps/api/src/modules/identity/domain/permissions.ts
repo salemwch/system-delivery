@@ -97,6 +97,12 @@ export const PERMISSIONS = [
   // Addresses (the address-quality pipeline; directory owns it)
   "address:read",
   "address:correct",
+  /**
+   * Decide a driver correction held for moving the pin more than 2 km
+   * (docs/03 `CorrectAddressGeocode`). Never held by DRIVER: a large move is
+   * reviewed precisely because the driver who made it might be wrong.
+   */
+  "address:review",
 
   // Routes and dispatch
   "route:read",
@@ -307,6 +313,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     "recipient:create",
     "recipient:update",
     "address:read",
+    "address:review",
     "route:read",
     "route:create",
     "route:publish",

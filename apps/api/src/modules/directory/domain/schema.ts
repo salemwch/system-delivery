@@ -57,6 +57,8 @@ export const addresses = pgTable(
     timezone: text("timezone"),
     accessNotes: text("access_notes"),
     verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    /** Device time of the field correction that set the pin (0051); NULL if none did. */
+    locationObservedAt: timestamp("location_observed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -65,6 +67,35 @@ export const addresses = pgTable(
     index("addresses_tenant_idx").on(table.tenantId),
   ],
 );
+
+/**
+ * Driver geocode corrections (migration 0051). Append-only observations; only
+ * the review columns change, and only out of PENDING_REVIEW (DB trigger).
+ * Locations are read via `ST_Y`/`ST_X`, never as raw geography.
+ */
+export const addressCorrections = pgTable("address_corrections", {
+  id: uuid("id")
+    .primaryKey()
+    .default(sql`uuidv7()`),
+  tenantId: uuid("tenant_id").notNull(),
+  addressId: uuid("address_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  requestHash: text("request_hash").notNull(),
+  correctedByUserId: uuid("corrected_by_user_id").notNull(),
+  driverId: uuid("driver_id"),
+  fromLocation: geographyPoint("from_location"),
+  toLocation: geographyPoint("to_location").notNull(),
+  distanceMovedM: integer("distance_moved_m"),
+  accuracyM: integer("accuracy_m"),
+  confidenceBefore: numeric("confidence_before"),
+  accessNotes: text("access_notes"),
+  status: text("status").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+  reviewedByUserId: uuid("reviewed_by_user_id"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
+});
 
 export const merchants = pgTable(
   "merchants",

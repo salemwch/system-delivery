@@ -31,6 +31,7 @@ interface WorkloadCounts {
   readonly support: number;
   readonly expenses: number;
   readonly lowStock: number;
+  readonly addressCorrections: number;
 }
 
 @Controller("v1/workload")
@@ -45,9 +46,9 @@ export class WorkloadController {
   @Get()
   async counts(): Promise<WorkloadCounts> {
     return this.database.withTenant(async (tx) => {
-      // One statement, six scalar subqueries. Each is an indexed count over a
+      // One statement, seven scalar subqueries. Each is an indexed count over a
       // partial index — `notes_tenant_open_idx`, `expenses_pending_idx` and the
-      // rest — so the whole thing is six index-only scans, not six table scans.
+      // rest — so the whole thing is seven index-only scans, not seven table scans.
       const rows = await tx.execute<{
         remarks: number;
         applications: number;
@@ -55,6 +56,7 @@ export class WorkloadController {
         support: number;
         expenses: number;
         low_stock: number;
+        address_corrections: number;
       }>(sql`
         select
           (select count(*)::int from notes where resolved_at is null) as remarks,
@@ -67,7 +69,9 @@ export class WorkloadController {
              from inventory_levels l
              join inventory_items i on i.id = l.item_id
             where i.reorder_level is not null
-              and l.quantity <= i.reorder_level) as low_stock
+              and l.quantity <= i.reorder_level) as low_stock,
+          (select count(*)::int from address_corrections
+            where status = 'PENDING_REVIEW') as address_corrections
       `);
 
       const row = rows[0];
@@ -78,6 +82,7 @@ export class WorkloadController {
         support: row?.support ?? 0,
         expenses: row?.expenses ?? 0,
         lowStock: row?.low_stock ?? 0,
+        addressCorrections: row?.address_corrections ?? 0,
       };
     });
   }

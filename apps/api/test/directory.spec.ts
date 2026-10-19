@@ -67,20 +67,10 @@ describe("directory", () => {
       dbService,
       outbox,
       new AuditService(dbService),
-      new AddressService(
-        dbService,
-        outbox,
-        new ManualGeocodingProvider(),
-        new AuditService(dbService),
-      ),
+      new AddressService(dbService, new ManualGeocodingProvider()),
     );
     recipients = new RecipientService(dbService);
-    addresses = new AddressService(
-      dbService,
-      outbox,
-      new ManualGeocodingProvider(),
-      new AuditService(dbService),
-    );
+    addresses = new AddressService(dbService, new ManualGeocodingProvider());
   }, 240_000);
 
   afterEach(async () => {
@@ -254,24 +244,6 @@ describe("directory", () => {
       expect(view.latitude).toBeNull();
     });
 
-    it("applies a driver correction and emits address.geocode_corrected", async () => {
-      const tenantId = await seedTenant("dir-addr-correct");
-      const resolved = await asTenant(tenantId, () =>
-        addresses.resolve({ rawInput: "Immeuble Yasmine", countryCode: "TN" }),
-      );
-      const corrected = await asTenant(tenantId, () =>
-        addresses.applyDriverCorrection(resolved.addressId, {
-          coordinates: { lat: 36.8, lng: 10.18 },
-          accessNotes: "actual entrance is on the side street",
-        }),
-      );
-      expect(corrected.geocodeSource).toBe("driver_corrected");
-      expect(corrected.geocodeConfidence).toBe(1);
-      expect(corrected.latitude ?? 0).toBeCloseTo(36.8, 4);
-      expect(corrected.accessNotes).toBe("actual entrance is on the side street");
-      expect(await outboxEventTypes(tenantId)).toContain("address.geocode_corrected");
-    });
-
     it("uses the geocoding provider when one returns a match", async () => {
       const tenantId = await seedTenant("dir-addr-geo");
       const stub: GeocodingProvider = {
@@ -282,12 +254,7 @@ describe("directory", () => {
             source: "mapbox",
           }),
       };
-      const withGeocoder = new AddressService(
-        dbService,
-        new OutboxService(),
-        stub,
-        new AuditService(dbService),
-      );
+      const withGeocoder = new AddressService(dbService, stub);
       const resolved = await asTenant(tenantId, () =>
         withGeocoder.resolve({ rawInput: "Avenue Habib Bourguiba, Tunis", countryCode: "TN" }),
       );

@@ -178,11 +178,45 @@ export const blockRecipientSchema = z.strictObject({
 });
 export type BlockRecipientInput = z.infer<typeof blockRecipientSchema>;
 
+/**
+ * A driver's on-the-ground pin (docs/01-mvp-scope.md 2.10).
+ *
+ * `idempotencyKey` is required: the offline app queues corrections and retries
+ * them, and a retry must be the same correction, not a second one.
+ * `occurredAt` is when the phone took the fix (docs/01 §4.7 item 7.5); it
+ * decides which of two corrections is newer, so it is required too.
+ */
 export const correctAddressSchema = z.strictObject({
+  idempotencyKey: nonEmpty("idempotencyKey").max(200),
   coordinates: coordinatesSchema,
-  accessNotes: z.string().trim().min(1).optional(),
+  /** Horizontal accuracy the device reported, in metres. */
+  accuracyM: z.number().int().min(0).max(100_000).optional(),
+  accessNotes: z.string().trim().min(1).max(1000).optional(),
+  occurredAt: z.coerce.date(),
 });
 export type CorrectAddressInput = z.infer<typeof correctAddressSchema>;
+
+export const ADDRESS_CORRECTION_STATUSES = [
+  "APPLIED",
+  "PENDING_REVIEW",
+  "APPROVED",
+  "REJECTED",
+  "SUPERSEDED",
+] as const;
+export type AddressCorrectionStatus = (typeof ADDRESS_CORRECTION_STATUSES)[number];
+
+export const listCorrectionsSchema = z.strictObject({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  cursor: z.uuid().optional(),
+  status: z.enum(ADDRESS_CORRECTION_STATUSES).optional(),
+  addressId: z.uuid().optional(),
+});
+export type ListCorrectionsInput = z.infer<typeof listCorrectionsSchema>;
+
+export const reviewCorrectionSchema = z.strictObject({
+  note: z.string().trim().min(1).max(1000).optional(),
+});
+export type ReviewCorrectionInput = z.infer<typeof reviewCorrectionSchema>;
 
 // ── Merchant applications (nouveaux clients) ─────────────────────────────────
 //

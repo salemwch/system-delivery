@@ -150,15 +150,10 @@ describe("shipment", () => {
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider(), new AuditService(db)),
+      new AddressService(db, new ManualGeocodingProvider()),
     );
     const recipients = new RecipientService(db);
-    const addresses = new AddressService(
-      db,
-      outbox,
-      new ManualGeocodingProvider(),
-      new AuditService(db),
-    );
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     const events = new ShipmentEventService(outbox);
     const operatingConfig = new OperatingConfigService(db);
     shipments = new ShipmentService(
@@ -236,7 +231,7 @@ describe("shipment", () => {
         db,
         outbox,
         new AuditService(db),
-        new AddressService(db, outbox, new ManualGeocodingProvider(), new AuditService(db)),
+        new AddressService(db, new ManualGeocodingProvider()),
       );
       const merchantId = await asTenant(tenantId, async () => {
         const m = await merchants.create({ name: "Suspended Co" });

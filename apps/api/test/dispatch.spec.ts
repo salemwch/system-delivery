@@ -184,17 +184,12 @@ describe("dispatch", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     const features = new FeatureService(db, new AuditService(db));
-    const addresses = new AddressService(
-      db,
-      outbox,
-      new ManualGeocodingProvider(),
-      new AuditService(db),
-    );
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     const merchants = new MerchantService(
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider(), new AuditService(db)),
+      new AddressService(db, new ManualGeocodingProvider()),
     );
     const recipients = new RecipientService(db);
     const hubs = new HubService(db, outbox, addresses);

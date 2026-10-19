@@ -38,6 +38,7 @@ export default async function AppLayout({
           remarks: workload.remarks,
           applications: workload.applications,
           amendments: workload.amendments,
+          corrections: workload.addressCorrections,
           support: workload.support,
           inventory: workload.lowStock,
         };
@@ -47,6 +48,7 @@ export default async function AppLayout({
     dashboard: "◈",
     shipments: "◫",
     amendments: "⇄",
+    corrections: "⌖",
     documents: "▤",
     import: "⇪",
     dispatch: "⊞",

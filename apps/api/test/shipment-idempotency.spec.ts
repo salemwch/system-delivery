@@ -12,7 +12,7 @@ import { OutboxService } from "../src/modules/platform/application/outbox.servic
 import { ShipmentEventService } from "../src/modules/shipment/application/shipment-event.service.js";
 import { ShipmentService } from "../src/modules/shipment/application/shipment.service.js";
 import type { CommandContext } from "../src/modules/shipment/application/shipment.service.js";
-import { requestFingerprint } from "../src/modules/shipment/domain/request-fingerprint.js";
+import { requestFingerprint } from "../src/shared/http/request-fingerprint.js";
 import type { Shipment } from "../src/modules/shipment/domain/schema.js";
 import {
   decodeShipment,
@@ -121,12 +121,7 @@ describe("shipment idempotency (I29)", () => {
     database = await createTestDatabase();
     const db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    const addresses = new AddressService(
-      db,
-      outbox,
-      new ManualGeocodingProvider(),
-      new AuditService(db),
-    );
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     shipments = new ShipmentService(
       db,
       new ShipmentEventService(outbox),

@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { DistributionNoteService } from "../src/modules/dispatch/application/distribution-note.service.js";
 import { HeuristicOptimizationProvider } from "../src/modules/dispatch/application/optimization.provider.js";
 import { RouteService } from "../src/modules/dispatch/application/route.service.js";
+import { AddressCorrectionService } from "../src/modules/directory/application/address-correction.service.js";
 import { AddressService } from "../src/modules/directory/application/address.service.js";
 import { MerchantService } from "../src/modules/directory/application/merchant.service.js";
 import { RecipientService } from "../src/modules/directory/application/recipient.service.js";
@@ -54,6 +55,7 @@ describe("driver read scope (I28)", () => {
   let pickups: PickupService;
   let merchants: MerchantService;
   let addresses: AddressService;
+  let corrections: AddressCorrectionService;
   let vehicles: VehicleService;
   let routes: RouteService;
   let notes: DistributionNoteService;
@@ -71,6 +73,26 @@ describe("driver read scope (I28)", () => {
   /** Staff: no sub-tenant scope, sees the whole tenant. */
   function asStaff<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
     return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "user" }, fn);
+  }
+
+  /** A staff member who signs what they do: a correction always names a person. */
+  async function asStaffUser<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
+    const rows = await withTenantContext(
+      database.migrator,
+      tenantId,
+      (tx) => tx<{ id: string }[]>`
+        insert into users (tenant_id, email, password_hash, full_name, status)
+        values (${tenantId}, ${`staff-${randomUUID().slice(0, 8)}@test.tn`}, 'hash', 'Staff', 'ACTIVE')
+        returning id`,
+    );
+    const actorId = rows[0]?.id;
+    if (actorId === undefined) throw new Error("failed to seed staff user");
+    return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "user", actorId }, fn);
+  }
+
+  /** A correction as the driver app sends it. */
+  function pin(lat: number, lng: number) {
+    return { idempotencyKey: randomUUID(), coordinates: { lat, lng }, occurredAt: new Date() };
   }
 
   /** Exactly what TenantContextInterceptor binds for a DRIVER-role principal. */
@@ -154,7 +176,8 @@ describe("driver read scope (I28)", () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    addresses = new AddressService(db, outbox, new ManualGeocodingProvider(), new AuditService(db));
+    addresses = new AddressService(db, new ManualGeocodingProvider());
+    corrections = new AddressCorrectionService(db, outbox, new AuditService(db));
     merchants = new MerchantService(db, outbox, new AuditService(db), addresses);
     recipients = new RecipientService(db);
     pickups = new PickupService(db, outbox);
@@ -591,16 +614,12 @@ describe("driver read scope (I28)", () => {
       );
 
       // B's correction is A's too: one row, improved once for everyone sent there.
-      await asDriver(tenantId, b, () =>
-        addresses.applyDriverCorrection(shared, { coordinates: { lat: 36.81, lng: 10.19 } }),
-      );
+      await asDriver(tenantId, b, () => corrections.submit(shared, pin(36.81, 10.19)));
       const seenByA = await asDriver(tenantId, a, () => addresses.getById(shared));
       expect(seenByA.geocodeSource).toBe("driver_corrected");
       expect(seenByA.latitude).toBeCloseTo(36.81, 5);
       await expect(
-        asDriver(tenantId, c, () =>
-          addresses.applyDriverCorrection(shared, { coordinates: { lat: 1, lng: 1 } }),
-        ),
+        asDriver(tenantId, c, () => corrections.submit(shared, pin(1, 1))),
       ).rejects.toBeInstanceOf(NotFoundError);
       expect((await asStaff(tenantId, () => addresses.getById(shared))).latitude).toBeCloseTo(
         36.81,
@@ -726,9 +745,7 @@ describe("driver read scope (I28)", () => {
         NotFoundError,
       );
       await expect(
-        asStaff(home, () =>
-          addresses.applyDriverCorrection(destination, { coordinates: { lat: 1, lng: 1 } }),
-        ),
+        asStaffUser(home, () => corrections.submit(destination, pin(1, 1))),
       ).rejects.toBeInstanceOf(NotFoundError);
     });
 
@@ -745,12 +762,14 @@ describe("driver read scope (I28)", () => {
         await outForDelivery(tenantId, b.driverId, "+21620000507"),
       );
 
-      const corrected = await asDriver(tenantId, a, () =>
-        addresses.applyDriverCorrection(own.destination, {
-          coordinates: { lat: 34.7412, lng: 10.7612 },
+      const submitted = await asDriver(tenantId, a, () =>
+        corrections.submit(own.destination, {
+          ...pin(34.7412, 10.7612),
           accessNotes: "Portail vert, 2e étage",
         }),
       );
+      expect(submitted.correction.status).toBe("APPLIED");
+      const corrected = await asStaff(tenantId, () => addresses.getById(own.destination));
       expect(corrected.geocodeSource).toBe("driver_corrected");
       expect(corrected.latitude).toBeCloseTo(34.7412, 5);
       const trail = await correctionTrail(tenantId, own.destination);
@@ -769,21 +788,14 @@ describe("driver read scope (I28)", () => {
       // A colleague's pin: not found, unchanged, and nothing recorded.
       const before = await asStaff(tenantId, () => addresses.getById(other.destination));
       await expect(
-        asDriver(tenantId, a, () =>
-          addresses.applyDriverCorrection(other.destination, {
-            coordinates: { lat: 34.9, lng: 10.9 },
-          }),
-        ),
+        asDriver(tenantId, a, () => corrections.submit(other.destination, pin(34.9, 10.9))),
       ).rejects.toBeInstanceOf(NotFoundError);
       expect(await asStaff(tenantId, () => addresses.getById(other.destination))).toEqual(before);
       expect(await correctionTrail(tenantId, other.destination)).toEqual([]);
 
-      // Staff may correct any address in the tenant.
-      await asStaff(tenantId, () =>
-        addresses.applyDriverCorrection(other.destination, {
-          coordinates: { lat: 34.8, lng: 10.8 },
-        }),
-      );
+      // Staff may correct any address in the tenant (a few hundred metres:
+      // applied at once, not held for review).
+      await asStaffUser(tenantId, () => corrections.submit(other.destination, pin(34.742, 10.762)));
       expect(await correctionTrail(tenantId, other.destination)).toHaveLength(1);
     });
   });

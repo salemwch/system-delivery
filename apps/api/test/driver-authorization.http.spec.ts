@@ -9,6 +9,8 @@ import * as OTPAuth from "otpauth";
 import type { TransactionSql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { AddressCorrectionController } from "../src/modules/directory/api/address-correction.controller.js";
+import { AddressCorrectionService } from "../src/modules/directory/application/address-correction.service.js";
 import { AddressService } from "../src/modules/directory/application/address.service.js";
 import { MerchantService } from "../src/modules/directory/application/merchant.service.js";
 import { RecipientService } from "../src/modules/directory/application/recipient.service.js";
@@ -87,6 +89,7 @@ describe("driver authorization over HTTP", () => {
   let otherTenant: TenantId;
   let shipments: ShipmentService;
   let shiftsSvc: ShiftService;
+  let addresses: AddressService;
 
   // Generated, never a literal: a fixed credential in a test file is exactly
   // what a secret scanner is right to flag.
@@ -230,12 +233,7 @@ describe("driver authorization over HTTP", () => {
 
     const db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    const addresses = new AddressService(
-      db,
-      outbox,
-      new ManualGeocodingProvider(),
-      new AuditService(db),
-    );
+    addresses = new AddressService(db, new ManualGeocodingProvider());
     const recipients = new RecipientService(db);
     shipments = new ShipmentService(
       db,
@@ -264,6 +262,7 @@ describe("driver authorization over HTTP", () => {
         FinanceController,
         ShiftController,
         AddressBookController,
+        AddressCorrectionController,
       ],
       providers: [
         { provide: AppConfigService, useValue: stubConfig() },
@@ -282,6 +281,7 @@ describe("driver authorization over HTTP", () => {
         { provide: ShipmentService, useValue: shipments },
         { provide: RecipientService, useValue: recipients },
         { provide: AddressService, useValue: addresses },
+        AddressCorrectionService,
         { provide: ShiftService, useValue: shiftsSvc },
         OutboxService,
         LedgerService,
@@ -938,6 +938,132 @@ describe("driver authorization over HTTP", () => {
       // Not visible to B at all (I28): possession of the id grants nothing.
       expect(response.statusCode).toBe(404);
       expect((await inTenant(() => shipments.getById(id))).status).toBe("RETURN_PENDING");
+    });
+  });
+  describe("geocode corrections (2.10, 0050/0051)", () => {
+    /** The destination address of a shipment, read as staff. */
+    async function destinationOf(shipmentId: string): Promise<string> {
+      return (await inTenant(() => shipments.getById(shipmentId))).destinationAddressId;
+    }
+
+    function correction(lat: number, lng: number) {
+      return {
+        idempotencyKey: randomUUID(),
+        coordinates: { lat, lng },
+        accuracyM: 6,
+        occurredAt: new Date().toISOString(),
+      };
+    }
+
+    it("lets a driver move the pin of their own delivery, and replays a retry", async () => {
+      const courier = await seedAccount(["DRIVER"], true);
+      const token = await login(courier);
+      const address = await destinationOf(
+        await outForDelivery(courier.driverId ?? "", "+21620000601"),
+      );
+      const body = correction(34.7405, 10.7605);
+
+      const first = await call("POST", `/v1/addresses/${address}/corrections`, token, body);
+      expect(first.statusCode, first.body).toBe(201);
+      const created = JSON.parse(first.body) as { id: string; status: string; driverId: string };
+      expect(created).toMatchObject({ status: "APPLIED", driverId: courier.driverId });
+      expect(first.headers["idempotency-replayed"]).toBeUndefined();
+
+      const retry = await call("POST", `/v1/addresses/${address}/corrections`, token, body);
+      expect(retry.statusCode).toBe(201);
+      expect(retry.headers["idempotency-replayed"]).toBe("true");
+      expect((JSON.parse(retry.body) as { id: string }).id).toBe(created.id);
+
+      const reused = await call("POST", `/v1/addresses/${address}/corrections`, token, {
+        ...body,
+        coordinates: { lat: 34.741, lng: 10.761 },
+      });
+      expect(reused.statusCode).toBe(422);
+      expect(reused.body).toContain("IDEMPOTENCY_KEY_REUSED");
+    });
+
+    it("answers a colleague's address with 404, and changes nothing", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const b = await seedAccount(["DRIVER"], true);
+      const address = await destinationOf(await outForDelivery(b.driverId ?? "", "+21620000602"));
+
+      const response = await call(
+        "POST",
+        `/v1/addresses/${address}/corrections`,
+        await login(a),
+        correction(34.9, 10.9),
+      );
+      expect(response.statusCode).toBe(404);
+      const after = await inTenant(() => addresses.getById(address));
+      expect(after.geocodeSource).toBe("manual");
+    });
+
+    it("keeps the review queue from drivers, and correcting from dispatchers", async () => {
+      const driverToken = await login(await seedAccount(["DRIVER"], true));
+      const dispatcherToken = await login(await seedAccount(["DISPATCHER"], false));
+
+      expect((await call("GET", "/v1/address-corrections", driverToken)).statusCode).toBe(403);
+      expect(
+        (
+          await call(
+            "POST",
+            `/v1/addresses/${randomUUID()}/corrections`,
+            dispatcherToken,
+            correction(36.8, 10.18),
+          )
+        ).statusCode,
+      ).toBe(403);
+    });
+
+    it("sends a move over 2 km to the dispatcher, who approves it with no body", async () => {
+      const courier = await seedAccount(["DRIVER"], true);
+      const address = await destinationOf(
+        await outForDelivery(courier.driverId ?? "", "+21620000603"),
+      );
+      // The destination is Sfax (34.74, 10.76); this is about 11 km north.
+      const held = await call(
+        "POST",
+        `/v1/addresses/${address}/corrections`,
+        await login(courier),
+        correction(34.84, 10.76),
+      );
+      expect(held.statusCode, held.body).toBe(201);
+      const { id, status } = JSON.parse(held.body) as { id: string; status: string };
+      expect(status).toBe("PENDING_REVIEW");
+
+      const dispatcher = await login(await seedAccount(["DISPATCHER"], false));
+      const count = await call("GET", "/v1/address-corrections/count", dispatcher);
+      expect(count.statusCode).toBe(200);
+      expect((JSON.parse(count.body) as { pending: number }).pending).toBeGreaterThanOrEqual(1);
+      const queue = await call("GET", "/v1/address-corrections?status=PENDING_REVIEW", dispatcher);
+      expect(queue.statusCode, queue.body).toBe(200);
+      expect(
+        (JSON.parse(queue.body) as { data: { id: string }[] }).data.map((c) => c.id),
+      ).toContain(id);
+
+      const approved = await call("POST", `/v1/address-corrections/${id}/approve`, dispatcher);
+      expect(approved.statusCode, approved.body).toBe(200);
+      expect(JSON.parse(approved.body)).toMatchObject({ status: "APPROVED" });
+    });
+
+    it("refuses a malformed id or body at the boundary", async () => {
+      const dispatcher = await login(await seedAccount(["DISPATCHER"], false));
+      const courier = await login(await seedAccount(["DRIVER"], true));
+
+      expect((await call("GET", "/v1/address-corrections/not-a-uuid", dispatcher)).statusCode).toBe(
+        400,
+      );
+      expect(
+        (await call("POST", "/v1/address-corrections/not-a-uuid/reject", dispatcher)).statusCode,
+      ).toBe(400);
+      expect((await call("GET", "/v1/address-corrections?limit=0", dispatcher)).statusCode).toBe(
+        400,
+      );
+      const missingTime = await call("POST", `/v1/addresses/${randomUUID()}/corrections`, courier, {
+        idempotencyKey: randomUUID(),
+        coordinates: { lat: 36.8, lng: 10.18 },
+      });
+      expect(missingTime.statusCode).toBe(400);
     });
   });
 });

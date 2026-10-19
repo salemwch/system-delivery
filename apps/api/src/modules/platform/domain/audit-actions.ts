@@ -75,6 +75,9 @@ export const AUDIT_ACTIONS = [
   // no-attempt fraud rules measure against (docs/07 §9), so a correction is
   // recorded with the coordinates it replaced.
   "address.geocode_corrected",
+  // A dispatcher refusing a held pin move (> 2 km). An approval is recorded as
+  // `address.geocode_corrected`, with the decision in its context.
+  "address.geocode_correction_rejected",
 
   // ── Money (§10: all ledger adjustments, variance, approvals) ───────────────
   "ledger.adjusted",

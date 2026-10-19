@@ -15,7 +15,6 @@ import { VehicleService } from "../src/modules/fleet/application/vehicle.service
 import { GeofenceService } from "../src/modules/network/application/geofence.service.js";
 import { HubService } from "../src/modules/network/application/hub.service.js";
 import { TokenService } from "../src/modules/identity/application/token.service.js";
-import { AuditService } from "../src/modules/platform/application/audit.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
 import { RealtimeGateway } from "../src/modules/tracking/realtime/realtime.gateway.js";
 import { GeofenceMonitor } from "../src/modules/tracking/telemetry/geofence-monitor.js";
@@ -245,12 +244,7 @@ describe("tracking", () => {
     valkey = new Redis(process.env["VALKEY_URL"] ?? "redis://localhost:6379");
 
     const outbox = new OutboxService();
-    const addresses = new AddressService(
-      db,
-      outbox,
-      new ManualGeocodingProvider(),
-      new AuditService(db),
-    );
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     const hubs = new HubService(db, outbox, addresses);
     const cipher = new FieldCipher(randomBytes(32));
 

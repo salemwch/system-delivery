@@ -53,6 +53,7 @@ Clients branch on `code`, **never** on `detail` text (which is localised).
 | `VEHICLE_IN_USE` | 409 | Vehicle already in an open shift |
 | `ROUTE_NOT_DRAFT` | 409 | Mutation attempted on a published route |
 | `MANIFEST_SEALED` | 409 | Contents immutable |
+| `CORRECTION_NOT_PENDING` | 409 | Address correction already decided (or applied, or superseded) |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | Same key, different request: another shipment, caller, command or body. Says nothing about the earlier use |
 | `POD_REQUIRED` | 422 | Delivery attempted without proof |
 | `COD_AMOUNT_MISMATCH` | 422 | Collected ≠ expected without an allowed reason |
@@ -634,6 +635,57 @@ End response includes an outstanding-cash prompt:
 ```
 
 **Notes.** **Per-item results, never all-or-nothing.** One rejected event must not block the other nineteen. `action` tells the app exactly what to do — `DISCARD_AND_REFRESH`, `RETRY_LATER`, or `ESCALATE_TO_DISPATCHER` — instead of leaving it to guess. This is where offline-first is either real or theatre.
+
+### `POST /v1/addresses/{id}/corrections` — driver pin correction (2.10)
+
+Permission `address:correct` (DRIVER, OWNER). Implemented 2026-10-19, migration 0051.
+
+```json
+{
+  "idempotencyKey": "018f8c10-...",
+  "coordinates": { "lat": 34.7405, "lng": 10.7605 },
+  "accuracyM": 6,
+  "accessNotes": "Portail vert, 2e étage",
+  "occurredAt": "2026-10-19T09:41:07Z"
+}
+```
+
+**Response `201`**
+```json
+{
+  "id": "019a0c2e-...", "addressId": "018f7e11-...", "status": "APPLIED",
+  "from": { "lat": 34.74, "lng": 10.76 }, "to": { "lat": 34.7405, "lng": 10.7605 },
+  "distanceMovedM": 71, "accuracyM": 6, "confidenceBefore": 1,
+  "accessNotes": "Portail vert, 2e étage",
+  "occurredAt": "2026-10-19T09:41:07.000Z", "recordedAt": "2026-10-19T09:52:30.114Z",
+  "correctedByUserId": "...", "driverId": "...",
+  "reviewedByUserId": null, "reviewedAt": null, "reviewNote": null,
+  "address": { "rawInput": "...", "city": "Sfax" }
+}
+```
+
+`status` is the outcome, decided in one transaction under the address row lock:
+
+| Status | When | Effect on the address |
+|---|---|---|
+| `APPLIED` | Moved ≤ 2 km, or there was no pin | Pin moved, `geocode_source = driver_corrected`, confidence 1, `address.geocode_corrected` emitted, audited |
+| `PENDING_REVIEW` | Moved > 2 km (docs/03 guard on `CorrectAddressGeocode`) | None until a dispatcher decides |
+| `SUPERSEDED` | `occurredAt` is not after the observation behind the current pin | None. A late offline sync never restores an older pin |
+
+**Notes.**
+- **Which address a driver may correct is RLS (0050)**: the origin or destination of a shipment they may read, a stop on their route, or a pickup assigned to them. Anything else, a colleague's included, is `404`.
+- **`occurredAt` is device time and decides "newer".** More than 5 minutes ahead of the server is `400 VALIDATION_FAILED`; within that it is clamped to server time, so one phone with a wrong clock cannot outrank every later correction.
+- **Idempotent on `idempotencyKey`.** The same caller and the same body returns the recorded outcome with `Idempotency-Replayed: true`, even after the parcel moved to someone else. Any other use of the key is `422 IDEMPOTENCY_KEY_REUSED`.
+- `address` is `null` when the caller can no longer see the address.
+
+### Review queue — `GET /v1/address-corrections` · `/count` · `/{id}` · `POST /{id}/approve` · `POST /{id}/reject`
+
+Permission `address:review` (DISPATCHER, OWNER; never DRIVER). List filters: `status`, `addressId`; keyset pagination on `id`, oldest first. `/count` returns `{ "pending": 3 }` for the sidebar badge. Approve/reject take an optional body `{ "note": "..." }`.
+
+- **Approve** applies the pin from the address *as it is now*. If a newer observation was applied while it waited, the correction becomes `SUPERSEDED` instead (with the reviewer recorded).
+- **Reject** never touches the address; audited as `address.geocode_correction_rejected`.
+- Repeating the same decision returns the row unchanged; a different decision is `409 CORRECTION_NOT_PENDING`.
+- **Separation of duties:** the author of a correction cannot decide it (`403`), which matters for an OWNER, who holds both permissions.
 
 ---
 

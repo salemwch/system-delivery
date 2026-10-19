@@ -4,9 +4,11 @@ import { PinoLogger } from "nestjs-pino";
 import { AppConfigService } from "../../shared/config/index.js";
 
 import { PlatformModule } from "../platform/index.js";
+import { AddressCorrectionController } from "./api/address-correction.controller.js";
 import { MerchantApplicationController } from "./api/merchant-application.controller.js";
 import { MerchantController } from "./api/merchant.controller.js";
 import { RecipientController } from "./api/recipient.controller.js";
+import { AddressCorrectionService } from "./application/address-correction.service.js";
 import { AddressService } from "./application/address.service.js";
 import { MerchantApplicationService } from "./application/merchant-application.service.js";
 import { MerchantService } from "./application/merchant.service.js";
@@ -21,17 +23,24 @@ import { NominatimGeocodingProvider } from "./infrastructure/nominatim-geocoding
  * Directory context (docs/04-context-map.md §3.3) — Layer 1.
  *
  * Commercial counterparties and the address-quality pipeline. Depends on
- * `platform` (outbox for merchant.created / address.geocode_corrected) and the
+ * `platform` (outbox for merchant.created / address.geocode_corrected, audit for
+ * pin corrections) and the
  * shared database.
  */
 @Module({
   imports: [PlatformModule],
-  controllers: [MerchantController, RecipientController, MerchantApplicationController],
+  controllers: [
+    MerchantController,
+    RecipientController,
+    MerchantApplicationController,
+    AddressCorrectionController,
+  ],
   providers: [
     MerchantService,
     MerchantApplicationService,
     RecipientService,
     AddressService,
+    AddressCorrectionService,
     ManualGeocodingProvider,
     NominatimGeocodingProvider,
     {
