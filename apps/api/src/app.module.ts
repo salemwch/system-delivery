@@ -21,6 +21,7 @@ import { AppConfigModule } from "./shared/config/config.module.js";
 import { AppConfigService } from "./shared/config/index.js";
 import { CryptoModule } from "./shared/crypto/crypto.module.js";
 import { MoneyModule } from "./shared/money/money.module.js";
+import { StorageModule } from "./shared/storage/storage.module.js";
 import { ValkeyModule } from "./shared/valkey/valkey.module.js";
 import { DatabaseModule } from "./shared/database/database.module.js";
 
@@ -37,6 +38,8 @@ import { DatabaseModule } from "./shared/database/database.module.js";
     CryptoModule,
     DatabaseModule,
     MoneyModule,
+    // POD media: presigned uploads and server-side verification (docs/07 §7.1).
+    StorageModule,
     // ⚠️ REQUIRED even though ValkeyModule is @Global(). Global means other
     // modules need not re-import it — NOT that it registers itself. Without this
     // line nothing provides VALKEY_CLIENT, and `tracking` (presence, realtime
