@@ -23,8 +23,6 @@ import {
   reviewCorrectionSchema,
 } from "../domain/dtos.js";
 
-/** A malformed id is a 422 at the boundary, never a database cast error. */
-const idParam = zodBody(z.uuid());
 /** A review note is optional, and so is the body that would carry it. */
 const reviewBody = zodBody(reviewCorrectionSchema.optional());
 
@@ -74,7 +72,7 @@ export class AddressCorrectionController {
   @Post("v1/addresses/:id/corrections")
   @RequirePermissions("address:correct")
   async submit(
-    @Param("id", idParam) id: string,
+    @Param("id") id: string,
     @Body(zodBody(correctAddressSchema)) body: z.infer<typeof correctAddressSchema>,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<CorrectionResponse> {
@@ -105,7 +103,7 @@ export class AddressCorrectionController {
 
   @Get("v1/address-corrections/:id")
   @RequirePermissions("address:review")
-  async getById(@Param("id", idParam) id: string): Promise<CorrectionResponse> {
+  async getById(@Param("id") id: string): Promise<CorrectionResponse> {
     return toResponse(await this.corrections.getById(id));
   }
 
@@ -113,7 +111,7 @@ export class AddressCorrectionController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions("address:review")
   async approve(
-    @Param("id", idParam) id: string,
+    @Param("id") id: string,
     @Body(reviewBody) body: z.infer<typeof reviewCorrectionSchema> | undefined,
   ): Promise<CorrectionResponse> {
     return toResponse(await this.corrections.approve(id, body ?? {}));
@@ -123,7 +121,7 @@ export class AddressCorrectionController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions("address:review")
   async reject(
-    @Param("id", idParam) id: string,
+    @Param("id") id: string,
     @Body(reviewBody) body: z.infer<typeof reviewCorrectionSchema> | undefined,
   ): Promise<CorrectionResponse> {
     return toResponse(await this.corrections.reject(id, body ?? {}));

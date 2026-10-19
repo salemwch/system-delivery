@@ -42,7 +42,7 @@ Clients branch on `code`, **never** on `detail` text (which is localised).
 
 | Code | HTTP | Meaning |
 |---|---|---|
-| `VALIDATION_FAILED` | 400 | Schema violation; see `errors[]` |
+| `VALIDATION_FAILED` | 400 | Schema violation; see `errors[]`. Includes a malformed UUID route parameter (`:id`, `:*Id`), field code `INVALID_UUID`, checked after authorization |
 | `UNAUTHENTICATED` | 401 | Missing/invalid/expired token |
 | `FORBIDDEN` | 403 | Authenticated but lacks permission |
 | `FEATURE_NOT_ENTITLED` | 403 | Tenant does not have this `TenantFeature` |

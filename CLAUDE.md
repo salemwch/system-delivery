@@ -20,7 +20,7 @@ Authorized 2026-07-22. Build within these limits:
 
 ## Current state (updated 2026-10-19)
 
-**Everything green:** `pnpm build` → ok · `pnpm test` → 1523/1523 (1336 api + 39 track + 47 merchant + 101 web) · `pnpm typecheck` → 0 (incl. `test/`) · `pnpm format:check` → 0 · `pnpm docs:spell` → 0 · MFA sign-in verified end to end · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (443 targets, all four apps tracked and covered).
+**Everything green:** `pnpm build` → ok · `pnpm test` → 1529/1529 (1342 api + 39 track + 47 merchant + 101 web) · `pnpm typecheck` → 0 (incl. `test/`) · `pnpm format:check` → 0 · `pnpm docs:spell` → 0 · MFA sign-in verified end to end · `pnpm lint` → 0 · `pnpm lint:rules` → 6/6 · `pnpm knip` → 0 · `pnpm sast` → 0 (443 targets, all four apps tracked and covered).
 
 ⚠️ `pnpm sast` scans **git-tracked files only** — an untracked app is silently invisible to it. Never pipe it to `tail`: the pipeline's exit status is the last command's, which hid a `RuleParseError` behind a green tick.
 
@@ -77,6 +77,8 @@ Critical rules (silent data corruption or total feature failure if violated):
 - **Security overrides and audit exceptions live in `pnpm-workspace.yaml`**: exact versions only, one reason per entry. ⚠️ `@nestjs/platform-fastify` pins its OWN `fastify`, and the adapter serves from that copy, so bumping the api's `fastify` alone fixes nothing. Check `pnpm why fastify -r` shows ONE version. Fix a vulnerable transitive with `pnpm update -r --depth Infinity <pkg>` first; override only when a parent pins it exactly
 - **GPS ping ≠ business event.** Raw telemetry never touches the outbox; only geofence ENTER crosses into the business plane
 - **Two sub-tenant roles, two different scope shapes.** MERCHANT → one merchant via `app.current_merchant_id` from token `mid` (0020, I24); token without `mid` → rejected. COMMERCIAL → merchant set via `merchants.account_manager_id`, `app.current_account_manager_id` (0030, I25), derived from `sub`+`rol`. `merchants` uses direct-comparison; every other table uses EXISTS — swapping them recurses forever. Neither may combine with another role
+- **Route `:id` / `:*Id` = UUID, checked by the global `UuidParamPipe`** (APP_PIPE in IdentityModule) → 400, never a 500 from the cast. Name a non-UUID param for what it is (`:code`, `:slug`)
+- **Workload badges are permission-gated per queue** (`QUEUE_PERMISSION`, identity). RLS does not hide tenant-wide tables (applications, expenses, stock) — a count without its permission leaks them to drivers and merchants
 - **Request id must be UUID** — Fastify `genReqId` on the adapter, not pino's (silently ignored). Default `req-1` → 500 on every audited mutation
 - **MFA bootstrap:** challenge token alongside `MFA_ENROLMENT_REQUIRED`, `TenantContext.run()` in controller for `@Public()` routes
 - **RLS predicates: `CASE`, not `OR`** — SQL doesn't short-circuit; `''::uuid` errors

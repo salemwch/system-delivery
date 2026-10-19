@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 
 import { Module } from "@nestjs/common";
 import type { InjectionToken, Provider } from "@nestjs/common";
-import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from "@nestjs/core";
 import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
 import * as OTPAuth from "otpauth";
@@ -26,6 +26,7 @@ import { ReconciliationService } from "../src/modules/finance/application/reconc
 import { RemittanceService } from "../src/modules/finance/application/remittance.service.js";
 import { SettlementService } from "../src/modules/finance/application/settlement.service.js";
 import { AuthController } from "../src/modules/identity/api/auth.controller.js";
+import { WorkloadController } from "../src/modules/identity/api/workload.controller.js";
 import { AuthGuard } from "../src/modules/identity/api/auth.guard.js";
 import { PermissionGuard } from "../src/modules/identity/api/permission.guard.js";
 import { TenantContextInterceptor } from "../src/modules/identity/api/tenant-context.interceptor.js";
@@ -40,6 +41,7 @@ import { AuditService } from "../src/modules/platform/application/audit.service.
 import { FeatureService } from "../src/modules/platform/application/feature.service.js";
 import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
+import { WorkloadService } from "../src/modules/platform/application/workload.service.js";
 import { NOTIFICATION_PROVIDER } from "../src/modules/platform/domain/notification-provider.js";
 import { commandContextOf } from "../src/modules/shipment/api/command-context.js";
 import { AddressBookController } from "../src/modules/shipment/api/address-book.controller.js";
@@ -63,7 +65,11 @@ import { POSTGRES_CLIENT } from "../src/shared/database/database.tokens.js";
 import { TenantContext, asTenantId } from "../src/shared/database/tenant-context.js";
 import type { TenantId } from "../src/shared/database/tenant-context.js";
 import { ForbiddenError, NotFoundError } from "../src/shared/errors/index.js";
-import { ProblemDetailsFilter, createFastifyAdapter } from "../src/shared/http/index.js";
+import {
+  ProblemDetailsFilter,
+  UuidParamPipe,
+  createFastifyAdapter,
+} from "../src/shared/http/index.js";
 import { CurrencyService } from "../src/shared/money/index.js";
 import { CapturingNotificationProvider } from "./auth.factory.js";
 import { stubConfig } from "./config.stub.js";
@@ -263,6 +269,7 @@ describe("driver authorization over HTTP", () => {
         ShiftController,
         AddressBookController,
         AddressCorrectionController,
+        WorkloadController,
       ],
       providers: [
         { provide: AppConfigService, useValue: stubConfig() },
@@ -284,6 +291,7 @@ describe("driver authorization over HTTP", () => {
         AddressCorrectionService,
         { provide: ShiftService, useValue: shiftsSvc },
         OutboxService,
+        WorkloadService,
         LedgerService,
         RemittanceService,
         unused(SettlementService),
@@ -301,6 +309,7 @@ describe("driver authorization over HTTP", () => {
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_GUARD, useClass: PermissionGuard },
         { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
+        { provide: APP_PIPE, useClass: UuidParamPipe },
       ],
     })
     class AuthzTestModule {}
@@ -1064,6 +1073,48 @@ describe("driver authorization over HTTP", () => {
         coordinates: { lat: 36.8, lng: 10.18 },
       });
       expect(missingTime.statusCode).toBe(400);
+    });
+  });
+  describe("workload counts (sidebar badges)", () => {
+    it("counts only the queues the caller may open", async () => {
+      await database.migrator.begin(async (tx) => {
+        await tx`select set_config('app.current_tenant_id', ${tenant}, true)`;
+        await tx`insert into merchant_applications (tenant_id, business_name, contact_name, contact_phone)
+                values (${tenant}, 'Boutique', 'Contact', '+21620000700')`;
+      });
+      const counts = async (token: string) => {
+        const response = await call("GET", "/v1/workload", token);
+        expect(response.statusCode, response.body).toBe(200);
+        return JSON.parse(response.body) as Record<string, number>;
+      };
+
+      // A dispatcher holds merchant:read, which opens the applications queue.
+      const dispatcher = await counts(await login(await seedAccount(["DISPATCHER"], false)));
+      expect(dispatcher["applications"]).toBeGreaterThanOrEqual(1);
+
+      // A driver holds none of the queue permissions: every count is zero, and
+      // nothing about the tenant's applications, expenses or stock is disclosed.
+      const driver = await counts(await login(await seedAccount(["DRIVER"], true)));
+      expect(Object.values(driver).every((value) => value === 0)).toBe(true);
+    });
+  });
+  describe("malformed ids", () => {
+    it("answers a non-UUID id with 400 on every route, never a 500", async () => {
+      const dispatcher = await login(await seedAccount(["DISPATCHER"], false));
+      for (const url of [
+        "/v1/shipments/not-a-uuid",
+        "/v1/shipments/not-a-uuid/events",
+        "/v1/recipients/1",
+        "/v1/shipments/driver/x/stats",
+        "/v1/address-corrections/%27%3B--",
+      ]) {
+        const response = await call("GET", url, dispatcher);
+        expect(response.statusCode, `${url}: ${response.body}`).toBe(400);
+        expect(response.body).toContain("VALIDATION_FAILED");
+      }
+      // Ids that are not UUIDs by design still route normally.
+      const lookup = await call("GET", "/v1/shipments/lookup/NOT-A-TRACKING-NUMBER", dispatcher);
+      expect(lookup.statusCode).toBe(404);
     });
   });
 });
