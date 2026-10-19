@@ -589,6 +589,8 @@ End response includes an outstanding-cash prompt:
 
 **As built (2026-10-10).** The `/drivers/me` form above is not built. The shift routes are `POST /v1/shifts` (body `driverId`, `vehicleId`, optional `hubId`, `startOdometer`, `openingCashMinor`) → `201`, `GET /v1/shifts/{id}` → `200`, and `POST /v1/shifts/{id}/end` (optional `endOdometer`, `closingCashMinor`) → `200`, each returning the shift.
 
+**`GET /v1/shifts/current`** (2026-10-19, `shift:start`) → `200 { "driverId": "…", "shift": { … } | null }`: the caller's own driver record and open shift. The driver app needs both — starting a shift takes `drivers.id`, and telemetry is refused without the open `shiftId` — and could read neither before. A DRIVER login with no driver record is `403`.
+
 **Auth.** `shift:start` (start, read) and `shift:end` (Driver; Owner holds every permission). A driver may start a shift only for their own driver record: any other `driverId`, or a DRIVER login with no driver record, is `403 FORBIDDEN`, opens nothing, and says nothing about the named driver. Another driver's shift is `404 NOT_FOUND` on read and end, exactly like a missing one (domain §3.3 rule 8). A second open shift is `409 DRIVER_SHIFT_OPEN`; ending a closed shift is `422 SHIFT_NOT_OPEN`.
 
 **Emits.** `driver.shift_started` / `driver.shift_ended`
