@@ -16,7 +16,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "../../../shared/errors/index.js";
-import { parseWithZod, requestFingerprint } from "../../../shared/http/index.js";
+import { parseWithZod, requestFingerprint, resolveDeviceTime } from "../../../shared/http/index.js";
 import {
   cancelShipmentSchema,
   completeReturnSchema,
@@ -399,7 +399,7 @@ export class ShipmentService {
     ctx: CommandContext,
     kind: Pick<CommandSpec, "command" | "binding">,
   ): Promise<Shipment> {
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
     const spec: CommandSpec = { ...kind, idempotencyKey: dto.idempotencyKey, request: dto };
 
     return this.runCommand(id, spec, ctx, async (tx, shipment) => {
@@ -442,7 +442,7 @@ export class ShipmentService {
 
   async confirmDelivery(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(confirmDeliverySchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
     await this.requireLinkedDriver(ctx);
 
     // Distance is computed from the destination geocode; read it before the write
@@ -600,7 +600,7 @@ export class ShipmentService {
 
   async recordFailedAttempt(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(recordFailedAttemptSchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
     await this.requireLinkedDriver(ctx);
 
     const pre = await this.getById(id);
@@ -756,7 +756,7 @@ export class ShipmentService {
 
   async initiateReturn(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(initiateReturnSchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
 
     const spec: CommandSpec = {
       command: "return",
@@ -810,7 +810,7 @@ export class ShipmentService {
    */
   async completeReturn(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(completeReturnSchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
     // A DRIVER-role caller must be a linked driver (I26). Staff are not asked:
     // a counter hand-back is booked to no driver by design.
     if (ctx.actor.actorType === "DRIVER") {
@@ -985,7 +985,7 @@ export class ShipmentService {
 
   async cancel(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(cancelShipmentSchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
 
     const spec: CommandSpec = {
       command: "cancel",
@@ -1025,7 +1025,7 @@ export class ShipmentService {
    */
   async recordEvent(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(recordEventSchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
 
     // `fact`: internal only (no HTTP route). Its keys are server-derived and
     // name one fact about one shipment; see IdempotencyBinding.

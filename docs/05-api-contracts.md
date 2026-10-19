@@ -565,6 +565,8 @@ Job result:
 
 **Notes.** This is the **single payload the driver app caches for offline operation**. It deliberately includes `recipientPhone` and `accessNotes` — without them the driver cannot complete a Tunisian delivery when offline.
 
+**As built (2026-10-19).** Money follows §1.3: each shipment carries `cod: { amountMinor: "12500", currency: "TND", currencyExponent: 3 }` (a decimal **string**), and `summary.codExpected` is a **list, one entry per currency**, never one sum across currencies. Stop coordinates are `latitude`/`longitude`. Before this the route returned the service view with `bigint` amounts, which `JSON.stringify` cannot serialize: every call was a 500.
+
 ---
 
 ## 5. Driver Operations
@@ -613,6 +615,20 @@ End response includes an outstanding-cash prompt:
 - **Emits no business event.** Only geofence transitions cross into the business plane.
 
 ### `POST /v1/drivers/me/sync` — offline reconciliation
+
+> **As built (2026-10-19)** — supersedes the sketch below where they differ.
+>
+> **Request** `{ "deviceId": "pixel-7a", "knownRouteVersions": { "<routeId>": "<sha256>" }, "pendingEvents": [ … ] }`. At most 100 items. Each item is `{ idempotencyKey, type, shipmentId | addressId, payload }`; `type` is `DELIVERED` · `FAILED` · `RETURN_COMPLETED` (with `shipmentId`) or `ADDRESS_CORRECTED` (with `addressId`). `payload` is the body of the online command it replays, **without** its idempotency key (the item's key is the command's), and **must carry `occurredAt`** (device time; more than 5 minutes ahead of the server is refused, slightly ahead is clamped). `lastSyncAt` was dropped: route changes are detected by version, not by time.
+>
+> **Response `200`** `{ results, activeRoutes, routeUpdates, features, serverTime }`.
+> - `results`: one per item, in order. `ACCEPTED` with `replayed` and `resultingStatus`, or `REJECTED` with `code`, `detail`, `action`.
+> - `activeRoutes`: every PUBLISHED / IN_PROGRESS route the driver holds, with `version` = SHA-256 of the manifest the device would download. A local route not listed is stale.
+> - `routeUpdates`: the full manifest, **only** for routes whose version the device did not send. An unchanged day costs nothing to re-sync.
+> - `features`: every flag, so the app replaces rather than merges.
+>
+> **Action rules.** A refused `DELIVERED` or `RETURN_COMPLETED` (something that physically happened: a parcel and maybe cash changed hands) is always `ESCALATE_TO_DISPATCHER`, never discarded. Otherwise 403/404/409 → `DISCARD_AND_REFRESH`; 5xx/429/unexpected → `RETRY_LATER`; malformed or contradictory (400/422, a reused key, an unreadable item) → `ESCALATE_TO_DISPATCHER`. **Per-parcel order is kept:** once an item for a parcel or address is held back (retry or escalate), every later item for it in the batch is `HELD_BEHIND_EARLIER_ITEM` / `RETRY_LATER`, unexecuted.
+>
+> Each item runs through the same service, state machine, RLS scope and idempotency binding as the online route. `route:read` gates the call; each item is checked against its own command's permission. A non-driver, or a DRIVER login with no driver record, is `403`. Photos are not in the batch: they go through `POST /v1/media/presign` (§8) on their own queue, and a delivery cites the issued keys.
 
 ```json
 {

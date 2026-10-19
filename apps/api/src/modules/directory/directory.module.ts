@@ -67,6 +67,13 @@ import { NominatimGeocodingProvider } from "./infrastructure/nominatim-geocoding
       inject: [AppConfigService, ManualGeocodingProvider, NominatimGeocodingProvider, PinoLogger],
     },
   ],
-  exports: [MerchantService, MerchantApplicationService, RecipientService, AddressService],
+  exports: [
+    MerchantService,
+    MerchantApplicationService,
+    RecipientService,
+    AddressService,
+    // The driver sync replays queued corrections through it (dispatch).
+    AddressCorrectionService,
+  ],
 })
 export class DirectoryModule {}

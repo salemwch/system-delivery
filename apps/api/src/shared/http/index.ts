@@ -6,3 +6,4 @@ export { escapeHtml } from "./escape-html.js";
 export type { FieldError } from "./problem-details.filter.js";
 export { requestFingerprint } from "./request-fingerprint.js";
 export { UuidParamPipe } from "./uuid-param.pipe.js";
+export { DEVICE_CLOCK_SKEW_MS, resolveDeviceTime } from "./device-time.js";

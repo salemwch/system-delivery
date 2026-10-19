@@ -6,6 +6,7 @@ import { FleetModule } from "../fleet/index.js";
 import { NetworkModule } from "../network/index.js";
 import { PlatformModule } from "../platform/index.js";
 import { ShipmentModule } from "../shipment/index.js";
+import { DriverSyncController } from "./api/driver-sync.controller.js";
 import { RouteController } from "./api/route.controller.js";
 import { AssignmentService } from "./application/assignment.service.js";
 import {
@@ -14,6 +15,7 @@ import {
 } from "./application/optimization.provider.js";
 import type { OptimizationProvider } from "./application/optimization.provider.js";
 import { DistributionNoteService } from "./application/distribution-note.service.js";
+import { DriverSyncService } from "./application/driver-sync.service.js";
 import { RouteService } from "./application/route.service.js";
 import { OsrmOptimizationProvider } from "./infrastructure/osrm-optimization.provider.js";
 import { OsrmClient } from "./infrastructure/osrm.client.js";
@@ -35,11 +37,12 @@ import { OsrmClient } from "./infrastructure/osrm.client.js";
  */
 @Module({
   imports: [PlatformModule, DirectoryModule, NetworkModule, FleetModule, ShipmentModule],
-  controllers: [RouteController],
+  controllers: [RouteController, DriverSyncController],
   providers: [
     RouteService,
     AssignmentService,
     DistributionNoteService,
+    DriverSyncService,
     OsrmClient,
     HeuristicOptimizationProvider,
     OsrmOptimizationProvider,

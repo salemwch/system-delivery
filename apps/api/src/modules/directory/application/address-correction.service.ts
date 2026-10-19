@@ -15,9 +15,8 @@ import {
   ForbiddenError,
   NotFoundError,
   UnauthenticatedError,
-  ValidationError,
 } from "../../../shared/errors/index.js";
-import { parseWithZod, requestFingerprint } from "../../../shared/http/index.js";
+import { parseWithZod, requestFingerprint, resolveDeviceTime } from "../../../shared/http/index.js";
 import {
   ADDRESS_CORRECTION_STATUSES,
   correctAddressSchema,
@@ -25,11 +24,7 @@ import {
   reviewCorrectionSchema,
 } from "../domain/dtos.js";
 import type { AddressCorrectionStatus } from "../domain/dtos.js";
-import {
-  CORRECTION_CLOCK_SKEW_MS,
-  CORRECTION_REVIEW_DISTANCE_M,
-  DRIVER_CORRECTION_CONFIDENCE,
-} from "../domain/geocoding.js";
+import { CORRECTION_REVIEW_DISTANCE_M, DRIVER_CORRECTION_CONFIDENCE } from "../domain/geocoding.js";
 import type { Coordinates } from "../domain/geocoding.js";
 import { addressCorrections, addresses } from "../domain/schema.js";
 
@@ -124,19 +119,9 @@ export class AddressCorrectionService {
   async submit(addressId: string, input: unknown): Promise<CorrectionOutcome> {
     const dto = parseWithZod(correctAddressSchema, input);
     const actor = requireActor();
-    const now = Date.now();
-    if (dto.occurredAt.getTime() > now + CORRECTION_CLOCK_SKEW_MS) {
-      throw new ValidationError([
-        {
-          field: "occurredAt",
-          code: "IN_FUTURE",
-          detail: "occurredAt is ahead of the server clock; check the device time",
-        },
-      ]);
-    }
-    // Within the skew allowance the server's clock wins: a phone a few minutes
-    // fast must not outrank a correction made after it.
-    const occurredAt = new Date(Math.min(dto.occurredAt.getTime(), now));
+    // Device time, refused when far ahead and clamped when slightly ahead: a
+    // phone with a wrong clock must never make its pin "newest" for ever.
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
     const requestHash = requestFingerprint({ ...dto, addressId });
 
     try {
