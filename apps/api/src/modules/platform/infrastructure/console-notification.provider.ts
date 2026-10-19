@@ -27,6 +27,7 @@ import type {
 export class ConsoleNotificationProvider implements NotificationProvider {
   readonly name = "console";
   private readonly senderId: string | undefined;
+  private readonly logBodies: boolean;
 
   constructor(
     private readonly logger: PinoLogger,
@@ -34,6 +35,8 @@ export class ConsoleNotificationProvider implements NotificationProvider {
   ) {
     const configured = config.get("SMS_SENDER_ID");
     this.senderId = configured === "" ? undefined : configured;
+    // Development only; the config refuses it with NODE_ENV=production.
+    this.logBodies = config.get("DEV_LOG_SMS_BODIES");
   }
 
   async send(message: OutboundMessage): Promise<DeliveryReceipt> {
@@ -51,6 +54,14 @@ export class ConsoleNotificationProvider implements NotificationProvider {
       },
       "notification composed (console provider — not actually sent)",
     );
+    if (this.logBodies) {
+      // DEV_LOG_SMS_BODIES: the dev "inbox". A separate warn line, so it is
+      // impossible to miss in a log and impossible to mistake for production.
+      this.logger.warn(
+        { component: "notification", channel: message.channel, to: message.to, body: message.body },
+        "DEV ONLY (DEV_LOG_SMS_BODIES): message content",
+      );
+    }
     return Promise.resolve({ providerMessageId, accepted: true });
   }
 }

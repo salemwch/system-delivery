@@ -56,6 +56,19 @@ export class ShiftController {
     return toResponse(shift);
   }
 
+  /**
+   * The caller's driver id and open shift (or null). Declared before `:id`
+   * so "current" is never read as a shift id.
+   */
+  @Get("current")
+  @RequirePermissions("shift:start")
+  async current(
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<{ readonly driverId: string; readonly shift: ShiftResponse | null }> {
+    const { driverId, shift } = await this.shifts.current(shiftCtx(principal));
+    return { driverId, shift: shift === null ? null : toResponse(shift) };
+  }
+
   @Get(":id")
   @RequirePermissions("shift:start")
   async getById(

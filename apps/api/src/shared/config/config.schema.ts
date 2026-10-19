@@ -239,6 +239,17 @@ export const configSchema = z
     // `console` writes to the log instead of sending — the default for dev/test.
     NOTIFICATION_SMS_PROVIDER: z.enum(["console", "http"]).default("console"),
     /**
+     * DEVELOPMENT ONLY: the console provider also logs each SMS recipient and
+     * body, so a developer can read a driver's sign-in code without paying for
+     * an SMS provider (the dev equivalent of a mail catcher). Off by default,
+     * and refused with NODE_ENV=production (refine below): a code in a log is a
+     * credential in a log.
+     */
+    DEV_LOG_SMS_BODIES: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+    /**
      * Driver push. `console` by default for the same reason as SMS: a
      * misconfigured staging box must not reach a real driver's handset.
      */
@@ -351,12 +362,25 @@ export const configSchema = z
     message: "OUTBOX_RELAY_BASE_BACKOFF_MS must not exceed OUTBOX_RELAY_MAX_BACKOFF_MS",
     path: ["OUTBOX_RELAY_BASE_BACKOFF_MS"],
   })
+  .refine((config) => devSmsLogAllowed(config.NODE_ENV, config.DEV_LOG_SMS_BODIES), {
+    message:
+      "DEV_LOG_SMS_BODIES must not be enabled in production: it writes sign-in codes and phone numbers to the log",
+    path: ["DEV_LOG_SMS_BODIES"],
+  })
   .refine((config) => config.NODE_ENV !== "production" || config.CORS_ALLOWED_ORIGINS.length > 0, {
     message: "CORS_ALLOWED_ORIGINS must be set explicitly in production",
     path: ["CORS_ALLOWED_ORIGINS"],
   });
 
 export type AppConfig = z.infer<typeof configSchema>;
+
+/**
+ * Whether DEV_LOG_SMS_BODIES may be on: never in production, where it would
+ * write sign-in codes and phone numbers to the log. Exported for its test.
+ */
+export function devSmsLogAllowed(nodeEnv: string, enabled: boolean): boolean {
+  return nodeEnv !== "production" || !enabled;
+}
 
 /**
  * Validates raw environment input, throwing a readable aggregate error listing

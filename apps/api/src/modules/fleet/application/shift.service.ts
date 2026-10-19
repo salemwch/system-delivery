@@ -208,6 +208,32 @@ export class ShiftService {
     });
   }
 
+  /**
+   * The caller's own driver record and open shift, for the driver app.
+   *
+   * The app needs both and could learn neither: starting a shift takes the
+   * driver's `drivers.id` (never the user id, see {@link openShiftForUser}),
+   * and telemetry is refused without the open `shiftId`, so an app that cannot
+   * read its shift cannot know whether it may collect location at all. A login
+   * with no driver record is a 403, as it is for `start`.
+   */
+  async current(
+    ctx: ShiftContext,
+  ): Promise<{ readonly driverId: string; readonly shift: Shift | null }> {
+    return this.database.withTenant(async (tx) => {
+      const driverId = await callerDriverId(tx, ctx);
+      if (driverId === null) {
+        throw new ForbiddenError("This login is not linked to a driver.");
+      }
+      const rows = await tx
+        .select()
+        .from(shifts)
+        .where(and(eq(shifts.driverId, driverId), eq(shifts.status, "OPEN")))
+        .limit(1);
+      return { driverId, shift: rows[0] ?? null };
+    });
+  }
+
   async getById(id: string, ctx: ShiftContext): Promise<Shift> {
     return this.database.withTenant((tx) => this.visibleShift(tx, id, ctx, { lock: false }));
   }

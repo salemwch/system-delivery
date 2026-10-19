@@ -636,6 +636,40 @@ describe("driver authorization over HTTP", () => {
       );
     }
 
+    it("tells the driver app its own driver id and open shift, and nothing else", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const b = await seedAccount(["DRIVER"], true);
+      const token = await login(a);
+
+      const before = await call("GET", "/v1/shifts/current", token);
+      expect(before.statusCode, before.body).toBe(200);
+      expect(JSON.parse(before.body)).toEqual({ driverId: a.driverId, shift: null });
+
+      const shiftId = await ownShift(a);
+      await ownShift(b);
+      const during = JSON.parse((await call("GET", "/v1/shifts/current", token)).body) as {
+        driverId: string;
+        shift: { id: string; status: string } | null;
+      };
+      // Its own open shift, never the colleague's that is also open.
+      expect(during).toMatchObject({
+        driverId: a.driverId,
+        shift: { id: shiftId, status: "OPEN" },
+      });
+
+      await call("POST", `/v1/shifts/${shiftId}/end`, token, {});
+      expect(JSON.parse((await call("GET", "/v1/shifts/current", token)).body)).toEqual({
+        driverId: a.driverId,
+        shift: null,
+      });
+
+      // A DRIVER login with no driver record, and staff without shift:start.
+      const unlinked = await login(await seedAccount(["DRIVER"], false));
+      expect((await call("GET", "/v1/shifts/current", unlinked)).statusCode).toBe(403);
+      const dispatcher = await login(await seedAccount(["DISPATCHER"], false));
+      expect((await call("GET", "/v1/shifts/current", dispatcher)).statusCode).toBe(403);
+    });
+
     it("refuses a colleague's driverId on start with 403 that names nothing about them", async () => {
       const a = await seedAccount(["DRIVER"], true);
       const b = await seedAccount(["DRIVER"], true);
