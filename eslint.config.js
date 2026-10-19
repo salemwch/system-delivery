@@ -112,6 +112,7 @@ export default tseslint.config(
           "./apps/track/tsconfig.json",
           "./apps/merchant/tsconfig.json",
           "./apps/web/tsconfig.json",
+          "./apps/driver/tsconfig.json",
         ],
         tsconfigRootDir: import.meta.dirname,
       },
