@@ -24,6 +24,13 @@ export interface ObjectStorage {
     upload: { readonly contentType: string; readonly contentLength: number },
   ): PresignedUpload;
 
+  /**
+   * A short-lived URL to view one object, served from the storage origin, never
+   * the application's (docs/07 §7.1: a separate origin with no ambient
+   * credentials).
+   */
+  presignGet(key: string): { readonly url: string; readonly expiresInSeconds: number };
+
   /** Size and declared type, or null when there is no such object. */
   head(key: string): Promise<StoredObject | null>;
 

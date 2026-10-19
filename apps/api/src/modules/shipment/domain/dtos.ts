@@ -363,3 +363,24 @@ export const listShipmentsSchema = z.strictObject({
   merchantId: z.uuid().optional(),
 });
 export type ListShipmentsInput = z.infer<typeof listShipmentsSchema>;
+
+// ── POD media (docs/05 POST /v1/media/presign, docs/07 §7.1) ─────────────────
+
+/** 10 MB, docs/07 §7.1; also a CHECK on pod_artifacts.size_bytes. */
+export const MAX_POD_MEDIA_BYTES = 10 * 1024 * 1024;
+
+const POD_MEDIA_PURPOSES = ["POD_PHOTO", "POD_SIGNATURE"] as const;
+export type PodMediaPurpose = (typeof POD_MEDIA_PURPOSES)[number];
+
+/**
+ * Asks for one upload slot. `sizeBytes` and `contentType` are signed into the
+ * URL, so the store refuses any other file; `idempotencyKey` makes the offline
+ * app's retry the same slot rather than a second one.
+ */
+export const presignMediaSchema = z.strictObject({
+  idempotencyKey,
+  purpose: z.enum(POD_MEDIA_PURPOSES),
+  shipmentId: z.uuid(),
+  contentType: z.enum(["image/jpeg", "image/png"]),
+  sizeBytes: z.number().int().min(1).max(MAX_POD_MEDIA_BYTES),
+});

@@ -234,6 +234,8 @@ Modelled from MVP even though MVP uses a single leg, because retrofitting is a s
 | `captured_at` | `TIMESTAMPTZ` | Device time |
 | `device_metadata` | `JSONB` | Model, OS, app version, mock-location flag |
 
+**`pod_artifacts` (0052)** is the upload slot behind every cited key: shipment, uploader and driver, `purpose` (`POD_PHOTO` · `POD_SIGNATURE`), server-built `object_key` (CHECK: under `tenant/{tenant_id}/pod/{shipment_id}/`), declared `content_type` and `size_bytes` (≤ 10 MB), `status` `PENDING_UPLOAD → PENDING_SCAN → AVAILABLE`, or `REJECTED` with `SIZE_MISMATCH` · `TYPE_MISMATCH` · `EXIF_PRESENT` · `MALWARE`, `sha256`, `scanned_by`. Idempotent on `(tenant_id, idempotency_key)` with a request hash. RLS = the parent shipment's (EXISTS), so every sub-tenant scope applies. `dp_app` updates only the verification columns, never deletes; a trigger keeps the lifecycle forward-only and the hash final.
+
 ### 4.7 Ledger — double-entry cash custody
 
 The design that separates a real logistics platform from a prototype.

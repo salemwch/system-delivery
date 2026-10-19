@@ -54,6 +54,11 @@ Clients branch on `code`, **never** on `detail` text (which is localised).
 | `ROUTE_NOT_DRAFT` | 409 | Mutation attempted on a published route |
 | `MANIFEST_SEALED` | 409 | Contents immutable |
 | `CORRECTION_NOT_PENDING` | 409 | Address correction already decided (or applied, or superseded) |
+| `MEDIA_NOT_ACCEPTED` | 409 | POD media slot requested for a parcel not out for delivery |
+| `MEDIA_LIMIT_REACHED` | 409 | 1 signature / 5 photos per parcel (rejected slots not counted) |
+| `MEDIA_NOT_UPLOADED` | 409 | `complete` before the upload arrived; retry |
+| `POD_MEDIA_UNKNOWN` | 422 | Delivery cites a key not issued for this parcel, the wrong purpose, or a rejected file |
+| `STORAGE_UNAVAILABLE` | 503 | Object storage timed out or its breaker is open; retry |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | Same key, different request: another shipment, caller, command or body. Says nothing about the earlier use |
 | `POD_REQUIRED` | 422 | Delivery attempted without proof |
 | `COD_AMOUNT_MISMATCH` | 422 | Collected ≠ expected without an allowed reason |
@@ -798,7 +803,7 @@ Approve is rejected with `403 FORBIDDEN` when the approver created the draft —
 
 ### `POST /v1/media/presign`
 ```json
-{ "purpose": "POD_PHOTO", "shipmentId": "018f7b22-...", "contentType": "image/jpeg", "sizeBytes": 184320 }
+{ "idempotencyKey": "018f8c20-...", "purpose": "POD_PHOTO", "shipmentId": "018f7b22-...", "contentType": "image/jpeg", "sizeBytes": 184320 }
 ```
 → `200`
 ```json
@@ -808,6 +813,16 @@ Approve is rejected with `403 FORBIDDEN` when the approver created the draft —
 ```
 
 **Notes.** Direct-to-storage upload. The API never proxies binaries. Keys are **tenant-prefixed** and the presigned URL is scoped to that prefix. Content type is allow-listed and magic-bytes verified server-side after upload.
+
+**As built (2026-10-19).** Permission `shipment:deliver`; the parcel must be visible to the caller (RLS: a driver's own) and `OUT_FOR_DELIVERY`. The response is `201` and carries `id`, `status`, `uploadUrl`, `expiresIn` and `requiredHeaders` (`content-type` and `content-length` are signed: send exactly those). `purpose` is `POD_PHOTO` or `POD_SIGNATURE`; `contentType` `image/jpeg` or `image/png`; `sizeBytes` 1 to 10 MB. At most 1 signature and 5 photos per parcel, not counting rejected ones (`409 MEDIA_LIMIT_REACHED`); a parcel not out for delivery is `409 MEDIA_NOT_ACCEPTED`. A replayed key returns the same slot with a **fresh** URL while it still waits (`Idempotency-Replayed: true`), and `uploadUrl: null` once it was verified.
+
+### `POST /v1/media/{id}/complete` · `GET /v1/media/{id}`
+
+`complete` (`shipment:deliver`) is called by the app after the PUT succeeds. It reads the object back and verifies size, real type and the absence of EXIF/XMP, then runs the malware scan, and returns `AVAILABLE` or `REJECTED` with `rejectionReason` (`SIZE_MISMATCH` · `TYPE_MISMATCH` · `EXIF_PRESENT` · `MALWARE`). Nothing uploaded yet is `409 MEDIA_NOT_UPLOADED` and changes nothing; storage down is `503 STORAGE_UNAVAILABLE`; both are retryable. A decided slot is returned as it is. Upload and `complete` work after the parcel is `DELIVERED`: the delivery event usually syncs first.
+
+`GET` (`shipment:read`, RLS-narrowed like the shipment) returns the artifact and a 5-minute `viewUrl` on the storage origin, only when `AVAILABLE`.
+
+**Delivery binding.** `pod.signatureObjectKey` and `pod.photoObjectKeys` on `POST /v1/shipments/{id}/deliver` must be keys issued for that parcel, for the matching purpose, and not `REJECTED`: otherwise `422 POD_MEDIA_UNKNOWN`. A slot still pending upload is accepted (offline-first).
 
 ---
 

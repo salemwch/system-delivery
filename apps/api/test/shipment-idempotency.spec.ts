@@ -48,7 +48,9 @@ describe("shipment idempotency (I29)", () => {
 
   const dispatcherA: CommandContext = { actor: { actorType: "DISPATCHER", actorId: randomUUID() } };
   const dispatcherB: CommandContext = { actor: { actorType: "DISPATCHER", actorId: randomUUID() } };
-  const pod = { podType: "signature", signatureObjectKey: "pods/s.png", recipientName: "R" };
+  // An ID-checked POD cites no media: these specs are about who may deliver,
+  // not about proof artifacts (pod-media.spec.ts covers those).
+  const pod = { podType: "id_check", recipientName: "R" };
 
   function inTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
     return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "system" }, fn);

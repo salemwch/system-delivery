@@ -45,6 +45,7 @@ import { WorkloadService } from "../src/modules/platform/application/workload.se
 import { NOTIFICATION_PROVIDER } from "../src/modules/platform/domain/notification-provider.js";
 import { commandContextOf } from "../src/modules/shipment/api/command-context.js";
 import { AddressBookController } from "../src/modules/shipment/api/address-book.controller.js";
+import { MediaController } from "../src/modules/shipment/api/media.controller.js";
 import { ShipmentController } from "../src/modules/shipment/api/shipment.controller.js";
 import { AddressBookService } from "../src/modules/shipment/application/address-book.service.js";
 import { BulkShipmentService } from "../src/modules/shipment/application/bulk-shipment.service.js";
@@ -56,6 +57,7 @@ import { ShipmentStatsService } from "../src/modules/shipment/application/shipme
 import { ShipmentService } from "../src/modules/shipment/application/shipment.service.js";
 import type { CommandContext } from "../src/modules/shipment/application/shipment.service.js";
 import { ShipmentTraceabilityService } from "../src/modules/shipment/application/traceability.service.js";
+import { PodMediaService } from "../src/modules/shipment/application/pod-media.service.js";
 import { TrackingService } from "../src/modules/shipment/application/tracking.service.js";
 import { AppConfigService } from "../src/shared/config/index.js";
 import { FieldCipher } from "../src/shared/crypto/field-cipher.js";
@@ -71,9 +73,13 @@ import {
   createFastifyAdapter,
 } from "../src/shared/http/index.js";
 import { CurrencyService } from "../src/shared/money/index.js";
+import { PassThroughMalwareScanner, S3ObjectStorage } from "../src/shared/storage/index.js";
 import { CapturingNotificationProvider } from "./auth.factory.js";
 import { stubConfig } from "./config.stub.js";
 import { createTenant, createTestDatabase, deleteTenants } from "./database.harness.js";
+import { jpegFixture } from "./media.fixtures.js";
+import { createTestStorage } from "./storage.harness.js";
+import type { TestStorage } from "./storage.harness.js";
 import type { TestDatabase } from "./database.harness.js";
 
 /**
@@ -96,6 +102,7 @@ describe("driver authorization over HTTP", () => {
   let shipments: ShipmentService;
   let shiftsSvc: ShiftService;
   let addresses: AddressService;
+  let store: TestStorage | undefined;
 
   // Generated, never a literal: a fixed credential in a test file is exactly
   // what a secret scanner is right to flag.
@@ -103,7 +110,9 @@ describe("driver authorization over HTTP", () => {
   const cipher = new FieldCipher(randomBytes(32));
   const mfaSecrets = new Map<string, string>();
   const staff: CommandContext = { actor: { actorType: "DISPATCHER", actorId: randomUUID() } };
-  const pod = { podType: "signature", signatureObjectKey: "pods/s.png", recipientName: "R" };
+  // An ID-checked POD cites no media: these specs are about who may deliver,
+  // not about proof artifacts (pod-media.spec.ts covers those).
+  const pod = { podType: "id_check", recipientName: "R" };
 
   interface Seeded {
     readonly tenantId: TenantId;
@@ -252,6 +261,13 @@ describe("driver authorization over HTTP", () => {
       new AuditService(db),
     );
     shiftsSvc = new ShiftService(db, outbox);
+    const createdStore = await createTestStorage();
+    store = createdStore;
+    const media = new PodMediaService(
+      db,
+      new S3ObjectStorage(createdStore.settings),
+      new PassThroughMalwareScanner(),
+    );
 
     // Routes under test use only ShipmentService, ShipmentStatsService,
     // AddressBookService, RecipientService, RemittanceService, ShiftService and
@@ -270,6 +286,7 @@ describe("driver authorization over HTTP", () => {
         AddressBookController,
         AddressCorrectionController,
         WorkloadController,
+        MediaController,
       ],
       providers: [
         { provide: AppConfigService, useValue: stubConfig() },
@@ -290,6 +307,7 @@ describe("driver authorization over HTTP", () => {
         { provide: AddressService, useValue: addresses },
         AddressCorrectionService,
         { provide: ShiftService, useValue: shiftsSvc },
+        { provide: PodMediaService, useValue: media },
         OutboxService,
         WorkloadService,
         LedgerService,
@@ -322,6 +340,7 @@ describe("driver authorization over HTTP", () => {
   }, 240_000);
 
   afterAll(async () => {
+    await store?.close();
     await app.close();
     await deleteTenants(database.migrator, [tenant, otherTenant]);
     await database.close();
@@ -1115,6 +1134,49 @@ describe("driver authorization over HTTP", () => {
       // Ids that are not UUIDs by design still route normally.
       const lookup = await call("GET", "/v1/shipments/lookup/NOT-A-TRACKING-NUMBER", dispatcher);
       expect(lookup.statusCode).toBe(404);
+    });
+  });
+  describe("POD media (0052)", () => {
+    it("issues a driver an upload slot for their own parcel, and nobody else", async () => {
+      const courier = await seedAccount(["DRIVER"], true);
+      const colleague = await seedAccount(["DRIVER"], true);
+      const shipmentId = await outForDelivery(courier.driverId ?? "", "+21620000801");
+      const bytes = jpegFixture();
+      const body = {
+        idempotencyKey: randomUUID(),
+        purpose: "POD_PHOTO",
+        shipmentId,
+        contentType: "image/jpeg",
+        sizeBytes: bytes.length,
+      };
+
+      const issued = await call("POST", "/v1/media/presign", await login(courier), body);
+      expect(issued.statusCode, issued.body).toBe(201);
+      const slot = JSON.parse(issued.body) as {
+        id: string;
+        status: string;
+        uploadUrl: string;
+        requiredHeaders: Record<string, string>;
+      };
+      expect(slot.status).toBe("PENDING_UPLOAD");
+      expect(slot.requiredHeaders).toEqual({
+        "content-length": String(bytes.length),
+        "content-type": "image/jpeg",
+      });
+
+      const other = await call("POST", "/v1/media/presign", await login(colleague), {
+        ...body,
+        idempotencyKey: randomUUID(),
+      });
+      expect(other.statusCode).toBe(404);
+
+      // A dispatcher holds no shipment:deliver; viewing is shipment:read.
+      const dispatcher = await login(await seedAccount(["DISPATCHER"], false));
+      expect((await call("POST", "/v1/media/presign", dispatcher, body)).statusCode).toBe(403);
+      const viewed = await call("GET", `/v1/media/${slot.id}`, dispatcher);
+      expect(viewed.statusCode).toBe(200);
+      expect(JSON.parse(viewed.body)).toMatchObject({ status: "PENDING_UPLOAD", viewUrl: null });
+      expect((await call("GET", "/v1/media/not-a-uuid", dispatcher)).statusCode).toBe(400);
     });
   });
 });

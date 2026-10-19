@@ -4,6 +4,8 @@ import { DirectoryModule } from "../directory/index.js";
 import { PlatformModule } from "../platform/index.js";
 import { AddressBookController } from "./api/address-book.controller.js";
 import { ShipmentAmendmentController } from "./api/shipment-amendment.controller.js";
+import { MediaController } from "./api/media.controller.js";
+import { PodMediaService } from "./application/pod-media.service.js";
 import { ShipmentController } from "./api/shipment.controller.js";
 import { TrackingController } from "./api/tracking.controller.js";
 import { AddressBookService } from "./application/address-book.service.js";
@@ -38,6 +40,7 @@ import { TrackingService } from "./application/tracking.service.js";
     TrackingController,
     AddressBookController,
     ShipmentAmendmentController,
+    MediaController,
   ],
   providers: [
     ShipmentService,
@@ -52,6 +55,7 @@ import { TrackingService } from "./application/tracking.service.js";
     LabelService,
     DocumentService,
     PickupScanEventHandler,
+    PodMediaService,
   ],
   exports: [
     ShipmentService,

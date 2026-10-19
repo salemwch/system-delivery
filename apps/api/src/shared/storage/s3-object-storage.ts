@@ -15,6 +15,8 @@ export interface S3Settings {
 const UPLOAD_URL_TTL_SECONDS = 15 * 60;
 /** Server-side reads use a URL spent within the request. */
 const READ_URL_TTL_SECONDS = 60;
+/** Long enough to open a photo from the review screen, short enough not to share. */
+const VIEW_URL_TTL_SECONDS = 5 * 60;
 /** A 10 MB read from a healthy store is well under this; a hung one is cut off. */
 const REQUEST_TIMEOUT_MS = 15_000;
 const BREAKER_THRESHOLD = 3;
@@ -49,6 +51,13 @@ export class S3ObjectStorage implements ObjectStorage {
       url: this.sign("PUT", key, UPLOAD_URL_TTL_SECONDS, headers),
       headers,
       expiresInSeconds: UPLOAD_URL_TTL_SECONDS,
+    };
+  }
+
+  presignGet(key: string): { readonly url: string; readonly expiresInSeconds: number } {
+    return {
+      url: this.sign("GET", key, VIEW_URL_TTL_SECONDS),
+      expiresInSeconds: VIEW_URL_TTL_SECONDS,
     };
   }
 

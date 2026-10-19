@@ -466,11 +466,7 @@ describe("shipment amendments", () => {
           shipmentId,
           {
             idempotencyKey: randomUUID(),
-            pod: {
-              podType: "signature",
-              signatureObjectKey: "pods/sig.png",
-              recipientName: "Sonia Gharbi",
-            },
+            pod: { podType: "id_check", recipientName: "Sonia Gharbi" },
           },
           { actor: { actorType: "DRIVER", actorId: courier.userId } },
         );

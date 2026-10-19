@@ -23,6 +23,7 @@ import { AppConfigModule } from "./shared/config/config.module.js";
 import { AppConfigService } from "./shared/config/index.js";
 import { DatabaseModule } from "./shared/database/database.module.js";
 import { MoneyModule } from "./shared/money/money.module.js";
+import { StorageModule } from "./shared/storage/storage.module.js";
 import { DatabaseService } from "./shared/database/database.service.js";
 import type { Database } from "./shared/database/index.js";
 import { ValkeyModule } from "./shared/valkey/valkey.module.js";
@@ -100,6 +101,9 @@ function taggedLogger(logger: PinoLogger, component: string): ConsumerLogger {
     AppConfigModule,
     DatabaseModule,
     MoneyModule,
+    // ShipmentModule builds PodMediaService, which needs OBJECT_STORAGE: this
+    // root boots without it otherwise, though no consumer uploads anything.
+    StorageModule,
     ValkeyModule,
     PlatformModule,
     NotificationModule,

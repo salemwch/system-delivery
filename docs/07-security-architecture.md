@@ -289,6 +289,18 @@ Presigned direct-to-storage upload; the API never proxies binaries.
 
 Content-type allowlist (`image/jpeg`, `image/png`) · **magic-byte verification server-side after upload** (never trust the declared type) · size cap 10 MB · **EXIF stripped** (capture location is stored in the POD row, not left embedded in a file that may be shared) · served from a **separate origin domain with no ambient credentials** · malware scan before the artifact is marked available.
 
+**As built (2026-10-19, migration 0052, `PodMediaService`).**
+
+| Requirement | How it is met |
+|---|---|
+| Direct upload | `POST /v1/media/presign` issues a SigV4 presigned PUT (hand-rolled, `shared/storage/sigv4.ts`) under `tenant/{tenant}/pod/{shipment}/`; a CHECK constraint holds every key to that prefix |
+| Type and size | `content-type` and `content-length` are **signed into the URL**, so the store refuses any other file; `complete` re-checks the size and reads the real type from the magic bytes |
+| EXIF | **Decision: the driver app re-encodes every photo before upload** (which drops EXIF and saves mobile data). The server does not clean files; it **rejects** any JPEG with an APP1 segment (EXIF or XMP) and any PNG with `eXIf` or XMP `iTXt` (`EXIF_PRESENT`). Rejected over server re-encoding with `sharp`: a native dependency and CPU per delivery to cover for a client bug |
+| Separate origin | Staff view a photo through a 5-minute presigned GET on the storage domain, only once `AVAILABLE` |
+| Malware scan | **Deferred, accepted risk (decision 2026-10-19).** Bound through the `MalwareScanner` port to a pass-through that records `scanned_by = 'none'`. Mitigations: JPEG/PNG only, structure verified, nothing executed or served from the app origin. When ClamAV is bound, `WHERE scanned_by = 'none'` is exactly the set to rescan |
+| Tamper evidence | SHA-256 of the verified bytes on the artifact; the observation is immutable (column grants and a forward-only trigger) |
+| Proof binding | `confirmDelivery` accepts only keys issued for that parcel, for the matching purpose, not `REJECTED` (`422 POD_MEDIA_UNKNOWN`) |
+
 ### 7.2 CSV import
 
 Merchant-supplied files are untrusted input: streaming parse with a row cap · **formula-injection neutralisation** (cells beginning `=`, `+`, `-`, `@` are prefixed on export and never evaluated on import) · encoding validation (Arabic/French content means UTF-8 and Windows-1256 both appear in practice) · per-tenant concurrency limit so one import cannot starve interactive traffic.
