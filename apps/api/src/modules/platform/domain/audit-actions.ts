@@ -62,10 +62,22 @@ export const AUDIT_ACTIONS = [
   // human asserting a status the custody chain did not produce.
   "shipment.status_overridden",
   "shipment.cancelled",
+  // Staff closing a return at the counter, booked to no driver (I26, Decision 2
+  // of the 9318622 release review). The custody chain records the event; this
+  // records that a PERSON asserted the parcel was handed back, including when a
+  // driver was still holding it.
+  "shipment.return_closed_by_staff",
   // A parcel changed after creation — modification colis. The shipment row only
   // ever shows the current recipient and address, so "the driver called the
   // wrong number" has no answer six weeks later without this.
   "shipment.amended",
+  // A driver moving a recipient's pin. The pin is what the POD distance and
+  // no-attempt fraud rules measure against (docs/07 §9), so a correction is
+  // recorded with the coordinates it replaced.
+  "address.geocode_corrected",
+  // A dispatcher refusing a held pin move (> 2 km). An approval is recorded as
+  // `address.geocode_corrected`, with the decision in its context.
+  "address.geocode_correction_rejected",
 
   // ── Money (§10: all ledger adjustments, variance, approvals) ───────────────
   "ledger.adjusted",

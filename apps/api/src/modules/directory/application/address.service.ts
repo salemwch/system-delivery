@@ -1,15 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
 
-import { OutboxService } from "../../platform/index.js";
 import { DatabaseService, TenantContext } from "../../../shared/database/index.js";
 import { NotFoundError } from "../../../shared/errors/index.js";
 import { parseWithZod } from "../../../shared/http/index.js";
-import { correctAddressSchema, resolveAddressSchema } from "../domain/dtos.js";
+import { resolveAddressSchema } from "../domain/dtos.js";
 import type { ResolveAddressInput } from "../domain/dtos.js";
 import {
   AUTO_DISPATCH_CONFIDENCE_FLOOR,
-  DRIVER_CORRECTION_CONFIDENCE,
   GEOCODING_PROVIDER,
   MANUAL_PIN_CONFIDENCE,
 } from "../domain/geocoding.js";
@@ -60,14 +58,13 @@ interface Located {
  * auto-dispatch and flags it for dispatcher review rather than guessing.
  *
  * Driver corrections are a compounding asset: every "the pin is 80 m off" fix
- * improves every future delivery to that address, so it is captured from MVP and
- * announced as `address.geocode_corrected` for consumers to invalidate caches.
+ * improves every future delivery to that address. They are recorded, reviewed
+ * and applied by `AddressCorrectionService`.
  */
 @Injectable()
 export class AddressService {
   constructor(
     private readonly database: DatabaseService,
-    private readonly outbox: OutboxService,
     @Inject(GEOCODING_PROVIDER) private readonly geocoder: GeocodingProvider,
   ) {}
 
@@ -113,51 +110,6 @@ export class AddressService {
       const rows = await selectViews(tx, eq(addresses.id, id));
       const row = rows[0];
       if (row === undefined) {
-        throw new NotFoundError("Address");
-      }
-      return row;
-    });
-  }
-
-  /**
-   * Applies a driver's on-the-ground correction: the strongest geocode signal.
-   * Overwrites the location, marks the source `driver_corrected`, and announces
-   * `address.geocode_corrected` so route matrices and caches are invalidated.
-   */
-  async applyDriverCorrection(id: string, input: unknown): Promise<AddressView> {
-    const dto = parseWithZod(correctAddressSchema, input);
-    return this.database.withTenant(async (tx) => {
-      const updated = await tx
-        .update(addresses)
-        .set({
-          location: pointOf(dto.coordinates),
-          geocodeConfidence: DRIVER_CORRECTION_CONFIDENCE.toString(),
-          geocodeSource: "driver_corrected",
-          ...(dto.accessNotes === undefined ? {} : { accessNotes: dto.accessNotes }),
-          updatedAt: sql`now()`,
-        })
-        .where(eq(addresses.id, id))
-        .returning({ id: addresses.id });
-
-      if (updated[0] === undefined) {
-        throw new NotFoundError("Address");
-      }
-
-      await this.outbox.publish(tx, {
-        eventType: "address.geocode_corrected",
-        aggregateType: "address",
-        aggregateId: id,
-        payload: {
-          latitude: dto.coordinates.lat,
-          longitude: dto.coordinates.lng,
-          source: "driver_corrected",
-        },
-      });
-
-      const rows = await selectViews(tx, eq(addresses.id, id));
-      const row = rows[0];
-      if (row === undefined) {
-        // Just updated in this transaction — unreachable, guards the type.
         throw new NotFoundError("Address");
       }
       return row;

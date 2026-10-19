@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createCipheriv, randomBytes } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
@@ -31,6 +31,32 @@ describe("session seal", () => {
     expect(one).not.toBe(two);
     expect(open(one, key)).toBe(payload);
     expect(open(two, key)).toBe(payload);
+  });
+
+  it("round-trips an empty and a multi-byte plaintext", () => {
+    // GCM of "" is an empty ciphertext segment; it must still open (the
+    // 9318622 RC review found it did not).
+    for (const text of ["", "سونيا الغربي — 24 201 314"]) {
+      expect(open(seal(text, key), key)).toBe(text);
+    }
+  });
+
+  it("opens values sealed by the code before the 128-bit pin (compatibility)", () => {
+    // The pre-fix seal, verbatim: no `authTagLength`, so Node's default 16-byte
+    // tag. Every cookie issued before the fix has exactly this shape.
+    function legacySeal(plaintext: string): string {
+      const iv = randomBytes(12);
+      const cipher = createCipheriv("aes-256-gcm", key, iv);
+      const body = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+      return [
+        iv.toString("base64url"),
+        cipher.getAuthTag().toString("base64url"),
+        body.toString("base64url"),
+      ].join(".");
+    }
+    for (const text of ["", payload]) {
+      expect(open(legacySeal(text), key)).toBe(text);
+    }
   });
 
   it("seals with a 16-byte tag and a 12-byte IV", () => {

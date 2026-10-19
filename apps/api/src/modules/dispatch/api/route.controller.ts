@@ -15,14 +15,12 @@ import { zodBody } from "../../../shared/http/index.js";
 import { CurrentPrincipal, RequirePermissions } from "../../identity/index.js";
 import type { Principal } from "../../identity/index.js";
 import { RouteService } from "../application/route.service.js";
-import type {
-  DispatchContext,
-  ManifestView,
-  OptimizeResult,
-  RoutePlan,
-} from "../application/route.service.js";
+import type { DispatchContext, OptimizeResult, RoutePlan } from "../application/route.service.js";
 import { AssignmentService } from "../application/assignment.service.js";
 import { DistributionNoteService } from "../application/distribution-note.service.js";
+import { toManifestResponse } from "../application/manifest-response.js";
+import type { ManifestResponse } from "../application/manifest-response.js";
+import { CurrencyService } from "../../../shared/money/index.js";
 import type { ScoredDriver } from "../application/assignment.service.js";
 import type { Route } from "../domain/schema.js";
 import {
@@ -89,6 +87,7 @@ export class RouteController {
     private readonly routes: RouteService,
     private readonly assignments: AssignmentService,
     private readonly distributionNotes: DistributionNoteService,
+    private readonly currencies: CurrencyService,
   ) {}
 
   /**
@@ -142,10 +141,11 @@ export class RouteController {
     return toResponse(route);
   }
 
+  /** The driver's day. Money as decimal strings with their exponent (manifest-response.ts). */
   @Get(":id/manifest")
   @RequirePermissions("route:read")
-  async getManifest(@Param("id") id: string): Promise<ManifestView> {
-    return this.routes.getManifest(id);
+  async getManifest(@Param("id") id: string): Promise<ManifestResponse> {
+    return toManifestResponse(await this.routes.getManifest(id), this.currencies);
   }
 
   @Post(":id/stops")

@@ -1,7 +1,6 @@
 import { Module } from "@nestjs/common";
 
 import { ConfigController } from "./api/config.controller.js";
-import { WorkloadController } from "./api/workload.controller.js";
 import { ConfigBootstrapService } from "./application/config-bootstrap.service.js";
 import { FeatureService } from "./application/feature.service.js";
 import { OutboxService } from "./application/outbox.service.js";
@@ -9,6 +8,7 @@ import { AuditService } from "./application/audit.service.js";
 import { DeadLetterService } from "./application/dead-letter.service.js";
 import { OperatingConfigService } from "./application/operating-config.service.js";
 import { TenantService } from "./application/tenant.service.js";
+import { WorkloadService } from "./application/workload.service.js";
 import { NOTIFICATION_PROVIDER } from "./domain/notification-provider.js";
 import { ChannelRoutingProvider } from "./infrastructure/channel-routing.provider.js";
 import { ConsoleNotificationProvider } from "./infrastructure/console-notification.provider.js";
@@ -20,7 +20,7 @@ import { ConsoleNotificationProvider } from "./infrastructure/console-notificati
  * but shared infrastructure.
  */
 @Module({
-  controllers: [ConfigController, WorkloadController],
+  controllers: [ConfigController],
   providers: [
     OutboxService,
     FeatureService,
@@ -29,6 +29,7 @@ import { ConsoleNotificationProvider } from "./infrastructure/console-notificati
     AuditService,
     OperatingConfigService,
     DeadLetterService,
+    WorkloadService,
     // The single binding of the outbound-message transport. Both `notification`
     // (business notifications) and `identity` (driver OTP) consume it, so it is
     // bound once here rather than in each.
@@ -46,6 +47,7 @@ import { ConsoleNotificationProvider } from "./infrastructure/console-notificati
     AuditService,
     OperatingConfigService,
     DeadLetterService,
+    WorkloadService,
     NOTIFICATION_PROVIDER,
   ],
 })

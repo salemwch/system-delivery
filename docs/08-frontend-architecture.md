@@ -330,6 +330,20 @@ flowchart TB
 | Language | Arabic and French, RTL-aware |
 | Security | Keystore-backed tokens, encrypted local DB, screenshot prevention on COD screens |
 
+**As built — milestone 1, background-location field test (2026-10-19, `apps/driver`).** Scope: sign-in, disclosure, shift, tracking and diagnostics only; the route list, POD, COD and scanning screens follow once the field test ([driver-field-test.md](./driver-field-test.md)) passes.
+
+| Concern | Choice | Why |
+|---|---|---|
+| SDK | **Expo SDK 57.0.30** (React Native 0.86.3, New Architecture), dev client + EAS Build, Continuous Native Generation (`android/` never committed) | As decided in technology-decisions; SDK 58 was three weeks old with 15 patches. Every native module pinned to SDK 57's `bundledNativeModules.json` |
+| Location | `expo-location` + `expo-task-manager`, foreground service of type `location` | Maintained by Expo, free; isolated behind `src/platform/device.ts` so a Kotlin module can replace it (§5.3 mitigation 3) |
+| Local store | `op-sqlite` 18.2.5 with **SQLCipher**, 256-bit key in the Keystore (`expo-secure-store`) | Fastest maintained SQLite for RN (JSI); encryption at rest without a second library |
+| Navigation | `expo-router` (typed routes) | Expo's standard; the app grows to many screens |
+| Logic | Pure TypeScript in `src/core` (sampling, telemetry pipeline, API client, i18n), unit-tested with **Vitest** on Node | §11: Vitest for units; no native mocks needed |
+| TypeScript | 5.9.3, like the rest of the monorepo (`expo.install.exclude`) | SDK 57 suggests 6.0; one compiler across the workspace and its typed lint |
+| OTA updates | Off (`updates.enabled: false`) | Until EAS Update and its signing are set up |
+
+Behaviour that matters in the field: collection follows the **server's** shift (started on `GET /v1/shifts/current` + an open shift, stopped when it closes, and on `TELEMETRY_OUTSIDE_SHIFT`); every fix is written to the encrypted queue first; a telemetry batch keeps its `batchId` until acknowledged (lost responses are de-duplicated server-side); adaptive sampling (MOVING / SLOW / STATIONARY, relaxed below 20 % battery) restarts the OS request only when it changes; mocked fixes are dropped and counted; uploads back off exponentially with jitter; one session refresh in flight. Android manifest: location (fine, coarse, background), foreground service (location), internet, vibrate; nothing else (template defaults explicitly removed; `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` not requested, the app opens the settings list instead).
+
 ### 8.2 Wireframe — route list (the driver's home)
 
 ```

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
-import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from "@nestjs/core";
 
+import { UuidParamPipe } from "../../shared/http/index.js";
 import { PlatformModule } from "../platform/index.js";
 import { AccessService } from "./application/access.service.js";
 import { AuthService } from "./application/auth.service.js";
@@ -18,6 +19,7 @@ import { MfaController } from "./api/mfa.controller.js";
 import { TenantLookupController } from "./api/tenant-lookup.controller.js";
 import { AuthController } from "./api/auth.controller.js";
 import { UserController } from "./api/user.controller.js";
+import { WorkloadController } from "./api/workload.controller.js";
 import { AuthGuard } from "./api/auth.guard.js";
 import { PermissionGuard } from "./api/permission.guard.js";
 import { TenantContextInterceptor } from "./api/tenant-context.interceptor.js";
@@ -44,6 +46,7 @@ import { TenantContextInterceptor } from "./api/tenant-context.interceptor.js";
     DeadLetterController,
     TenantSettingsController,
     FeatureController,
+    WorkloadController,
   ],
   providers: [
     PasswordService,
@@ -57,6 +60,8 @@ import { TenantContextInterceptor } from "./api/tenant-context.interceptor.js";
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
+    // A malformed UUID route parameter is the client's 400, not our 500.
+    { provide: APP_PIPE, useClass: UuidParamPipe },
   ],
   exports: [PasswordService, TokenService, AuthService, AccessService, ProvisioningService],
 })

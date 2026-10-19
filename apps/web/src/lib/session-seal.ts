@@ -20,6 +20,12 @@ const IV_BYTES = 12;
 const TAG_BYTES = 16;
 /** RFC 4648 §5 alphabet, unpadded. Node's decoder would skip anything else silently. */
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
+/**
+ * The ciphertext segment may be EMPTY: GCM of an empty plaintext is empty, and
+ * `seal("")` must open. The IV and tag are never empty (their lengths are
+ * checked below), so only the body takes this form.
+ */
+const BASE64URL_OR_EMPTY = /^[A-Za-z0-9_-]*$/;
 
 /** Encrypts `plaintext` to `iv.tag.ciphertext`. */
 export function seal(plaintext: string, key: Buffer): string {
@@ -53,7 +59,7 @@ export function open(sealed: string, key: Buffer): string | null {
     bodyPart === undefined ||
     !BASE64URL.test(ivPart) ||
     !BASE64URL.test(tagPart) ||
-    !BASE64URL.test(bodyPart)
+    !BASE64URL_OR_EMPTY.test(bodyPart)
   ) {
     return null;
   }

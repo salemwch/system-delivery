@@ -5,7 +5,12 @@ import { and, eq, ne, sql } from "drizzle-orm";
 
 import { DatabaseService, TenantContext } from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
-import { BusinessRuleError, ConflictError, NotFoundError } from "../../../shared/errors/index.js";
+import {
+  BusinessRuleError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from "../../../shared/errors/index.js";
 import { parseWithZod } from "../../../shared/http/index.js";
 import { OutboxService } from "../../platform/index.js";
 import {
@@ -21,6 +26,11 @@ import { LedgerService } from "./ledger.service.js";
 /** Who is performing a remittance command — recorded for audit and events. */
 export interface RemittanceContext {
   readonly actorUserId: string;
+  /**
+   * Whether the caller holds the DRIVER role, from the signed role claim.
+   * Required, not optional: an absent flag must never mean "not a driver".
+   */
+  readonly actorIsDriver: boolean;
 }
 
 /**
@@ -50,10 +60,11 @@ export class RemittanceService {
   ) {}
 
   /** Driver declares a handover. `expected` is read from the ledger, not the driver. */
-  async submit(input: unknown, _ctx: RemittanceContext): Promise<CodRemittance> {
+  async submit(input: unknown, ctx: RemittanceContext): Promise<CodRemittance> {
     const dto = parseWithZod(submitRemittanceSchema, input);
     return this.database.withTenant(async (tx) => {
       const tenantId = TenantContext.requireTenantId();
+      await assertRemitsOwnCash(tx, ctx, dto.driverId);
       const expected = await this.ledger.balanceOf(tx, tenantId, dto.currency, {
         ownerType: "DRIVER",
         ownerId: dto.driverId,
@@ -321,6 +332,40 @@ export class RemittanceService {
       count: Number(row?.count ?? "0"),
       totalMinor: BigInt(row?.total ?? "0"),
     };
+  }
+}
+
+/**
+ * A driver remits only their OWN cash (invariant I26 applied to COD remittance).
+ *
+ * ⚠️ `driverId` came from the request body and the caller was ignored, so any
+ * driver could file a remittance in a colleague's name. The response's
+ * `expectedAmountMinor` is that colleague's DRIVER_CASH balance, so it also
+ * disclosed how much cash another driver was carrying. Found by the
+ * release-candidate verification of 9318622.
+ *
+ * Staff who hold `cod:collect` (the OWNER) may still record a remittance on a
+ * driver's behalf; for them the body names the driver. A driver's own
+ * `drivers.id` is resolved from the login, never trusted from the request.
+ */
+async function assertRemitsOwnCash(
+  tx: TenantTransaction,
+  ctx: RemittanceContext,
+  driverId: string,
+): Promise<void> {
+  if (!ctx.actorIsDriver) {
+    return;
+  }
+  const rows = await tx.execute<{ id: string }>(
+    sql`select id from drivers where user_id = ${ctx.actorUserId}`,
+  );
+  const own = rows[0]?.id;
+  if (own === undefined) {
+    throw new ForbiddenError("This login is not linked to a driver.");
+  }
+  if (own !== driverId) {
+    // Says nothing about the other driver: not whether they exist, nor their cash.
+    throw new ForbiddenError("A driver may only remit their own cash.");
   }
 }
 

@@ -126,12 +126,12 @@ describe("merchant portal", () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     merchants = new MerchantService(
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, new ManualGeocodingProvider()),
     );
     const recipients = new RecipientService(db);
     const events = new ShipmentEventService(outbox);
@@ -144,6 +144,7 @@ describe("merchant portal", () => {
       recipients,
       addresses,
       operatingConfig,
+      new AuditService(db),
     );
     labels = new LabelService(shipments);
     addressBook = new AddressBookService(db);

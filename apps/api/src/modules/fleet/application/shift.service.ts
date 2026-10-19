@@ -8,11 +8,27 @@ import {
   isUniqueViolation,
 } from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
-import { BusinessRuleError, ConflictError, NotFoundError } from "../../../shared/errors/index.js";
+import {
+  BusinessRuleError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from "../../../shared/errors/index.js";
 import { parseWithZod } from "../../../shared/http/index.js";
 import { endShiftSchema, startShiftSchema } from "../domain/dtos.js";
 import { drivers, shifts, vehicles } from "../domain/schema.js";
 import type { Shift } from "../domain/schema.js";
+
+/** Who is calling a shift command, from the signed token. */
+export interface ShiftContext {
+  readonly actorUserId: string;
+  /**
+   * Whether the caller holds the DRIVER role, from the signed role claim (never
+   * the login channel, audit F1). Required, not optional: an absent flag must
+   * never mean "not a driver".
+   */
+  readonly actorIsDriver: boolean;
+}
 
 /**
  * Shifts — a driver's working period (docs/02-domain-model.md §3.3, §3.21).
@@ -22,6 +38,14 @@ import type { Shift } from "../domain/schema.js";
  * because the app cannot be trusted to gate itself (context-map §3.5). At most one
  * OPEN shift exists per driver and per vehicle, enforced by partial unique indexes
  * so a concurrent double-start is a database error, not a race.
+ *
+ * A driver starts, reads and ends only their OWN shift (invariant I26 applied to
+ * shifts, I28 for reads). ⚠️ `driverId` came from the request body and any shift
+ * id was accepted, so a driver could open a colleague's shift (switching on
+ * their location collection), close it, and read its cash figures. Found by the
+ * release-candidate review of 9318622 (V5). The driver is resolved from the
+ * login here, and RLS (migration 0049) hides a colleague's rows as well. Staff
+ * holding `shift:start` / `shift:end` (the OWNER) still act on a driver's behalf.
  */
 @Injectable()
 export class ShiftService {
@@ -30,11 +54,14 @@ export class ShiftService {
     private readonly outbox: OutboxService,
   ) {}
 
-  async start(input: unknown): Promise<Shift> {
+  async start(input: unknown, ctx: ShiftContext): Promise<Shift> {
     const dto = parseWithZod(startShiftSchema, input);
     try {
       return await this.database.withTenant(async (tx) => {
         const tenantId = TenantContext.requireTenantId();
+        // Before any lookup of the named driver, so a driver learns nothing
+        // about a colleague: not whether they exist, nor their status.
+        await assertStartsOwnShift(tx, ctx, dto.driverId);
         await this.assertDriverStartable(tx, dto.driverId);
         await this.assertVehicleStartable(tx, dto.vehicleId);
 
@@ -78,9 +105,15 @@ export class ShiftService {
     }
   }
 
-  async end(shiftId: string, input: unknown): Promise<Shift> {
+  async end(shiftId: string, input: unknown, ctx: ShiftContext): Promise<Shift> {
     const dto = parseWithZod(endShiftSchema, input);
     return this.database.withTenant(async (tx) => {
+      // Locked, then checked: ownership before status, so a colleague's closed
+      // shift is a 404 like any other, not a "this shift is already closed".
+      const current = await this.visibleShift(tx, shiftId, ctx, { lock: true });
+      if (current.status !== "OPEN") {
+        throw new BusinessRuleError("SHIFT_NOT_OPEN", "This shift is already closed.");
+      }
       const rows = await tx
         .update(shifts)
         .set({
@@ -90,22 +123,9 @@ export class ShiftService {
           ...(dto.endOdometer === undefined ? {} : { endOdometer: dto.endOdometer }),
           ...(dto.closingCashMinor === undefined ? {} : { closingCashMinor: dto.closingCashMinor }),
         })
-        .where(and(eq(shifts.id, shiftId), eq(shifts.status, "OPEN")))
+        .where(eq(shifts.id, shiftId))
         .returning();
-      const shift = rows[0];
-      if (shift === undefined) {
-        // Either it does not exist (or belongs to another tenant), or it is already
-        // closed — distinguish so the caller gets the right error.
-        const existing = await tx
-          .select({ status: shifts.status })
-          .from(shifts)
-          .where(eq(shifts.id, shiftId))
-          .limit(1);
-        if (existing[0] === undefined) {
-          throw new NotFoundError("Shift");
-        }
-        throw new BusinessRuleError("SHIFT_NOT_OPEN", "This shift is already closed.");
-      }
+      const shift = requireRow(rows);
 
       await this.outbox.publish(tx, {
         eventType: "driver.shift_ended",
@@ -188,15 +208,59 @@ export class ShiftService {
     });
   }
 
-  async getById(id: string): Promise<Shift> {
+  /**
+   * The caller's own driver record and open shift, for the driver app.
+   *
+   * The app needs both and could learn neither: starting a shift takes the
+   * driver's `drivers.id` (never the user id, see {@link openShiftForUser}),
+   * and telemetry is refused without the open `shiftId`, so an app that cannot
+   * read its shift cannot know whether it may collect location at all. A login
+   * with no driver record is a 403, as it is for `start`.
+   */
+  async current(
+    ctx: ShiftContext,
+  ): Promise<{ readonly driverId: string; readonly shift: Shift | null }> {
     return this.database.withTenant(async (tx) => {
-      const rows = await tx.select().from(shifts).where(eq(shifts.id, id)).limit(1);
-      const row = rows[0];
-      if (row === undefined) {
-        throw new NotFoundError("Shift");
+      const driverId = await callerDriverId(tx, ctx);
+      if (driverId === null) {
+        throw new ForbiddenError("This login is not linked to a driver.");
       }
-      return row;
+      const rows = await tx
+        .select()
+        .from(shifts)
+        .where(and(eq(shifts.driverId, driverId), eq(shifts.status, "OPEN")))
+        .limit(1);
+      return { driverId, shift: rows[0] ?? null };
     });
+  }
+
+  async getById(id: string, ctx: ShiftContext): Promise<Shift> {
+    return this.database.withTenant((tx) => this.visibleShift(tx, id, ctx, { lock: false }));
+  }
+
+  /**
+   * The shift, if the caller may see it: staff see the tenant's, a driver only
+   * their own. Ownership is checked after retrieval (docs/07 §4.3), and another
+   * driver's shift is a 404, not a 403, so its existence is not confirmed. RLS
+   * (0049) already hides a colleague's row from a driver session; this check
+   * still holds in a session that ran without the driver scope.
+   */
+  private async visibleShift(
+    tx: TenantTransaction,
+    id: string,
+    ctx: ShiftContext,
+    options: { readonly lock: boolean },
+  ): Promise<Shift> {
+    const query = tx.select().from(shifts).where(eq(shifts.id, id)).limit(1);
+    const rows = options.lock ? await query.for("update") : await query;
+    const row = rows[0];
+    if (row === undefined) {
+      throw new NotFoundError("Shift");
+    }
+    if (ctx.actorIsDriver && row.driverId !== (await callerDriverId(tx, ctx))) {
+      throw new NotFoundError("Shift");
+    }
+    return row;
   }
 
   private async assertDriverStartable(tx: TenantTransaction, driverId: string): Promise<void> {
@@ -236,10 +300,49 @@ export class ShiftService {
   }
 }
 
+/**
+ * A driver starts only their OWN shift (invariant I26 applied to shifts).
+ *
+ * The body still names the driver, because staff (the OWNER) start a shift on a
+ * driver's behalf. For a DRIVER caller the body is checked against the driver
+ * record behind the login and never trusted on its own. The refusal is the same
+ * whether or not the named driver exists, so it is not an existence oracle.
+ */
+async function assertStartsOwnShift(
+  tx: TenantTransaction,
+  ctx: ShiftContext,
+  driverId: string,
+): Promise<void> {
+  if (!ctx.actorIsDriver) {
+    return;
+  }
+  const own = await callerDriverId(tx, ctx);
+  if (own === null) {
+    throw new ForbiddenError("This login is not linked to a driver.");
+  }
+  if (own !== driverId) {
+    throw new ForbiddenError("A driver may only start their own shift.");
+  }
+}
+
+/**
+ * The `drivers.id` behind the caller's login, or null if there is none. A user
+ * id is not a driver id (see {@link ShiftService.openShiftForUser}); migration
+ * 0043 makes `(tenant_id, user_id)` unique, so this matches at most one row.
+ */
+async function callerDriverId(tx: TenantTransaction, ctx: ShiftContext): Promise<string | null> {
+  const rows = await tx
+    .select({ id: drivers.id })
+    .from(drivers)
+    .where(eq(drivers.userId, ctx.actorUserId))
+    .limit(1);
+  return rows[0]?.id ?? null;
+}
+
 function requireRow(rows: Shift[]): Shift {
   const row = rows[0];
   if (row === undefined) {
-    throw new Error("Shift insert returned no row");
+    throw new Error("Shift write returned no row");
   }
   return row;
 }

@@ -39,6 +39,9 @@ export const P = {
 
   RECIPIENT_READ: "recipient:read",
 
+  /** Decide a driver pin correction held for moving more than 2 km. Never a driver. */
+  ADDRESS_REVIEW: "address:review",
+
   ROUTE_READ: "route:read",
   ROUTE_CREATE: "route:create",
   ROUTE_PUBLISH: "route:publish",
@@ -103,6 +106,7 @@ export const NAV_GATES = {
   merchants: P.MERCHANT_READ,
   applications: P.MERCHANT_READ,
   amendments: P.SHIPMENT_READ,
+  corrections: P.ADDRESS_REVIEW,
   pickups: P.PICKUP_READ,
   custody: P.MANIFEST_READ,
   inventory: P.INVENTORY_READ,

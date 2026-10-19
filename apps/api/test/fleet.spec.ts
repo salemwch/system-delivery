@@ -1,10 +1,11 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { VehicleService } from "../src/modules/fleet/application/vehicle.service.js";
 import { DriverService } from "../src/modules/fleet/application/driver.service.js";
 import { ShiftService } from "../src/modules/fleet/application/shift.service.js";
+import type { ShiftContext } from "../src/modules/fleet/application/shift.service.js";
 import { HubService } from "../src/modules/network/application/hub.service.js";
 import { AddressService } from "../src/modules/directory/application/address.service.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
@@ -27,6 +28,8 @@ import type { TestDatabase } from "./database.harness.js";
  * and PII-at-rest all run as in production.
  */
 describe("fleet", () => {
+  // Staff (the OWNER) starting and ending shifts on a driver's behalf.
+  const staffShift: ShiftContext = { actorUserId: randomUUID(), actorIsDriver: false };
   let database: TestDatabase;
   let db: DatabaseService;
   let vehicles: VehicleService;
@@ -94,7 +97,7 @@ describe("fleet", () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     const hubs = new HubService(db, outbox, addresses);
     const cipher = new FieldCipher(randomBytes(32));
     vehicles = new VehicleService(db, outbox, hubs);
@@ -187,7 +190,9 @@ describe("fleet", () => {
     it("starts a shift and emits driver.shift_started", async () => {
       const tenantId = await seedTenant("fleet-shift");
       const { driverId, vehicleId } = await activeDriverAndVehicle(tenantId);
-      const shift = await asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId }));
+      const shift = await asTenant(tenantId, () =>
+        shiftsSvc.start({ driverId, vehicleId }, staffShift),
+      );
       expect(shift.status).toBe("OPEN");
       expect(await outboxEventTypes(tenantId)).toContain("driver.shift_started");
     });
@@ -198,9 +203,9 @@ describe("fleet", () => {
       const other = await asTenant(tenantId, () =>
         vehicles.create(vehicleInput({ plateNumber: "TUN-5678" })),
       );
-      await asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId }));
+      await asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId }, staffShift));
       await expect(
-        asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId: other.id })),
+        asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId: other.id }, staffShift)),
       ).rejects.toBeInstanceOf(ConflictError);
     });
 
@@ -214,9 +219,9 @@ describe("fleet", () => {
         await driversSvc.activate(d.id);
         return d.id;
       });
-      await asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId }));
+      await asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId }, staffShift));
       await expect(
-        asTenant(tenantId, () => shiftsSvc.start({ driverId: driver2, vehicleId })),
+        asTenant(tenantId, () => shiftsSvc.start({ driverId: driver2, vehicleId }, staffShift)),
       ).rejects.toBeInstanceOf(ConflictError);
     });
 
@@ -225,19 +230,23 @@ describe("fleet", () => {
       const vehicle = await asTenant(tenantId, () => vehicles.create(vehicleInput()));
       const driver = await asTenant(tenantId, () => driversSvc.create(driverInput())); // PENDING
       await expect(
-        asTenant(tenantId, () => shiftsSvc.start({ driverId: driver.id, vehicleId: vehicle.id })),
+        asTenant(tenantId, () =>
+          shiftsSvc.start({ driverId: driver.id, vehicleId: vehicle.id }, staffShift),
+        ),
       ).rejects.toBeInstanceOf(BusinessRuleError);
     });
 
     it("gates location by open shift, including offline points inside a closed window", async () => {
       const tenantId = await seedTenant("fleet-gate");
       const { driverId, vehicleId } = await activeDriverAndVehicle(tenantId);
-      const shift = await asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId }));
+      const shift = await asTenant(tenantId, () =>
+        shiftsSvc.start({ driverId, vehicleId }, staffShift),
+      );
 
       const now = new Date();
       expect(await asTenant(tenantId, () => shiftsSvc.isWithinOpenShift(driverId, now))).toBe(true);
 
-      await asTenant(tenantId, () => shiftsSvc.end(shift.id, {}));
+      await asTenant(tenantId, () => shiftsSvc.end(shift.id, {}, staffShift));
       // A point captured during the shift but synced after it closed is still valid.
       expect(await asTenant(tenantId, () => shiftsSvc.isWithinOpenShift(driverId, now))).toBe(true);
       // A point far in the future (after the shift ended) is rejected.
@@ -264,7 +273,7 @@ describe("fleet", () => {
         );
         await driversSvc.activate(d.id);
       });
-      await asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId }));
+      await asTenant(tenantId, () => shiftsSvc.start({ driverId, vehicleId }, staffShift));
 
       const available = await asTenant(tenantId, () =>
         driversSvc.listAvailable({ skills: ["REFRIGERATED"] }),

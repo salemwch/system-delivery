@@ -21,6 +21,14 @@ overrides:
   # critical JavaScript-injection advisories, fixed in 4.7.10. Patch-level, so
   # the plugin's template use is unchanged. Dev-only (lint time).
   handlebars: 4.7.10
+  # apps/driver puts op-sqlite (and React Native) and babel-plugin-react-compiler
+  # in the workspace, and pnpm then satisfies OTHER packages' optional peers
+  # with them: drizzle-orm (apps/api) linked op-sqlite and React Native, and
+  # next (web, merchant, track) linked the compiler plugin. Neither is used
+  # there, and a `pnpm deploy --prod` of the API would have shipped React
+  # Native. "-" removes those two edges only; the driver app is unaffected.
+  "drizzle-orm>@op-engineering/op-sqlite": "-"
+  "next>babel-plugin-react-compiler": "-"
 
 # Audit exceptions: one GHSA per entry, each with why it is unreachable here.
 # Reviewed 2026-10-10. Re-check whenever the parent package is upgraded.
@@ -32,3 +40,12 @@ auditConfig:
     # repo's own lint config at lint time. The exploit needs attacker-controlled
     # patterns, and nothing in the shipped apps depends on it.
     - GHSA-vfj7-8cjw-p6xm
+    # node-forge <=1.4.0 (RSA PKCS#1 v1.5 signature VERIFICATION accepts extra
+    # nested DigestAlgorithm elements). The advisory has NO patched version. It
+    # is reached only through @expo/cli (apps/driver), a developer-machine tool
+    # that uses node-forge to parse an iOS signing certificate (the app is
+    # Android-only) and to SIGN dev-server manifests; neither verifies an
+    # untrusted RSA signature. None of it is bundled into the APK, which Metro
+    # builds from the app's own imports. Reviewed 2026-10-19; re-check on every
+    # expo / @expo/cli upgrade.
+    - GHSA-86w9-cpqp-85rv

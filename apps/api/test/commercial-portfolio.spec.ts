@@ -129,7 +129,7 @@ describe("commercial portfolio", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     const audit = new AuditService(db);
-    addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    addresses = new AddressService(db, new ManualGeocodingProvider());
     pickups = new PickupService(db, outbox);
     merchants = new MerchantService(db, outbox, audit, addresses);
     const recipients = new RecipientService(db);
@@ -141,6 +141,7 @@ describe("commercial portfolio", () => {
       recipients,
       addresses,
       new OperatingConfigService(db),
+      new AuditService(db),
     );
     users = new UserService(db, new PasswordService(), outbox, audit);
   }, 240_000);

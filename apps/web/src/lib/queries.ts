@@ -567,6 +567,34 @@ export async function fetchAmendmentsFor(shipmentId: string): Promise<readonly A
 }
 
 /**
+ * A driver's pin correction (docs/01 2.10). Only one moved more than 2 km
+ * waits here; smaller moves are applied the moment the driver sends them.
+ */
+export interface CorrectionSummary {
+  readonly id: string;
+  readonly addressId: string;
+  /** APPLIED | PENDING_REVIEW | APPROVED | REJECTED | SUPERSEDED. */
+  readonly status: string;
+  readonly from: { readonly lat: number; readonly lng: number } | null;
+  readonly to: { readonly lat: number; readonly lng: number };
+  readonly distanceMovedM: number | null;
+  readonly accuracyM: number | null;
+  readonly accessNotes: string | null;
+  readonly occurredAt: string;
+  readonly driverId: string | null;
+  readonly reviewedAt: string | null;
+  readonly reviewNote: string | null;
+  readonly address: { readonly rawInput: string; readonly city: string | null } | null;
+}
+
+export async function fetchCorrections(
+  cursor?: string | null,
+  status = "PENDING_REVIEW",
+): Promise<PaginatedResult<CorrectionSummary>> {
+  return fetchPage<CorrectionSummary>("/v1/address-corrections", cursor, 50, { status });
+}
+
+/**
  * A shipper asking to be taken on — nouveaux clients.
  *
  * Not a merchant. Approving one CREATES a merchant and sets `merchantId`; until
@@ -973,6 +1001,8 @@ export interface WorkloadCounts {
   readonly support: number;
   readonly expenses: number;
   readonly lowStock: number;
+  /** Driver pin corrections held for review (moved more than 2 km). */
+  readonly addressCorrections: number;
 }
 
 export async function fetchWorkload(): Promise<WorkloadCounts> {

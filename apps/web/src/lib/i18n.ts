@@ -174,6 +174,16 @@ interface Messages {
   readonly rejected: string;
   readonly amendments: string;
   readonly noAmendments: string;
+  /** Driver pin corrections held for review (docs/01 2.10). */
+  readonly corrections: string;
+  readonly noCorrections: string;
+  readonly superseded: string;
+  readonly correctionMoved: string;
+  readonly correctionPins: string;
+  readonly approveCorrection: string;
+  readonly correctionNote: string;
+  readonly observedAt: string;
+  readonly accessNotes: string;
   readonly requestChange: string;
   readonly applyChange: string;
   readonly amendHint: string;
@@ -445,6 +455,15 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     rejected: "مرفوض",
     amendments: "تعديل الطرود",
     noAmendments: "لا توجد تعديلات",
+    corrections: "تصحيح المواقع",
+    noCorrections: "لا توجد تصحيحات",
+    superseded: "متجاوَز",
+    correctionMoved: "المسافة",
+    correctionPins: "قبل ← بعد",
+    approveCorrection: "اعتماد الموقع",
+    correctionNote: "ملاحظة (اختياري)",
+    observedAt: "تاريخ الرصد",
+    accessNotes: "إرشادات الوصول",
     requestChange: "طلب تعديل",
     applyChange: "تطبيق التعديل",
     amendHint: "املأ الحقول التي تريد تغييرها فقط",
@@ -716,6 +735,15 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     rejected: "Refusés",
     amendments: "Modification colis",
     noAmendments: "Aucune modification",
+    corrections: "Corrections GPS",
+    noCorrections: "Aucune correction",
+    superseded: "Dépassée",
+    correctionMoved: "Déplacement",
+    correctionPins: "Avant → après",
+    approveCorrection: "Valider la position",
+    correctionNote: "Note (facultatif)",
+    observedAt: "Relevée le",
+    accessNotes: "Indications d'accès",
     requestChange: "Demander une modification",
     applyChange: "Appliquer la modification",
     amendHint: "Remplissez uniquement ce qui doit changer",
@@ -988,6 +1016,15 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
     rejected: "Rejected",
     amendments: "Parcel changes",
     noAmendments: "No changes requested",
+    corrections: "Pin corrections",
+    noCorrections: "No corrections",
+    superseded: "Superseded",
+    correctionMoved: "Moved",
+    correctionPins: "Before → after",
+    approveCorrection: "Approve pin",
+    correctionNote: "Note (optional)",
+    observedAt: "Observed",
+    accessNotes: "Access notes",
     requestChange: "Request a change",
     applyChange: "Apply the change",
     amendHint: "Fill in only what should change",

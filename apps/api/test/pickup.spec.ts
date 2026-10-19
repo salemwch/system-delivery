@@ -338,12 +338,12 @@ describe("pickup", () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    addressesSvc = new AddressService(db, outbox, new ManualGeocodingProvider());
+    addressesSvc = new AddressService(db, new ManualGeocodingProvider());
     merchantsSvc = new MerchantService(
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, new ManualGeocodingProvider()),
     );
     pickups = new PickupService(db, outbox);
   }, 240_000);

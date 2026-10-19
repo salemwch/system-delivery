@@ -189,8 +189,11 @@ Modelled from MVP even though MVP uses a single leg, because retrofitting is a s
 | `timezone` | `TEXT` | IANA — required for delivery-window evaluation |
 | `access_notes` | `TEXT` | Gate codes, floor, landmark — enormous real-world value |
 | `verified_at` | `TIMESTAMPTZ` | Set when a successful delivery confirms the geocode |
+| `location_observed_at` | `TIMESTAMPTZ` | Device time of the field correction that set the pin (0051). A correction observed earlier is `SUPERSEDED`, never applied |
 
 **Driver-corrected geocodes are a compounding asset.** When a driver marks "actual location is 80 m from the pin," that correction improves every future delivery to that address. This feedback loop is a genuine long-term moat and must exist from MVP.
+
+**`address_corrections` (0051)** records every correction as a fact: the pin before and after, `distance_moved_m`, device `accuracy_m`, `occurred_at` (device) vs `recorded_at`, author and driver, and an outcome `APPLIED` · `PENDING_REVIEW` (> 2 km) · `APPROVED` · `REJECTED` · `SUPERSEDED`. `UNIQUE (tenant_id, idempotency_key)` with a request hash (I29 shape). The observation is immutable: `dp_app` may `UPDATE` only the four review columns, never `DELETE`, and a trigger allows only `PENDING_REVIEW → APPROVED | REJECTED | SUPERSEDED`, once. RLS is tenant plus, for a driver session, their own rows only (I28). Who may correct which address is the `addresses` policy (0050).
 
 ### 4.5 `routes` and `route_stops`
 
@@ -230,6 +233,8 @@ Modelled from MVP even though MVP uses a single leg, because retrofitting is a s
 | `distance_from_destination_m` | `INTEGER` | **Computed on write; >150 m raises a fraud flag** |
 | `captured_at` | `TIMESTAMPTZ` | Device time |
 | `device_metadata` | `JSONB` | Model, OS, app version, mock-location flag |
+
+**`pod_artifacts` (0052)** is the upload slot behind every cited key: shipment, uploader and driver, `purpose` (`POD_PHOTO` · `POD_SIGNATURE`), server-built `object_key` (CHECK: under `tenant/{tenant_id}/pod/{shipment_id}/`), declared `content_type` and `size_bytes` (≤ 10 MB), `status` `PENDING_UPLOAD → PENDING_SCAN → AVAILABLE`, or `REJECTED` with `SIZE_MISMATCH` · `TYPE_MISMATCH` · `EXIF_PRESENT` · `MALWARE`, `sha256`, `scanned_by`. Idempotent on `(tenant_id, idempotency_key)` with a request hash. RLS = the parent shipment's (EXISTS), so every sub-tenant scope applies. `dp_app` updates only the verification columns, never deletes; a trigger keeps the lifecycle forward-only and the hash final.
 
 ### 4.7 Ledger — double-entry cash custody
 

@@ -108,7 +108,7 @@ describe("custody", () => {
         db,
         new OutboxService(),
         new AuditService(db),
-        new AddressService(db, new OutboxService(), new ManualGeocodingProvider()),
+        new AddressService(db, new ManualGeocodingProvider()),
       );
       const m = await merchants.create({
         name: `Merchant ${Math.random().toString(36).slice(2, 8)}`,
@@ -132,7 +132,7 @@ describe("custody", () => {
   ): Promise<SeededShipment> {
     const trackingNumber = `SD-CUST-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
     const addressId = await asTenant(tenantId, async () => {
-      const addresses = new AddressService(db, new OutboxService(), new ManualGeocodingProvider());
+      const addresses = new AddressService(db, new ManualGeocodingProvider());
       const resolved = await addresses.resolve({
         rawInput: "12 Avenue Habib Bourguiba, Tunis",
         countryCode: "TN",
@@ -238,12 +238,12 @@ describe("custody", () => {
     database = await createTestDatabase();
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     const merchants = new MerchantService(
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, new ManualGeocodingProvider()),
     );
     const recipients = new RecipientService(db);
     const features = new FeatureService(db, new AuditService(db));
@@ -258,6 +258,7 @@ describe("custody", () => {
       recipients,
       addresses,
       operatingConfig,
+      new AuditService(db),
     );
     manifestsSvc = new ManifestService(db, outbox, shipmentsSvc, hubsSvc, features);
     hubScans = new HubScanService(shipmentsSvc, hubsSvc, features);

@@ -178,12 +178,12 @@ describe("complaints", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     const audit = new AuditService(db);
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     merchants = new MerchantService(
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, new ManualGeocodingProvider()),
     );
     const recipients = new RecipientService(db);
     const events = new ShipmentEventService(outbox);
@@ -196,6 +196,7 @@ describe("complaints", () => {
       recipients,
       addresses,
       operatingConfig,
+      new AuditService(db),
     );
     ledger = new LedgerService(db);
     complaints = new ComplaintService(db, outbox, audit, ledger, shipments);

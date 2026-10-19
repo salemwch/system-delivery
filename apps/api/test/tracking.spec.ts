@@ -10,6 +10,7 @@ import { AddressService } from "../src/modules/directory/application/address.ser
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
 import { DriverService } from "../src/modules/fleet/application/driver.service.js";
 import { ShiftService } from "../src/modules/fleet/application/shift.service.js";
+import type { ShiftContext } from "../src/modules/fleet/application/shift.service.js";
 import { VehicleService } from "../src/modules/fleet/application/vehicle.service.js";
 import { GeofenceService } from "../src/modules/network/application/geofence.service.js";
 import { HubService } from "../src/modules/network/application/hub.service.js";
@@ -67,6 +68,8 @@ function testLogger(): PinoLogger {
 }
 
 describe("tracking", () => {
+  // Staff (the OWNER) starting a shift on a driver's behalf.
+  const staffShift: ShiftContext = { actorUserId: randomUUID(), actorIsDriver: false };
   let database: TestDatabase;
   let db: DatabaseService;
   let telemetrySql: Sql;
@@ -139,7 +142,7 @@ describe("tracking", () => {
         userId,
       });
       await driversSvc.activate(driver.id);
-      await shifts.start({ driverId: driver.id, vehicleId: vehicle.id });
+      await shifts.start({ driverId: driver.id, vehicleId: vehicle.id }, staffShift);
       return { userId, driverId: driver.id };
     });
   }
@@ -241,7 +244,7 @@ describe("tracking", () => {
     valkey = new Redis(process.env["VALKEY_URL"] ?? "redis://localhost:6379");
 
     const outbox = new OutboxService();
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     const hubs = new HubService(db, outbox, addresses);
     const cipher = new FieldCipher(randomBytes(32));
 

@@ -134,12 +134,12 @@ describe("shipment", () => {
     return { id, courier };
   }
 
-  function signaturePod(): Record<string, unknown> {
-    return {
-      podType: "signature",
-      signatureObjectKey: "pods/sig-123.png",
-      recipientName: "Sonia Gharbi",
-    };
+  /**
+   * A strong POD (accepted for COD) that cites no media, so these lifecycle
+   * tests need no issued artifact. pod-media.spec.ts covers cited media.
+   */
+  function strongPod(): Record<string, unknown> {
+    return { podType: "id_check", recipientName: "Sonia Gharbi" };
   }
 
   beforeAll(async () => {
@@ -150,10 +150,10 @@ describe("shipment", () => {
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, new ManualGeocodingProvider()),
     );
     const recipients = new RecipientService(db);
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     const events = new ShipmentEventService(outbox);
     const operatingConfig = new OperatingConfigService(db);
     shipments = new ShipmentService(
@@ -164,6 +164,7 @@ describe("shipment", () => {
       recipients,
       addresses,
       operatingConfig,
+      new AuditService(db),
     );
   }, 240_000);
 
@@ -230,7 +231,7 @@ describe("shipment", () => {
         db,
         outbox,
         new AuditService(db),
-        new AddressService(db, outbox, new ManualGeocodingProvider()),
+        new AddressService(db, new ManualGeocodingProvider()),
       );
       const merchantId = await asTenant(tenantId, async () => {
         const m = await merchants.create({ name: "Suspended Co" });
@@ -256,7 +257,7 @@ describe("shipment", () => {
           {
             idempotencyKey: randomUUID(),
             location: { lat: 36.8624, lng: 10.1955 },
-            pod: signaturePod(),
+            pod: strongPod(),
           },
           as(courier),
         ),
@@ -281,7 +282,7 @@ describe("shipment", () => {
         (tx) => tx<{ pod_type: string }[]>`select pod_type from pod where shipment_id = ${id}`,
       );
       expect(podRows).toHaveLength(1);
-      expect(podRows[0]?.pod_type).toBe("signature");
+      expect(podRows[0]?.pod_type).toBe("id_check");
 
       const emitted = await outboxEventTypes(tenantId);
       expect(emitted).toContain("delivery.attempted");
@@ -298,7 +299,7 @@ describe("shipment", () => {
           {
             idempotencyKey: randomUUID(),
             codCollected: true,
-            pod: signaturePod(),
+            pod: strongPod(),
           },
           as(courier),
         ),
@@ -315,7 +316,7 @@ describe("shipment", () => {
         asTenant(tenantId, () =>
           shipments.confirmDelivery(
             id,
-            { idempotencyKey: randomUUID(), pod: signaturePod() },
+            { idempotencyKey: randomUUID(), pod: strongPod() },
             as(courier),
           ),
         ),
@@ -392,7 +393,7 @@ describe("shipment", () => {
       await asTenant(tenantId, () =>
         shipments.confirmDelivery(
           id,
-          { idempotencyKey: randomUUID(), codCollected: true, pod: signaturePod() },
+          { idempotencyKey: randomUUID(), codCollected: true, pod: strongPod() },
           as(courier),
         ),
       );
@@ -413,7 +414,7 @@ describe("shipment", () => {
         asTenant(tenantId, () =>
           shipments.confirmDelivery(
             id,
-            { idempotencyKey: randomUUID(), driverId: courier.driverId, pod: signaturePod() },
+            { idempotencyKey: randomUUID(), driverId: courier.driverId, pod: strongPod() },
             as(courier),
           ),
         ),
@@ -443,7 +444,7 @@ describe("shipment", () => {
         asTenant(tenantId, () =>
           shipments.confirmDelivery(
             id,
-            { idempotencyKey: randomUUID(), codCollected: true, pod: signaturePod() },
+            { idempotencyKey: randomUUID(), codCollected: true, pod: strongPod() },
             as(colleague),
           ),
         ),
@@ -487,7 +488,7 @@ describe("shipment", () => {
         asTenant(tenantId, () =>
           shipments.confirmDelivery(
             id,
-            { idempotencyKey: randomUUID(), pod: signaturePod() },
+            { idempotencyKey: randomUUID(), pod: strongPod() },
             { actor: { actorType: "DISPATCHER", actorId: randomUUID() }, canOverride: true },
           ),
         ),
@@ -522,7 +523,7 @@ describe("shipment", () => {
         asTenant(tenantId, () =>
           shipments.confirmDelivery(
             id,
-            { idempotencyKey: randomUUID(), pod: signaturePod() },
+            { idempotencyKey: randomUUID(), pod: strongPod() },
             as(courier),
           ),
         ),
@@ -535,7 +536,7 @@ describe("shipment", () => {
       const key = randomUUID();
       const deliver = () =>
         asTenant(tenantId, () =>
-          shipments.confirmDelivery(id, { idempotencyKey: key, pod: signaturePod() }, as(courier)),
+          shipments.confirmDelivery(id, { idempotencyKey: key, pod: strongPod() }, as(courier)),
         );
 
       const first = await deliver();
@@ -553,7 +554,7 @@ describe("shipment", () => {
       await asTenant(tenantId, () =>
         shipments.confirmDelivery(
           id,
-          { idempotencyKey: randomUUID(), pod: signaturePod() },
+          { idempotencyKey: randomUUID(), pod: strongPod() },
           as(courier),
         ),
       );

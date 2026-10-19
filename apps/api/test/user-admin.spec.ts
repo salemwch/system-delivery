@@ -74,7 +74,7 @@ describe("user administration", () => {
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, new ManualGeocodingProvider()),
     );
     auth = buildAuthStack(db).auth;
   }, 240_000);

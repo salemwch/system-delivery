@@ -93,7 +93,7 @@ describe("support tickets", () => {
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, new ManualGeocodingProvider()),
     );
     support = new SupportService(db, outbox);
   }, 240_000);

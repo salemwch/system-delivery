@@ -161,7 +161,7 @@ describe("parcel state report", () => {
       db = new DatabaseService(database.app);
       const outbox = new OutboxService();
       const audit = new AuditService(db);
-      const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+      const addresses = new AddressService(db, new ManualGeocodingProvider());
       merchants = new MerchantService(db, outbox, audit, addresses);
       shipments = new ShipmentService(
         db,
@@ -171,6 +171,7 @@ describe("parcel state report", () => {
         new RecipientService(db),
         addresses,
         new OperatingConfigService(db),
+        new AuditService(db),
       );
       parcelState = new ParcelStateService(db, merchants, new CurrencyService(db));
     }, 240_000);

@@ -122,7 +122,7 @@ describe("shipment amendments", () => {
     db = new DatabaseService(database.app);
     const outbox = new OutboxService();
     const audit = new AuditService(db);
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     const recipients = new RecipientService(db);
     const merchants = new MerchantService(db, outbox, audit, addresses);
     shipments = new ShipmentService(
@@ -133,6 +133,7 @@ describe("shipment amendments", () => {
       recipients,
       addresses,
       new OperatingConfigService(db),
+      new AuditService(db),
     );
     amendments = new ShipmentAmendmentService(db, audit, outbox, addresses, recipients);
   }, 240_000);
@@ -465,11 +466,7 @@ describe("shipment amendments", () => {
           shipmentId,
           {
             idempotencyKey: randomUUID(),
-            pod: {
-              podType: "signature",
-              signatureObjectKey: "pods/sig.png",
-              recipientName: "Sonia Gharbi",
-            },
+            pod: { podType: "id_check", recipientName: "Sonia Gharbi" },
           },
           { actor: { actorType: "DRIVER", actorId: courier.userId } },
         );

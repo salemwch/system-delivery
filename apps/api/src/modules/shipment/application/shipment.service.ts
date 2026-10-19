@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { AddressService, MerchantService, RecipientService } from "../../directory/index.js";
-import { OperatingConfigService, OutboxService } from "../../platform/index.js";
+import { AuditService, OperatingConfigService, OutboxService } from "../../platform/index.js";
 import {
   DatabaseService,
   TenantContext,
@@ -16,7 +16,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "../../../shared/errors/index.js";
-import { parseWithZod } from "../../../shared/http/index.js";
+import { parseWithZod, requestFingerprint, resolveDeviceTime } from "../../../shared/http/index.js";
 import {
   cancelShipmentSchema,
   completeReturnSchema,
@@ -35,10 +35,10 @@ import type {
   RecordPickupScanInput,
 } from "../domain/dtos.js";
 import { haversineMetres } from "../domain/geo.js";
-import { requestFingerprint } from "../domain/request-fingerprint.js";
 import { decodeShipment, encodeShipment } from "../domain/shipment-snapshot.js";
 import {
   pod,
+  podArtifacts,
   shipmentCommandKeys,
   shipmentEvents,
   shipmentLegs,
@@ -149,6 +149,7 @@ export class ShipmentService {
     private readonly recipients: RecipientService,
     private readonly addresses: AddressService,
     private readonly operatingConfig: OperatingConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -398,7 +399,7 @@ export class ShipmentService {
     ctx: CommandContext,
     kind: Pick<CommandSpec, "command" | "binding">,
   ): Promise<Shipment> {
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
     const spec: CommandSpec = { ...kind, idempotencyKey: dto.idempotencyKey, request: dto };
 
     return this.runCommand(id, spec, ctx, async (tx, shipment) => {
@@ -441,7 +442,7 @@ export class ShipmentService {
 
   async confirmDelivery(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(confirmDeliverySchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
     await this.requireLinkedDriver(ctx);
 
     // Distance is computed from the destination geocode; read it before the write
@@ -476,6 +477,7 @@ export class ShipmentService {
         );
       }
       assertPodComplete(dto.pod);
+      await assertPodMediaIssued(tx, shipment.id, dto.pod);
 
       const legId = dto.legId ?? (await this.firstLegId(tx, shipment.id));
       const attemptId = await generateUuidV7(tx);
@@ -598,7 +600,7 @@ export class ShipmentService {
 
   async recordFailedAttempt(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(recordFailedAttemptSchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
     await this.requireLinkedDriver(ctx);
 
     const pre = await this.getById(id);
@@ -754,7 +756,7 @@ export class ShipmentService {
 
   async initiateReturn(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(initiateReturnSchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
 
     const spec: CommandSpec = {
       command: "return",
@@ -808,7 +810,7 @@ export class ShipmentService {
    */
   async completeReturn(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(completeReturnSchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
     // A DRIVER-role caller must be a linked driver (I26). Staff are not asked:
     // a counter hand-back is booked to no driver by design.
     if (ctx.actor.actorType === "DRIVER") {
@@ -854,6 +856,36 @@ export class ShipmentService {
       }
 
       await this.closeUncollectedCod(tx, shipment);
+
+      // A staff closure is a person asserting the parcel was handed back,
+      // possibly while a driver still held it: audited, in this transaction,
+      // so the record exists exactly when the closure does. A driver's closure
+      // is already attributed to their driver record in the custody log.
+      if (driverId === null) {
+        await this.audit.record(tx, {
+          action: "shipment.return_closed_by_staff",
+          resourceType: "shipment",
+          resourceId: shipment.id,
+          actorType: "USER",
+          actorId: ctx.actor.actorId ?? null,
+          changes: {
+            status: { from: shipment.status, to: "RETURNED" },
+            codStatus: {
+              from: shipment.codStatus,
+              to: shipment.codStatus === "PENDING" ? "CANCELLED" : shipment.codStatus,
+            },
+          },
+          context: {
+            trackingNumber: shipment.trackingNumber,
+            receivedByName: dto.receivedByName ?? null,
+            // Who physically held the parcel when staff closed it.
+            custodyAtClosure: {
+              type: shipment.currentCustodyType,
+              id: shipment.currentCustodyId,
+            },
+          },
+        });
+      }
     });
   }
 
@@ -953,7 +985,7 @@ export class ShipmentService {
 
   async cancel(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(cancelShipmentSchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
 
     const spec: CommandSpec = {
       command: "cancel",
@@ -993,7 +1025,7 @@ export class ShipmentService {
    */
   async recordEvent(id: string, input: unknown, ctx: CommandContext): Promise<Shipment> {
     const dto = parseWithZod(recordEventSchema, input);
-    const occurredAt = dto.occurredAt ?? new Date();
+    const occurredAt = resolveDeviceTime(dto.occurredAt);
 
     // `fact`: internal only (no HTTP route). Its keys are server-derived and
     // name one fact about one shipment; see IdempotencyBinding.
@@ -1540,6 +1572,63 @@ export class ShipmentService {
 }
 
 /** Enforces that the POD actually carries the evidence its type promises. */
+/**
+ * Every object key a POD cites must be one the server ISSUED for this parcel
+ * (POST /v1/media/presign, migration 0052), for the matching purpose, and not
+ * REJECTED. Before this, any string was accepted: a dangling key, another
+ * parcel's photo, or another tenant's object would stand as "proof".
+ *
+ * A slot still PENDING_UPLOAD or PENDING_SCAN is accepted on purpose: the app
+ * is offline-first, and the delivery event routinely syncs before the photo
+ * finishes uploading. The artifact's own status says whether it was verified.
+ */
+async function assertPodMediaIssued(
+  tx: TenantTransaction,
+  shipmentId: string,
+  podInput: ConfirmDeliveryInput["pod"],
+): Promise<void> {
+  const cited = [
+    ...(podInput.signatureObjectKey === undefined
+      ? []
+      : [{ key: podInput.signatureObjectKey, purpose: "POD_SIGNATURE" }]),
+    ...(podInput.photoObjectKeys ?? []).map((key) => ({ key, purpose: "POD_PHOTO" })),
+  ];
+  if (cited.length === 0) {
+    return;
+  }
+  const unknown = (): BusinessRuleError =>
+    new BusinessRuleError(
+      "POD_MEDIA_UNKNOWN",
+      "A cited photo or signature was not issued for this shipment, or was rejected.",
+    );
+  if (new Set(cited.map((c) => c.key)).size !== cited.length) {
+    throw unknown();
+  }
+  const issued = await tx
+    .select({
+      objectKey: podArtifacts.objectKey,
+      purpose: podArtifacts.purpose,
+      status: podArtifacts.status,
+    })
+    .from(podArtifacts)
+    .where(
+      and(
+        eq(podArtifacts.shipmentId, shipmentId),
+        inArray(
+          podArtifacts.objectKey,
+          cited.map((c) => c.key),
+        ),
+      ),
+    );
+  const byKey = new Map(issued.map((row) => [row.objectKey, row]));
+  for (const { key, purpose } of cited) {
+    const row = byKey.get(key);
+    if (row === undefined || row.purpose !== purpose || row.status === "REJECTED") {
+      throw unknown();
+    }
+  }
+}
+
 function assertPodComplete(podInput: ConfirmDeliveryInput["pod"]): void {
   switch (podInput.podType) {
     case "signature":

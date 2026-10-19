@@ -215,6 +215,31 @@ export const pod = pgTable(
 );
 
 /**
+ * POD photos and signatures (migration 0052): an upload slot the server
+ * issued, then verified. Only the verification columns change, forward only.
+ */
+export const podArtifacts = pgTable("pod_artifacts", {
+  id: uuid("id").primaryKey(),
+  tenantId: uuid("tenant_id").notNull(),
+  shipmentId: uuid("shipment_id").notNull(),
+  uploadedByUserId: uuid("uploaded_by_user_id").notNull(),
+  driverId: uuid("driver_id"),
+  purpose: text("purpose").notNull(),
+  objectKey: text("object_key").notNull(),
+  contentType: text("content_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  status: text("status").notNull().default("PENDING_UPLOAD"),
+  rejectionReason: text("rejection_reason"),
+  sha256: text("sha256"),
+  scannedBy: text("scanned_by"),
+  idempotencyKey: text("idempotency_key").notNull(),
+  requestHash: text("request_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+});
+export type PodArtifact = typeof podArtifacts.$inferSelect;
+
+/**
  * Modification Colis — requested changes to a parcel (migration 0038).
  *
  * A request, not an update: the person who wants the change is usually not the

@@ -378,7 +378,18 @@
     "état",
     "paiement",
     "général",
-    "vhdx"
+    "vhdx",
+    "Tecno",
+    "Infinix",
+    "MIUI",
+    "Realme",
+    "trunc",
+    "vcpu",
+    "tfstate",
+    "doadmin",
+    "NOBYPASSRLS",
+    "doctl",
+    "tfvars"
   ],
   "ignoreWords": [],
   "allowCompoundWords": true

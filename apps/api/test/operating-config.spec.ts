@@ -81,16 +81,25 @@ describe("operating config", () => {
     config = new OperatingConfigService(db);
 
     const outbox = new OutboxService();
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     merchants = new MerchantService(
       db,
       outbox,
       new AuditService(db),
-      new AddressService(db, outbox, new ManualGeocodingProvider()),
+      new AddressService(db, new ManualGeocodingProvider()),
     );
     const recipients = new RecipientService(db);
     const events = new ShipmentEventService(outbox);
-    shipments = new ShipmentService(db, events, outbox, merchants, recipients, addresses, config);
+    shipments = new ShipmentService(
+      db,
+      events,
+      outbox,
+      merchants,
+      recipients,
+      addresses,
+      config,
+      new AuditService(db),
+    );
   }, 240_000);
 
   afterEach(async () => {

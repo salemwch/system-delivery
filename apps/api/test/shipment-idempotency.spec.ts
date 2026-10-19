@@ -12,7 +12,7 @@ import { OutboxService } from "../src/modules/platform/application/outbox.servic
 import { ShipmentEventService } from "../src/modules/shipment/application/shipment-event.service.js";
 import { ShipmentService } from "../src/modules/shipment/application/shipment.service.js";
 import type { CommandContext } from "../src/modules/shipment/application/shipment.service.js";
-import { requestFingerprint } from "../src/modules/shipment/domain/request-fingerprint.js";
+import { requestFingerprint } from "../src/shared/http/request-fingerprint.js";
 import type { Shipment } from "../src/modules/shipment/domain/schema.js";
 import {
   decodeShipment,
@@ -48,7 +48,9 @@ describe("shipment idempotency (I29)", () => {
 
   const dispatcherA: CommandContext = { actor: { actorType: "DISPATCHER", actorId: randomUUID() } };
   const dispatcherB: CommandContext = { actor: { actorType: "DISPATCHER", actorId: randomUUID() } };
-  const pod = { podType: "signature", signatureObjectKey: "pods/s.png", recipientName: "R" };
+  // An ID-checked POD cites no media: these specs are about who may deliver,
+  // not about proof artifacts (pod-media.spec.ts covers those).
+  const pod = { podType: "id_check", recipientName: "R" };
 
   function inTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
     return TenantContext.run({ tenantId: asTenantId(tenantId), actorType: "system" }, fn);
@@ -121,7 +123,7 @@ describe("shipment idempotency (I29)", () => {
     database = await createTestDatabase();
     const db = new DatabaseService(database.app);
     const outbox = new OutboxService();
-    const addresses = new AddressService(db, outbox, new ManualGeocodingProvider());
+    const addresses = new AddressService(db, new ManualGeocodingProvider());
     shipments = new ShipmentService(
       db,
       new ShipmentEventService(outbox),
@@ -130,6 +132,7 @@ describe("shipment idempotency (I29)", () => {
       new RecipientService(db),
       addresses,
       new OperatingConfigService(db),
+      new AuditService(db),
     );
   }, 240_000);
 
