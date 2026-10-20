@@ -28,6 +28,45 @@ const MIGRATIONS: readonly string[] = [
      key   TEXT PRIMARY KEY,
      value TEXT NOT NULL
    );`,
+  // 2 — the field-work outbox (core/outbox.ts), its POD media, and the day's
+  // manifests as last seen from the server.
+  `CREATE TABLE IF NOT EXISTS actions (
+     seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+     id          TEXT    NOT NULL UNIQUE,
+     kind        TEXT    NOT NULL,
+     subject_id  TEXT    NOT NULL,
+     payload     TEXT    NOT NULL,
+     media       TEXT    NOT NULL DEFAULT '[]',
+     state       TEXT    NOT NULL DEFAULT 'PENDING',
+     attempts    INTEGER NOT NULL DEFAULT 0,
+     code        TEXT,
+     detail      TEXT,
+     created_at  INTEGER NOT NULL
+   );
+   CREATE INDEX IF NOT EXISTS actions_state_idx ON actions (state, seq);
+   CREATE INDEX IF NOT EXISTS actions_subject_idx ON actions (subject_id);
+   CREATE TABLE IF NOT EXISTS media (
+     id           TEXT    PRIMARY KEY,
+     shipment_id  TEXT    NOT NULL,
+     purpose      TEXT    NOT NULL,
+     uri          TEXT    NOT NULL,
+     content_type TEXT    NOT NULL,
+     size_bytes   INTEGER NOT NULL,
+     artifact_id  TEXT,
+     object_key   TEXT,
+     state        TEXT    NOT NULL DEFAULT 'CAPTURED',
+     code         TEXT,
+     created_at   INTEGER NOT NULL
+   );
+   CREATE TABLE IF NOT EXISTS routes (
+     route_id     TEXT    PRIMARY KEY,
+     version      TEXT    NOT NULL,
+     status       TEXT    NOT NULL,
+     active       INTEGER NOT NULL,
+     planned_date TEXT    NOT NULL,
+     manifest     TEXT    NOT NULL,
+     updated_at   INTEGER NOT NULL
+   );`,
 ];
 
 let opening: Promise<DB> | null = null;

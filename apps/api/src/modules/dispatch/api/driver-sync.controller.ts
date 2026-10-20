@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from "@nestjs/common";
+import { Body, Controller, HttpCode, HttpStatus, Param, Post } from "@nestjs/common";
 import type { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
@@ -32,5 +32,29 @@ export class DriverSyncController {
     @CurrentPrincipal() principal: Principal,
   ): Promise<SyncResult> {
     return this.sync.sync(body, principal);
+  }
+
+  /** The driver starts their own published route (docs/03 route.started). */
+  @Post("routes/:id/start")
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions("route:drive")
+  async startRoute(
+    @Param("id") id: string,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<{ readonly id: string; readonly status: string }> {
+    const route = await this.sync.startRoute(id, principal);
+    return { id: route.id, status: route.status };
+  }
+
+  /** The driver completes their own route; every stop must be settled first. */
+  @Post("routes/:id/complete")
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions("route:drive")
+  async completeRoute(
+    @Param("id") id: string,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<{ readonly id: string; readonly status: string }> {
+    const route = await this.sync.completeRoute(id, principal);
+    return { id: route.id, status: route.status };
   }
 }

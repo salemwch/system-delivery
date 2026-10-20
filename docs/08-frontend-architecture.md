@@ -344,6 +344,35 @@ flowchart TB
 
 Behaviour that matters in the field: collection follows the **server's** shift (started on `GET /v1/shifts/current` + an open shift, stopped when it closes, and on `TELEMETRY_OUTSIDE_SHIFT`); every fix is written to the encrypted queue first; a telemetry batch keeps its `batchId` until acknowledged (lost responses are de-duplicated server-side); adaptive sampling (MOVING / SLOW / STATIONARY, relaxed below 20 % battery) restarts the OS request only when it changes; mocked fixes are dropped and counted; uploads back off exponentially with jitter; one session refresh in flight. Android manifest: location (fine, coarse, background), foreground service (location), internet, vibrate; nothing else (template defaults explicitly removed; `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` not requested, the app opens the settings list instead).
 
+**As built — milestone 2, field work (2026-10-19).** Every driver capability the backend offers, offline-first. The wireframes below (§8.2–8.4) are the intent; this is what shipped.
+
+| Screen | What it does |
+|---|---|
+| Onboarding | 3 slides, once per install. No permission is asked there: each one is asked just before it is needed (priming), location through the Play disclosure, camera through its own explainer |
+| Today (tab) | ONE next action, in the thumb zone: start shift → start route → next stop (Navigate / Open) → complete route → end shift. Progress ring (parcels, not stops), delivered / failed / to do, cash to hand over, sync pill (tap = send now), banners for offline, escalated items and missing background location |
+| Stops (tab) | Route order, To do / Done / All, next stop highlighted, pull to sync, scan to find |
+| Stop | Address + access notes, Google Maps / Waze, fix location, per parcel: call, WhatsApp, alternative phone and attempt n/max (when online), Deliver / Not delivered, Returned to sender (RETURN_PENDING), report a problem |
+| Deliver | COD first ("I collected 12,500 DT"), then signature pad and/or photo, receiver's name. 3–4 taps (docs target ≤ 6). COD refuses "contactless"; `POD_PHOTO_REQUIRED` / `POD_SIGNATURE_REQUIRED` enforced from the sync's feature flags |
+| Not delivered | The tenant's own reasons from `/v1/config/bootstrap` (cached), in the driver's language, each saying whether it is retried or returned |
+| Scan | `find`: tracking number → its stop. `pickup`: each scan queued at once, haptic tick, running count against expected, duplicate guard; typed entry for torn labels |
+| Pickups (tab) + Pickup | Assigned collections (cached for offline), contact, address from the pickup's route stop, scanned / expected, collect (zero parcels asks the outcome reason), dropped at hub |
+| Cash (tab) + Handover | Collected today (COD of delivered parcels, sent or queued) − declared today, per currency, to the millime; the declaration goes to `POST /v1/finance/remittances` with the manifest's `startHubId` |
+| Profile (tab) | Own stats, sending queue (waiting / needs dispatch / refused, each with its code), tracking diagnostics, sign-out |
+
+| Concern | Choice | Why |
+|---|---|---|
+| Outbox | `src/core/outbox.ts`, pure, ports for storage and HTTP; SQLCipher tables `actions`, `media`, `routes` (local migration 2) | Every action is written before it is sent; the whole flush is unit-tested on Node |
+| Order | Slots for media first, then actions oldest first (sync batches ≤ 100, pickup scans ≤ 200 per pickup), one refresh, uploads last. A parcel / pickup / address told to wait holds back only its own later actions | A 300 KB photo on 3G never holds back a 1 KB delivery; nothing overtakes its own parcel |
+| Verdicts | ACCEPTED → done; DISCARD_AND_REFRESH → refused (shown); RETRY_LATER → kept; ESCALATE → kept visible. A refused delivery or return is always escalated on the device too | A physical event is never silently dropped |
+| POD files | Camera shot re-encoded with `expo-image-manipulator` (1280 px, JPEG 0.7: no EXIF, which the server refuses), signature drawn as SVG (`react-native-gesture-handler` + `react-native-svg`) and exported to PNG (`react-native-view-shot`); stored in the documents directory, uploaded with `expo-file-system`'s native streaming `File.upload`, deleted once the server holds them | Re-encoding is the metadata strip; documents, not cache, because a photo waiting for signal is evidence |
+| Device time and place | Taken at the tap; the position is requested when the screen opens and waited for at most 1.5 s | The action is never blocked by a weak GPS |
+| State | One store over the database, `useSyncExternalStore`; sync on open, on foreground, every 30 s and after every action, single-flight | No state library needed; the database is the truth |
+| Sign-out | Refused while anything is unsent, escalated or not yet uploaded; then the field data is wiped | Recorded work never leaves with the session, and nothing is left for the next driver |
+| UI | Own kit (`src/ui/kit.tsx`): 56 dp buttons with haptics, chips with icon + text, system font (covers Arabic, no font download), logical properties for RTL, Material Community Icons | Outdoors, one-handed, sometimes gloved |
+| Money | `src/core/money.ts`: string arithmetic only; TND three decimals from the wire exponent | `4.005 × 1000` is `4004.999…` |
+
+⚠️ **The cash handover is never retried automatically.** `POST /v1/finance/remittances` takes no idempotency key, so a lost answer could already be a remittance; the screen says so and stops. Adding an idempotency key to that endpoint is an open item (§12).
+
 ### 8.2 Wireframe — route list (the driver's home)
 
 ```
@@ -509,6 +538,9 @@ WCAG 2.2 AA target. Contrast ≥4.5:1 · full keyboard navigation on the dispatc
 | FE1 | Validate the dispatch board layout with a real dispatcher | MVP-O4 |
 | FE2 | Confirm default UI language per pilot tenant (Arabic or French) | MVP-O5 |
 | FE3 | Decide whether to show live driver position on the tracking page | AC1 / H4 |
-| FE4 | Confirm Google Maps vs Waze for navigation hand-off | MVP-O6 |
+| FE4 | Confirm Google Maps vs Waze for navigation hand-off (the app offers both, 2026-10-19) | MVP-O6 |
 | FE5 | Decide whether dispatchers need an offline mode (currently no) | Product |
 | FE6 | Confirm Arabic-Indic numeral preference is wanted, or Western only | MVP-O4 |
+| FE7 | Idempotency key on `POST /v1/finance/remittances`, so the app can retry a cash handover safely (today: one attempt, never retried) | Backend: migration + finance service |
+| FE8 | Push notifications to the driver app (route re-planned, parcel cancelled) | A Firebase project (owner decision) |
+| FE9 | Driver app end-to-end tests (Detox) on the delivery and pickup flows | A CI Android emulator runner |

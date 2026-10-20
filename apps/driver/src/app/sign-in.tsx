@@ -1,16 +1,19 @@
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useState } from "react";
-import { KeyboardAvoidingView, ScrollView, Text, TextInput } from "react-native";
+import { KeyboardAvoidingView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ApiError } from "../core/api";
 import { requestCode, tenantBySlug, verifyCode } from "../core/endpoints";
-import { toE164 } from "../core/i18n";
+import { fill, toE164 } from "../core/i18n";
+import { permissions } from "../platform/device";
 import { deviceId } from "../platform/secure";
+import { disclosureDeclined } from "../services/onboarding";
 import { api } from "../services/runtime";
-import { Button } from "../ui/button";
 import { useI18n } from "../ui/i18n-context";
-import { styles } from "../ui/theme";
+import { Banner, Button, Field, Icon } from "../ui/kit";
+import { colors, radius, space, type } from "../ui/theme";
 
 type Step =
   | { readonly kind: "phone" }
@@ -83,7 +86,10 @@ export default function SignIn() {
         return;
       }
       await client.adopt(session);
-      router.replace("/disclosure");
+      const granted = await permissions();
+      router.replace(
+        granted.background || (await disclosureDeclined()) ? "/(tabs)" : "/disclosure",
+      );
     } catch (failure) {
       setError(explain(failure));
     } finally {
@@ -92,55 +98,109 @@ export default function SignIn() {
   };
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <KeyboardAvoidingView behavior="height" style={styles.screen}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={styles.title}>{t.appName}</Text>
+    <View style={si.root}>
+      <LinearGradient colors={[colors.brand, colors.brandDark]} style={si.hero}>
+        <SafeAreaView edges={["top"]} style={si.heroInner}>
+          <View style={si.logo}>
+            <Icon name="truck-delivery" size={34} color={colors.brand} />
+          </View>
+          <Text style={si.heroTitle}>{t.signInTitle}</Text>
+          <Text style={si.heroBody}>{t.signInSubtitle}</Text>
+        </SafeAreaView>
+      </LinearGradient>
+      <KeyboardAvoidingView behavior="height" style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={si.form} keyboardShouldPersistTaps="handled">
           {step.kind === "phone" ? (
             <>
-              <Text style={styles.label}>{t.courierCode}</Text>
-              <TextInput
-                style={styles.input}
+              <Field
+                label={t.courierCode}
                 value={courier}
                 onChangeText={setCourier}
                 autoCapitalize="none"
                 autoCorrect={false}
-                accessibilityLabel={t.courierCode}
+                returnKeyType="next"
               />
-              <Text style={styles.label}>{t.phone}</Text>
-              <TextInput
-                style={styles.input}
+              <Field
+                label={t.phone}
                 value={phone}
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
                 autoComplete="tel"
-                accessibilityLabel={t.phone}
+                placeholder="24 201 314"
               />
-              <Button label={t.sendCode} onPress={() => void sendCode()} busy={busy} />
+              <Button
+                label={t.sendCode}
+                icon="message-processing-outline"
+                onPress={() => void sendCode()}
+                busy={busy}
+              />
             </>
           ) : (
             <>
-              <Text style={styles.label}>{t.code}</Text>
-              <TextInput
-                style={styles.input}
+              <Text style={type.body}>{fill(t.codeSentTo, { phone: step.phone })}</Text>
+              <Field
+                label={t.code}
                 value={code}
                 onChangeText={setCode}
                 keyboardType="number-pad"
                 autoComplete="sms-otp"
                 textContentType="oneTimeCode"
                 maxLength={6}
-                accessibilityLabel={t.code}
+                style={[si.code]}
+                autoFocus
               />
-              <Button label={t.signIn} onPress={() => void verify()} busy={busy} />
+              <Button label={t.signIn} icon="login" onPress={() => void verify()} busy={busy} />
+              <Button
+                label={t.changeNumber}
+                variant="ghost"
+                onPress={() => {
+                  setCode("");
+                  setError(null);
+                  setStep({ kind: "phone" });
+                }}
+              />
             </>
           )}
           {error === null ? null : (
-            <Text style={styles.error} accessibilityLiveRegion="polite">
-              {error}
-            </Text>
+            <Banner tone="danger" icon="alert-circle-outline" text={error} />
           )}
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
+
+const si = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.canvas },
+  hero: { borderBottomStartRadius: radius.lg * 1.5, borderBottomEndRadius: radius.lg * 1.5 },
+  heroInner: {
+    paddingHorizontal: space.xl,
+    paddingTop: space.xl,
+    paddingBottom: space.xxl,
+    gap: space.sm,
+  },
+  logo: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: space.md,
+  },
+  heroTitle: { color: colors.surface, fontSize: 30, fontWeight: "800" },
+  heroBody: { color: "rgba(255,255,255,0.85)", fontSize: 16 },
+  form: { padding: space.xl, gap: space.lg },
+  code: {
+    minHeight: 64,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    color: colors.ink,
+    fontSize: 28,
+    letterSpacing: 10,
+    textAlign: "center",
+    fontWeight: "700",
+  },
+});

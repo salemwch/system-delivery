@@ -8,6 +8,7 @@ import { Test } from "@nestjs/testing";
 import { sql } from "drizzle-orm";
 import { PinoLogger } from "nestjs-pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { AddressCorrectionService } from "../src/modules/directory/application/address-correction.service.js";
 import { AddressService } from "../src/modules/directory/application/address.service.js";
@@ -177,6 +178,13 @@ describe("driver sync over HTTP", () => {
 
   /** A route published to the driver, serving one new parcel (12.500 TND COD). */
   async function publishedRoute(driverId: string): Promise<string> {
+    return (await plannedRoute(driverId)).routeId;
+  }
+
+  /** The same, returning the parcel too. */
+  async function plannedRoute(
+    driverId: string,
+  ): Promise<{ readonly routeId: string; readonly shipmentId: string }> {
     return asStaff(async () => {
       const shipment = await shipments.create(
         {
@@ -217,7 +225,10 @@ describe("driver sync over HTTP", () => {
       });
       await routes.addStops(route.id, { legIds: [legId] });
       await routes.publish(route.id, { actor: staff.actor });
-      return route.id;
+      // Loaded at the hub: in the driver's custody, as on a real morning. A
+      // parcel goes out for delivery only from custody (state machine).
+      await shipments.recordPickup(shipment.id, { idempotencyKey: randomUUID(), driverId }, staff);
+      return { routeId: route.id, shipmentId: shipment.id };
     });
   }
 
@@ -540,5 +551,115 @@ describe("driver sync over HTTP", () => {
     expect(
       (await call("POST", "/v1/drivers/me/sync", driver, { pendingEvents: [] })).statusCode,
     ).toBe(400);
+  });
+  describe("the driver runs their own route (route:drive)", () => {
+    it("starts it, delivers through sync, the stop settles, and completes it", async () => {
+      const driver = await seedAccount(["DRIVER"], true);
+      const token = await login(driver);
+      const { routeId, shipmentId } = await plannedRoute(driver.driverId ?? "");
+
+      // The manifest says where the cash goes back.
+      const manifest = await call("GET", `/v1/routes/${routeId}/manifest`, token);
+      const day = z
+        .object({
+          startHubId: z.uuid().nullable(),
+          stops: z.array(
+            z.object({
+              addressId: z.uuid().nullable(),
+              shipments: z.array(z.object({ shipmentId: z.uuid(), status: z.string() })),
+            }),
+          ),
+        })
+        .parse(JSON.parse(manifest.body));
+      // The app corrects a pin offline (addressId) and shows the server's status per parcel.
+      expect(day.stops[0]?.addressId).toMatch(/^[0-9a-f-]{36}$/u);
+      expect(day.stops[0]?.shipments[0]).toEqual({ shipmentId, status: "PICKED_UP" });
+
+      // Completing before anything happened: stops are still open.
+      const early = await call("POST", `/v1/drivers/me/routes/${routeId}/complete`, token);
+      expect(early.statusCode).toBe(422);
+
+      const started = await call("POST", `/v1/drivers/me/routes/${routeId}/start`, token);
+      expect(started.statusCode, started.body).toBe(200);
+      expect(JSON.parse(started.body)).toMatchObject({ id: routeId, status: "IN_PROGRESS" });
+      // Starting is what puts the parcel in the driver's hands.
+      expect((await asStaff(() => shipments.getById(shipmentId))).status).toBe("OUT_FOR_DELIVERY");
+
+      const { results } = await sync(token, {
+        deviceId: "pixel-7a",
+        pendingEvents: [
+          {
+            idempotencyKey: randomUUID(),
+            type: "DELIVERED",
+            shipmentId,
+            payload: { pod: strongPod, codCollected: true, occurredAt: minutesAgo(1) },
+          },
+        ],
+      });
+      expect(results[0]).toMatchObject({ status: "ACCEPTED", resultingStatus: "DELIVERED" });
+
+      const stops = await withTenantContext(
+        database.migrator,
+        tenant,
+        (tx) =>
+          tx<{ status: string }[]>`select status from route_stops where route_id = ${routeId}`,
+      );
+      expect(stops.map((stop) => stop.status)).toEqual(["COMPLETED"]);
+
+      const done = await call("POST", `/v1/drivers/me/routes/${routeId}/complete`, token);
+      expect(done.statusCode, done.body).toBe(200);
+      expect(JSON.parse(done.body)).toMatchObject({ status: "COMPLETED" });
+    });
+
+    it("marks a stop FAILED when its only parcel fails", async () => {
+      const driver = await seedAccount(["DRIVER"], true);
+      const token = await login(driver);
+      const { routeId, shipmentId } = await plannedRoute(driver.driverId ?? "");
+      await call("POST", `/v1/drivers/me/routes/${routeId}/start`, token);
+
+      await sync(token, {
+        deviceId: "pixel-7a",
+        pendingEvents: [
+          {
+            idempotencyKey: randomUUID(),
+            type: "FAILED",
+            shipmentId,
+            payload: { reasonCode: "CUSTOMER_UNREACHABLE", occurredAt: minutesAgo(1) },
+          },
+        ],
+      });
+      const stops = await withTenantContext(
+        database.migrator,
+        tenant,
+        (tx) => tx<{ status: string; failure_reason: string | null }[]>`
+          select status, failure_reason from route_stops where route_id = ${routeId}`,
+      );
+      expect(stops).toEqual([{ status: "FAILED", failure_reason: "NO_PARCEL_DELIVERED" }]);
+    });
+
+    it("never lets anyone else run it", async () => {
+      const driver = await seedAccount(["DRIVER"], true);
+      const colleague = await seedAccount(["DRIVER"], true);
+      const routeId = await publishedRoute(driver.driverId ?? "");
+
+      const theirs = await call(
+        "POST",
+        `/v1/drivers/me/routes/${routeId}/start`,
+        await login(colleague),
+      );
+      expect(theirs.statusCode).toBe(404);
+      const dispatcher = await login(await seedAccount(["DISPATCHER"], false));
+      expect(
+        (await call("POST", `/v1/drivers/me/routes/${routeId}/start`, dispatcher)).statusCode,
+      ).toBe(403);
+      const unlinked = await login(await seedAccount(["DRIVER"], false));
+      expect(
+        (await call("POST", `/v1/drivers/me/routes/${routeId}/start`, unlinked)).statusCode,
+      ).toBe(403);
+      expect(
+        (await call("POST", "/v1/drivers/me/routes/not-a-uuid/start", await login(driver)))
+          .statusCode,
+      ).toBe(400);
+    });
   });
 });
