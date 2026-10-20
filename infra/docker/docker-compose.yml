@@ -21,7 +21,7 @@ services:
       # Local-only tuning. Production values live in Terraform.
       TIMESCALEDB_TELEMETRY: "off"
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/home/postgres/pgdata/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
@@ -45,7 +45,7 @@ services:
       - --save
       - "60 1"
     ports:
-      - "${VALKEY_PORT:-6379}:6379"
+      - "127.0.0.1:${VALKEY_PORT:-6379}:6379"
     volumes:
       - valkey-data:/data
     healthcheck:
@@ -66,8 +66,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -103,7 +103,7 @@ services:
     restart: unless-stopped
     command: osrm-routed --algorithm mld --max-table-size 8000 /data/tunisia-latest.osrm
     ports:
-      - "${OSRM_PORT:-5000}:5000"
+      - "127.0.0.1:${OSRM_PORT:-5000}:5000"
     volumes:
       - ./osrm-data:/data
     healthcheck:
@@ -138,7 +138,7 @@ services:
       # without starving the rest of the local stack.
       THREADS: 4
     ports:
-      - "${NOMINATIM_PORT:-8080}:8080"
+      - "127.0.0.1:${NOMINATIM_PORT:-8080}:8080"
     volumes:
       # The OSRM data directory, READ-ONLY: Nominatim only reads the PBF, and a
       # geocoder must not be able to corrupt the routing extract.

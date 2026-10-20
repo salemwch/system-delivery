@@ -34,6 +34,8 @@ export interface TestDatabase {
   /** Connected as dp_relay — cross-tenant on `outbox` only. What the relay uses. */
   readonly relay: Sql;
   readonly appUrl: string;
+  readonly migratorUrl: string;
+  readonly relayUrl: string;
   close(): Promise<void>;
 }
 
@@ -114,6 +116,8 @@ export async function createTestDatabase(): Promise<TestDatabase> {
     migrator,
     relay,
     appUrl,
+    migratorUrl,
+    relayUrl,
     async close() {
       await app.end({ timeout: 5 });
       await relay.end({ timeout: 5 });
