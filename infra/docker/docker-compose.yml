@@ -97,7 +97,7 @@ services:
   # a slow one-time build. Run `pnpm osrm:prepare` first, then:
   #   docker compose --profile routing up -d
   osrm:
-    image: ghcr.io/project-osrm/osrm-backend:latest@sha256:a7091038e39a73659767f34ef2d389909b42ea80b09bd2bdca482dce2991cbad
+    image: ghcr.io/project-osrm/osrm-backend:latest@sha256:3ac496ff8fd7e1af53846179d73d06a97f719c8ad2217d008ed868942398665c
     container_name: dp-osrm
     profiles: ["routing"]
     restart: unless-stopped
