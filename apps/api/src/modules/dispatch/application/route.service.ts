@@ -96,6 +96,8 @@ export interface ManifestStopShipment {
   readonly parcelCount: number;
   readonly codAmountMinor: bigint;
   readonly currency: string;
+  /** Where the parcel is now, so the app shows the server truth, not its own guess. */
+  readonly status: string;
 }
 
 export interface ManifestStop {
@@ -106,6 +108,8 @@ export interface ManifestStop {
   readonly latitude: number | null;
   readonly longitude: number | null;
   readonly plannedArrivalAt: Date | null;
+  /** The pinned address, so the app can correct its location offline (address:correct). */
+  readonly addressId: string | null;
   readonly address: {
     line1: string | null;
     city: string | null;
@@ -121,6 +125,8 @@ export interface ManifestView {
   readonly plannedDate: string;
   readonly driverId: string | null;
   readonly vehicleId: string | null;
+  /** Where the day starts and the cash goes back: the driver's remittance hub. */
+  readonly startHubId: string | null;
   readonly summary: {
     readonly stopsTotal: number;
     readonly stopsCompleted: number;
@@ -727,6 +733,78 @@ export class RouteService {
     });
   }
 
+  /**
+   * Resolves the open stops that serve a shipment once EVERY parcel at the stop
+   * has an outcome: COMPLETED when at least one was delivered, FAILED (reason
+   * `NO_PARCEL_DELIVERED`) when none was. Called after a driver's delivery,
+   * failure or return is recorded (DriverSyncService).
+   *
+   * ⚠️ THE GAP THIS CLOSES. `resolveStop` existed and nothing called it: stops
+   * stayed PENDING whatever happened to their parcels, so `complete` (which
+   * requires every stop terminal) could never succeed for a real route.
+   *
+   * Idempotent and race-safe: each stop is locked and settled only while still
+   * open, so a replayed sync item or two parcels finishing together settle it
+   * once. Read under the caller's RLS: a driver settles only their own stops.
+   */
+  async settleStopsForShipment(shipmentId: string): Promise<void> {
+    const open = await this.database.withTenant((tx) =>
+      tx.execute<{ id: string; leg_ids: string[] }>(sql`
+        select rs.id, rs.leg_ids
+          from route_stops rs
+          join routes r on r.id = rs.route_id
+         where r.status = 'IN_PROGRESS'
+           and rs.status in ('PENDING', 'ARRIVED')
+           and rs.leg_ids && coalesce(
+                 (select array_agg(l.id) from shipment_legs l where l.shipment_id = ${shipmentId}),
+                 '{}'::uuid[])`),
+    );
+    for (const stop of open) {
+      const legs = await this.shipments.getLegsForPlanning(stop.leg_ids);
+      if (legs.length === 0 || legs.some((leg) => !STOP_OUTCOME_STATUSES.has(leg.shipmentStatus))) {
+        continue;
+      }
+      const delivered = legs.some((leg) => leg.shipmentStatus === "DELIVERED");
+      await this.database.withTenant(async (tx) => {
+        const locked = await tx
+          .select({
+            status: routeStops.status,
+            routeId: routeStops.routeId,
+            legIds: routeStops.legIds,
+          })
+          .from(routeStops)
+          .where(eq(routeStops.id, stop.id))
+          .for("update");
+        const row = locked[0];
+        if (row === undefined || ["COMPLETED", "FAILED", "SKIPPED"].includes(row.status)) {
+          return;
+        }
+        const outcome = delivered ? "COMPLETED" : "FAILED";
+        await tx
+          .update(routeStops)
+          .set({
+            status: outcome,
+            actualDepartureAt: sql`now()`,
+            updatedAt: sql`now()`,
+            ...(delivered ? {} : { failureReason: "NO_PARCEL_DELIVERED" }),
+          })
+          .where(eq(routeStops.id, stop.id));
+        await this.outbox.publish(tx, {
+          eventType: "stop.completed",
+          aggregateType: "route",
+          aggregateId: row.routeId,
+          payload: {
+            routeStopId: stop.id,
+            routeId: row.routeId,
+            legIds: row.legIds,
+            outcome,
+            occurredAt: new Date().toISOString(),
+          },
+        });
+      });
+    }
+  }
+
   // ── Queries ──────────────────────────────────────────────────────────────────
 
   async getById(id: string): Promise<Route> {
@@ -803,6 +881,7 @@ export class RouteService {
             parcelCount: leg.parcelCount,
             codAmountMinor: leg.codAmountMinor,
             currency: leg.currency,
+            status: leg.shipmentStatus,
           });
           if (!seenShipments.has(leg.shipmentId)) {
             seenShipments.add(leg.shipmentId);
@@ -818,6 +897,7 @@ export class RouteService {
         latitude: stop.latitude,
         longitude: stop.longitude,
         plannedArrivalAt: stop.plannedArrivalAt,
+        addressId: stop.addressId,
         address: stop.addressId === null ? null : (addressById.get(stop.addressId) ?? null),
         shipments: [...shipmentMap.values()],
       };
@@ -830,6 +910,7 @@ export class RouteService {
       plannedDate: route.plannedDate,
       driverId: route.driverId,
       vehicleId: route.vehicleId,
+      startHubId: route.startHubId,
       summary: {
         stopsTotal: stops.length,
         stopsCompleted: stops.filter((s) => s.status === "COMPLETED").length,
@@ -1153,6 +1234,15 @@ function requireLegAddress(addressId: string | null, legId: string, kind: string
   }
   return addressId;
 }
+
+/** A shipment status that settles its stop for today: delivered, or given up on here. */
+const STOP_OUTCOME_STATUSES: ReadonlySet<string> = new Set([
+  "DELIVERED",
+  "ATTEMPT_FAILED",
+  "RETURN_PENDING",
+  "RETURNED",
+  "CANCELLED",
+]);
 
 function isTerminalStop(status: RouteStopStatus): boolean {
   return status === "COMPLETED" || status === "FAILED" || status === "SKIPPED";

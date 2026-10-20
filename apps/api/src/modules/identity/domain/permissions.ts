@@ -109,6 +109,13 @@ export const PERMISSIONS = [
   "route:create",
   "route:publish",
   "route:optimize",
+  /**
+   * Start and complete ONE'S OWN route from the driver app (docs/03:
+   * route.started / route.completed are produced by the Driver App). Narrow on
+   * purpose: route:publish would also let a driver publish, start or cancel any
+   * route. Which route is "own" is decided by RLS (0047) and checked again.
+   */
+  "route:drive",
 
   // Fleet and workforce
   "driver:read",
@@ -394,6 +401,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
   ],
 
   DRIVER: [
+    "route:drive",
     "shipment:read",
     "shipment:deliver",
     "shipment:fail",

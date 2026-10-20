@@ -102,3 +102,42 @@ export async function stopUpdates(): Promise<void> {
 export function isUpdating(): Promise<boolean> {
   return Location.hasStartedLocationUpdatesAsync(LOCATION_TASK);
 }
+
+export interface Fix {
+  readonly lat: number;
+  readonly lng: number;
+  readonly accuracyM: number | null;
+  readonly at: number;
+}
+
+/** A fix older than this is not where the driver is standing. */
+const FRESH_FIX_MS = 2 * 60_000;
+const FIX_TIMEOUT_MS = 8_000;
+
+/**
+ * Where the driver is now, for a delivery, a failed attempt or an address
+ * correction: a fresh fix within a few seconds, else the last known one if it
+ * is recent, else null. Never blocks the action: a delivery in a basement is
+ * still a delivery, recorded without coordinates rather than not at all.
+ */
+export async function currentFix(): Promise<Fix | null> {
+  const granted = await Location.getForegroundPermissionsAsync();
+  if (!granted.granted) {
+    return null;
+  }
+  const fresh = await Promise.race([
+    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }).catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), FIX_TIMEOUT_MS)),
+  ]);
+  const fix =
+    fresh ?? (await Location.getLastKnownPositionAsync({ maxAge: FRESH_FIX_MS }).catch(() => null));
+  if (fix === null || fix.mocked === true) {
+    return null;
+  }
+  return {
+    lat: fix.coords.latitude,
+    lng: fix.coords.longitude,
+    accuracyM: fix.coords.accuracy === null ? null : Math.round(fix.coords.accuracy),
+    at: fix.timestamp,
+  };
+}

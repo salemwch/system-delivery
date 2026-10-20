@@ -28,22 +28,6 @@ export type ShiftView = z.infer<typeof shiftSchema>;
 const currentShiftSchema = z.object({ driverId: z.uuid(), shift: shiftSchema.nullable() });
 export type CurrentShift = z.infer<typeof currentShiftSchema>;
 
-const syncSchema = z
-  .object({
-    activeRoutes: z.array(
-      z.object({ routeId: z.uuid(), status: z.string(), version: z.string() }).loose(),
-    ),
-    routeUpdates: z.array(
-      z
-        .object({
-          routeId: z.uuid(),
-          manifest: z.object({ vehicleId: z.uuid().nullable(), code: z.string() }).loose(),
-        })
-        .loose(),
-    ),
-  })
-  .loose();
-
 const ingestSchema = z.object({ accepted: z.number(), rejected: z.number() }).loose();
 
 export function tenantBySlug(api: ApiClient, slug: string) {
@@ -86,20 +70,6 @@ export function startShift(
 
 export function endShift(api: ApiClient, shiftId: string): Promise<ShiftView> {
   return api.request("POST", `/v1/shifts/${encodeURIComponent(shiftId)}/end`, shiftSchema, {});
-}
-
-/**
- * The vehicle of the driver's route today, so a shift starts on the van
- * dispatch planned, with no plate to type. Null when no route is published.
- */
-export async function plannedVehicle(api: ApiClient, deviceId: string): Promise<string | null> {
-  const result = await api.request("POST", "/v1/drivers/me/sync", syncSchema, { deviceId });
-  for (const update of result.routeUpdates) {
-    if (update.manifest.vehicleId !== null) {
-      return update.manifest.vehicleId;
-    }
-  }
-  return null;
 }
 
 /** Uploads one telemetry batch and classifies the answer (telemetry.ts). */

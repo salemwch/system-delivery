@@ -15,6 +15,7 @@ export interface ManifestResponse {
   readonly plannedDate: string;
   readonly driverId: string | null;
   readonly vehicleId: string | null;
+  readonly startHubId: string | null;
   readonly summary: {
     readonly stopsTotal: number;
     readonly stopsCompleted: number;
@@ -29,6 +30,7 @@ export interface ManifestResponse {
     readonly latitude: number | null;
     readonly longitude: number | null;
     readonly plannedArrivalAt: string | null;
+    readonly addressId: string | null;
     readonly address: {
       readonly line1: string | null;
       readonly city: string | null;
@@ -40,6 +42,7 @@ export interface ManifestResponse {
       readonly recipientName: string;
       readonly recipientPhone: string;
       readonly parcelCount: number;
+      readonly status: string;
       readonly cod: MoneyResponse;
     }[];
   }[];
@@ -96,6 +99,7 @@ export async function toManifestResponse(
     plannedDate: view.plannedDate,
     driverId: view.driverId,
     vehicleId: view.vehicleId,
+    startHubId: view.startHubId,
     summary: {
       stopsTotal: view.summary.stopsTotal,
       stopsCompleted: view.summary.stopsCompleted,
@@ -111,6 +115,7 @@ export async function toManifestResponse(
       latitude: stop.latitude,
       longitude: stop.longitude,
       plannedArrivalAt: stop.plannedArrivalAt?.toISOString() ?? null,
+      addressId: stop.addressId,
       address: stop.address,
       shipments: stop.shipments.map((s) => ({
         shipmentId: s.shipmentId,
@@ -118,6 +123,7 @@ export async function toManifestResponse(
         recipientName: s.recipientName,
         recipientPhone: s.recipientPhone,
         parcelCount: s.parcelCount,
+        status: s.status,
         cod: money(s.codAmountMinor, s.currency),
       })),
     })),

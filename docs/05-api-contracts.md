@@ -567,6 +567,8 @@ Job result:
 
 **As built (2026-10-19).** Money follows §1.3: each shipment carries `cod: { amountMinor: "12500", currency: "TND", currencyExponent: 3 }` (a decimal **string**), and `summary.codExpected` is a **list, one entry per currency**, never one sum across currencies. Stop coordinates are `latitude`/`longitude`. Before this the route returned the service view with `bigint` amounts, which `JSON.stringify` cannot serialize: every call was a 500.
 
+**Added for the driver app (milestone 2, 2026-10-19).** `startHubId` (where the day starts and the cash goes back: the remittance hub); per stop `addressId` (so a pin correction can be queued offline, §5); per shipment `status` (the server's truth, which the app lays its unsent outcomes over). Because the route version is the manifest's SHA-256, a parcel changing status changes the version, and the next sync carries the fresh manifest.
+
 ---
 
 ## 5. Driver Operations
@@ -658,6 +660,12 @@ End response includes an outstanding-cash prompt:
 ```
 
 **Notes.** **Per-item results, never all-or-nothing.** One rejected event must not block the other nineteen. `action` tells the app exactly what to do — `DISCARD_AND_REFRESH`, `RETRY_LATER`, or `ESCALATE_TO_DISPATCHER` — instead of leaving it to guess. This is where offline-first is either real or theatre.
+
+### `POST /v1/drivers/me/routes/{id}/start` · `/complete` — the driver runs their own route
+
+Added 2026-10-19 (milestone 2). Permission **`route:drive`** (DRIVER; deliberately narrow: start and complete only, no planning, no re-assignment). `200 { "id", "status" }`. The route must be the caller's own: another driver's route is `404`, exactly like a missing one; a non-driver or a DRIVER login with no driver record is `403`. Start runs the same `RouteService.start` as dispatch: every leg in the driver's custody goes `OUT_FOR_DELIVERY`. Complete is `422` while a stop is open.
+
+**Stops settle themselves.** After each delivery, failure or return recorded through sync, every open stop (PENDING/ARRIVED) of an IN_PROGRESS route that serves the parcel is checked: once every parcel at the stop has an outcome, the stop becomes `COMPLETED` (at least one delivered) or `FAILED` (`failureReason: "NO_PARCEL_DELIVERED"`), and `stop.completed` is published. Without this a route could never be completed from the app.
 
 ### `POST /v1/addresses/{id}/corrections` — driver pin correction (2.10)
 

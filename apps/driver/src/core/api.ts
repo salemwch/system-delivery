@@ -13,6 +13,8 @@ import { z } from "zod";
 
 export interface Session {
   readonly tenantId: string;
+  /** The login (users.id): what pickups name as their collector (I27). */
+  readonly userId: string;
   readonly accessToken: string;
   readonly refreshToken: string;
   /** Epoch ms after which the access token is treated as expired. */
@@ -50,7 +52,7 @@ export const sessionResponseSchema = z.object({
   accessToken: z.string().min(1),
   refreshToken: z.string().min(1),
   expiresIn: z.number().int().positive(),
-  user: z.object({ tenantId: z.uuid(), roles: z.array(z.string()) }).loose(),
+  user: z.object({ id: z.uuid(), tenantId: z.uuid(), roles: z.array(z.string()) }).loose(),
 });
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 
@@ -116,6 +118,7 @@ export class ApiClient {
   async adopt(response: SessionResponse): Promise<Session> {
     const session: Session = {
       tenantId: response.user.tenantId,
+      userId: response.user.id,
       accessToken: response.accessToken,
       refreshToken: response.refreshToken,
       expiresAt: this.now() + response.expiresIn * 1000,

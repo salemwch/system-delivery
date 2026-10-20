@@ -162,6 +162,7 @@ async function main(): Promise<void> {
         { rawInput: "Les Berges du Lac, Tunis", lat: 36.8335, lng: 10.2333 },
       ];
       const legIds: string[] = [];
+      const shipmentIds: string[] = [];
       for (const [index, stop] of stops.entries()) {
         const shipment = await shipments.create(
           {
@@ -194,6 +195,7 @@ async function main(): Promise<void> {
         const legId = legs[0]?.id;
         if (legId === undefined) throw new Error(`Shipment ${shipment.id} has no leg`);
         legIds.push(legId);
+        shipmentIds.push(shipment.id);
       }
 
       // 5. Today's route (Tunis date), published to the driver on the van.
@@ -203,6 +205,11 @@ async function main(): Promise<void> {
       const route = await routes.create({ plannedDate: today, driverId, vehicleId: vehicle.id });
       await routes.addStops(route.id, { legIds });
       await routes.publish(route.id, { actor: staff.actor });
+      // Loaded at the hub: the parcels are in the driver's custody, so starting
+      // the route from the app takes them out for delivery (state machine).
+      for (const shipmentId of shipmentIds) {
+        await shipments.recordPickup(shipmentId, { idempotencyKey: randomUUID(), driverId }, staff);
+      }
 
       process.stdout.write(
         [

@@ -8,13 +8,14 @@ import type { FeatureKey } from "../../platform/index.js";
 import { ShipmentService } from "../../shipment/index.js";
 import type { CommandContext } from "../../shipment/index.js";
 import { NO_DRIVER, TenantContext } from "../../../shared/database/index.js";
-import { DomainError, ForbiddenError } from "../../../shared/errors/index.js";
+import { DomainError, ForbiddenError, NotFoundError } from "../../../shared/errors/index.js";
 import { parseWithZod, requestFingerprint } from "../../../shared/http/index.js";
 import { CurrencyService } from "../../../shared/money/index.js";
 import { toManifestResponse } from "./manifest-response.js";
 import type { ManifestResponse } from "./manifest-response.js";
 import { driverSyncSchema, syncItemSchema } from "../domain/sync-dtos.js";
 import type { SyncItem, SyncItemType } from "../domain/sync-dtos.js";
+import type { Route } from "../domain/schema.js";
 import { RouteService } from "./route.service.js";
 
 /** What the app must do with an item the server did not accept (docs/08 §8.1). */
@@ -211,32 +212,51 @@ export class DriverSyncService {
     ctx: CommandContext,
   ): Promise<{ replayed: boolean; resultingStatus: string }> {
     const command = { ...item.payload, idempotencyKey: item.idempotencyKey };
-    switch (item.type) {
-      case "DELIVERED": {
-        const shipment = await this.shipments.confirmDelivery(
-          target(item.shipmentId),
-          command,
-          ctx,
-        );
-        return { replayed: this.shipments.isReplay(shipment), resultingStatus: shipment.status };
-      }
-      case "FAILED": {
-        const shipment = await this.shipments.recordFailedAttempt(
-          target(item.shipmentId),
-          command,
-          ctx,
-        );
-        return { replayed: this.shipments.isReplay(shipment), resultingStatus: shipment.status };
-      }
-      case "RETURN_COMPLETED": {
-        const shipment = await this.shipments.completeReturn(target(item.shipmentId), command, ctx);
-        return { replayed: this.shipments.isReplay(shipment), resultingStatus: shipment.status };
-      }
-      case "ADDRESS_CORRECTED": {
-        const outcome = await this.corrections.submit(target(item.addressId), command);
-        return { replayed: outcome.replayed, resultingStatus: outcome.correction.status };
-      }
+    if (item.type === "ADDRESS_CORRECTED") {
+      const outcome = await this.corrections.submit(target(item.addressId), command);
+      return { replayed: outcome.replayed, resultingStatus: outcome.correction.status };
     }
+    const id = target(item.shipmentId);
+    const shipment =
+      item.type === "DELIVERED"
+        ? await this.shipments.confirmDelivery(id, command, ctx)
+        : item.type === "FAILED"
+          ? await this.shipments.recordFailedAttempt(id, command, ctx)
+          : await this.shipments.completeReturn(id, command, ctx);
+    // A parcel outcome may finish its stop (RouteService.settleStopsForShipment);
+    // idempotent, so a replayed item settles nothing twice.
+    await this.routes.settleStopsForShipment(shipment.id);
+    return { replayed: this.shipments.isReplay(shipment), resultingStatus: shipment.status };
+  }
+
+  /**
+   * Starts the driver's OWN published route: the parcels on it go out for
+   * delivery (RouteService.start), which is what lets the driver deliver them.
+   * docs/03: route.started is produced by the Driver App. A colleague's route
+   * is invisible under the driver's RLS (0047) and is a 404; the driver of
+   * the route is checked again here.
+   */
+  async startRoute(routeId: string, caller: SyncCaller): Promise<Route> {
+    const route = await this.ownRoute(routeId, caller);
+    return this.routes.start(route.id, { actor: { actorType: "DRIVER", actorId: caller.userId } });
+  }
+
+  /** Completes the driver's own route once every stop is settled. */
+  async completeRoute(routeId: string, caller: SyncCaller): Promise<Route> {
+    const route = await this.ownRoute(routeId, caller);
+    return this.routes.complete(route.id);
+  }
+
+  private async ownRoute(routeId: string, caller: SyncCaller): Promise<Route> {
+    const driverId = TenantContext.current()?.driverId;
+    if (!caller.roles.includes("DRIVER") || driverId === undefined || driverId === NO_DRIVER) {
+      throw new ForbiddenError("Only the driver of a route may run it");
+    }
+    const route = await this.routes.getById(routeId);
+    if (route.driverId !== driverId) {
+      throw new NotFoundError("Route");
+    }
+    return route;
   }
 
   /** What the device should do with an item the server refused. */

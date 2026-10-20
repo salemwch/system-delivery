@@ -14,12 +14,14 @@ import { uuidV7 } from "../core/ids";
  * task uploads from a phone in a pocket. The keys are bound to this install
  * (`allowBackup: false`), never synced or restored elsewhere.
  */
-const SESSION_KEY = "session.v1";
+/** v2 carries the user id; a v1 session is simply signed in again. */
+const SESSION_KEY = "session.v2";
 const DEVICE_KEY = "device.id.v1";
 const DB_KEY = "db.key.v1";
 
 const sessionSchema = z.object({
   tenantId: z.uuid(),
+  userId: z.uuid(),
   accessToken: z.string().min(1),
   refreshToken: z.string().min(1),
   expiresAt: z.number(),

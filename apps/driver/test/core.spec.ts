@@ -189,6 +189,7 @@ describe("ApiClient", () => {
   }
   const session = (overrides: Partial<Session> = {}): Session => ({
     tenantId: "018f7a00-0000-7000-8000-000000000001",
+    userId: "018f7a00-0000-7000-8000-0000000000aa",
     accessToken: "old",
     refreshToken: "r1",
     expiresAt: Date.now() + 600_000,
@@ -201,7 +202,11 @@ describe("ApiClient", () => {
         accessToken: access,
         refreshToken: refresh,
         expiresIn: 900,
-        user: { tenantId: "018f7a00-0000-7000-8000-000000000001", roles: ["DRIVER"] },
+        user: {
+          id: "018f7a00-0000-7000-8000-0000000000aa",
+          tenantId: "018f7a00-0000-7000-8000-000000000001",
+          roles: ["DRIVER"],
+        },
       }),
       { status: 200 },
     );

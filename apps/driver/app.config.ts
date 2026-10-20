@@ -60,6 +60,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       { supportsRTL: true },
     ],
     [
+      // Parcel labels and proof-of-delivery photos. No microphone: the app
+      // never records video, so RECORD_AUDIO is not even declared.
+      "expo-camera",
+      {
+        cameraPermission: "The camera scans parcel labels and photographs proof of delivery.",
+        recordAudioAndroid: false,
+        barcodeScannerEnabled: true,
+      },
+    ],
+    [
       "expo-location",
       {
         isAndroidBackgroundLocationEnabled: true,
