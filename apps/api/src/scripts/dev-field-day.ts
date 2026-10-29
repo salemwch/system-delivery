@@ -147,6 +147,18 @@ async function main(): Promise<void> {
       }
       await drivers.activate(driverId);
 
+      // 2b. Cancel any non-terminal routes for this driver (previous runs).
+      const openRoutes = await db.withTenant((tx) =>
+        tx.execute<{ id: string; status: string }>(sql`
+          select id, status from routes
+           where driver_id = ${driverId}
+             and status not in ('COMPLETED', 'CANCELLED')
+           order by created_at desc`),
+      );
+      for (const old of openRoutes) {
+        await routes.cancel(old.id, { reason: "dev:field-day cleanup" });
+      }
+
       // 3. A van for today.
       const vehicle = await vehicles.create({
         plateNumber: `DEV ${randomBytes(2).toString("hex").toUpperCase()} TU`,
