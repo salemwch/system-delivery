@@ -7,4 +7,5 @@ export {
   NotFoundError,
   ConflictError,
   BusinessRuleError,
+  idempotencyKeyReused,
 } from "./domain-error.js";

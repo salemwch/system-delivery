@@ -11,11 +11,11 @@ import {
 } from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
 import {
-  BusinessRuleError,
   ConflictError,
   DomainError,
   NotFoundError,
   UnauthenticatedError,
+  idempotencyKeyReused,
 } from "../../../shared/errors/index.js";
 import { parseWithZod, requestFingerprint } from "../../../shared/http/index.js";
 import {
@@ -184,7 +184,7 @@ export class PodMediaService {
       });
     } catch (error) {
       if (isUniqueViolation(error, KEY_CONSTRAINT)) {
-        throw keyReused();
+        throw idempotencyKeyReused();
       }
       throw error;
     }
@@ -331,7 +331,7 @@ async function replayOf(
     return undefined;
   }
   if (prior.uploadedByUserId !== actorId || prior.requestHash !== requestHash) {
-    throw keyReused();
+    throw idempotencyKeyReused();
   }
   return prior;
 }
@@ -366,14 +366,6 @@ function requireActor(): { readonly userId: string; readonly driverId: string | 
     throw new UnauthenticatedError();
   }
   return { userId: state.actorId, driverId: state.driverId ?? null };
-}
-
-function keyReused(): BusinessRuleError {
-  // Deliberately says nothing about the earlier use (docs/05 §1.2).
-  return new BusinessRuleError(
-    "IDEMPOTENCY_KEY_REUSED",
-    "This idempotency key was already used for a different request.",
-  );
 }
 
 function notUploaded(): ConflictError {

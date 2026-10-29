@@ -90,3 +90,17 @@ export class BusinessRuleError extends DomainError {
     super(code, message, HttpStatus.UNPROCESSABLE_ENTITY, fieldErrors);
   }
 }
+
+/**
+ * 422 — an idempotency key replayed on a DIFFERENT request (I29).
+ *
+ * Deliberately says nothing about the earlier use: not which resource, not
+ * whose, not what it did (docs/05-api-contracts.md §1.2). One definition, so
+ * every command answers a reused key with the same code and wording.
+ */
+export function idempotencyKeyReused(): BusinessRuleError {
+  return new BusinessRuleError(
+    "IDEMPOTENCY_KEY_REUSED",
+    "This idempotency key was already used for a different request.",
+  );
+}

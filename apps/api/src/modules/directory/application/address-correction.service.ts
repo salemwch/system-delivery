@@ -10,11 +10,11 @@ import {
 } from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
 import {
-  BusinessRuleError,
   ConflictError,
   ForbiddenError,
   NotFoundError,
   UnauthenticatedError,
+  idempotencyKeyReused,
 } from "../../../shared/errors/index.js";
 import { parseWithZod, requestFingerprint, resolveDeviceTime } from "../../../shared/http/index.js";
 import {
@@ -188,7 +188,7 @@ export class AddressCorrectionService {
       // One key racing on two addresses, or a key a colleague already used
       // (their row is invisible to this session): the unique index decides.
       if (isUniqueViolation(error, KEY_CONSTRAINT)) {
-        throw keyReused();
+        throw idempotencyKeyReused();
       }
       throw error;
     }
@@ -394,7 +394,7 @@ export class AddressCorrectionService {
       return undefined;
     }
     if (prior.correctedByUserId !== actorId || prior.requestHash !== requestHash) {
-      throw keyReused();
+      throw idempotencyKeyReused();
     }
     return { correction: await this.viewOf(tx, prior.id), replayed: true };
   }
@@ -438,14 +438,6 @@ function assertReviewable(row: LockedCorrection, reviewerId: string): void {
   if (row.correctedByUserId === reviewerId) {
     throw new ForbiddenError("A correction is reviewed by someone other than its author");
   }
-}
-
-function keyReused(): BusinessRuleError {
-  // Deliberately says nothing about the earlier use (docs/05 §1.2).
-  return new BusinessRuleError(
-    "IDEMPOTENCY_KEY_REUSED",
-    "This idempotency key was already used for a different request.",
-  );
 }
 
 /** The authenticated caller. A correction always names a person. */

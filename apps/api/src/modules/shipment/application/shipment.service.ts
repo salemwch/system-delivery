@@ -15,6 +15,7 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  idempotencyKeyReused,
 } from "../../../shared/errors/index.js";
 import { parseWithZod, requestFingerprint, resolveDeviceTime } from "../../../shared/http/index.js";
 import {
@@ -331,7 +332,7 @@ export class ShipmentService {
           if (raced !== null) {
             return raced;
           }
-          throw keyReused();
+          throw idempotencyKeyReused();
         }
         throw error;
       }
@@ -1285,7 +1286,7 @@ export class ShipmentService {
       });
     } catch (error) {
       if (isKeyConflict(error)) {
-        throw keyReused();
+        throw idempotencyKeyReused();
       }
       throw error;
     }
@@ -1711,15 +1712,6 @@ const IDEMPOTENCY_CONSTRAINTS = [
   "shipment_events_tenant_idempotency_uq",
 ] as const;
 
-function keyReused(): BusinessRuleError {
-  // Deliberately says nothing about the earlier use: not which shipment, not
-  // whose, not what it did. docs/05-api-contracts.md §1.2.
-  return new BusinessRuleError(
-    "IDEMPOTENCY_KEY_REUSED",
-    "This idempotency key was already used for a different request.",
-  );
-}
-
 /** A replay is honoured only when it is the same request (I29). */
 function assertSameRequest(
   prior: PriorUse,
@@ -1733,7 +1725,7 @@ function assertSameRequest(
   const sameFact = prior.shipmentId === current.shipmentId && prior.command === spec.command;
   const sameCaller = prior.actorId === current.actorId && prior.requestHash === current.requestHash;
   if (!sameFact || (spec.binding === "caller" && !sameCaller)) {
-    throw keyReused();
+    throw idempotencyKeyReused();
   }
 }
 
