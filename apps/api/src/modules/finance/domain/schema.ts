@@ -119,6 +119,7 @@ export const codRemittances = pgTable(
       .array()
       .notNull()
       .default(sql`ARRAY[]::uuid[]`),
+    idempotencyKey: text("idempotency_key"),
     varianceReason: text("variance_reason"),
     notes: text("notes"),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
@@ -128,6 +129,9 @@ export const codRemittances = pgTable(
   },
   (table) => [
     uniqueIndex("cod_remittances_code_uq").on(table.tenantId, table.code),
+    uniqueIndex("cod_remittances_idempotency_uq")
+      .on(table.tenantId, table.idempotencyKey)
+      .where(sql`idempotency_key IS NOT NULL`),
     index("cod_remittances_driver_idx").on(table.tenantId, table.driverId, table.status),
     index("cod_remittances_hub_idx").on(table.tenantId, table.hubId, table.status),
   ],

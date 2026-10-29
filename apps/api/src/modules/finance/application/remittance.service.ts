@@ -3,13 +3,18 @@ import { randomBytes } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import { and, eq, ne, sql } from "drizzle-orm";
 
-import { DatabaseService, TenantContext } from "../../../shared/database/index.js";
+import {
+  DatabaseService,
+  TenantContext,
+  isUniqueViolation,
+} from "../../../shared/database/index.js";
 import type { TenantTransaction } from "../../../shared/database/index.js";
 import {
   BusinessRuleError,
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  idempotencyKeyReused,
 } from "../../../shared/errors/index.js";
 import { parseWithZod } from "../../../shared/http/index.js";
 import { OutboxService } from "../../platform/index.js";
@@ -18,6 +23,7 @@ import {
   disputeRemittanceSchema,
   submitRemittanceSchema,
 } from "../domain/dtos.js";
+import type { SubmitRemittanceDto } from "../domain/dtos.js";
 import { codRemittances } from "../domain/schema.js";
 import type { CodRemittance } from "../domain/schema.js";
 import { CurrencyService } from "../../../shared/money/index.js";
@@ -59,12 +65,49 @@ export class RemittanceService {
     private readonly outbox: OutboxService,
   ) {}
 
-  /** Driver declares a handover. `expected` is read from the ledger, not the driver. */
-  async submit(input: unknown, ctx: RemittanceContext): Promise<CodRemittance> {
+  /**
+   * Driver declares a handover. `expected` is read from the ledger, not the
+   * driver.
+   *
+   * Idempotent on `idempotencyKey` (I29 shape): the same request sent again
+   * returns the recorded remittance with `replayed: true`; the key on any other
+   * request is `422 IDEMPOTENCY_KEY_REUSED`, which says nothing about the
+   * earlier use. Two identical requests racing each other: the unique index
+   * decides, and the loser is answered as a replay of the winner.
+   */
+  async submit(
+    input: unknown,
+    ctx: RemittanceContext,
+  ): Promise<{ remittance: CodRemittance; replayed: boolean }> {
     const dto = parseWithZod(submitRemittanceSchema, input);
+    try {
+      return await this.submitOnce(dto, ctx);
+    } catch (error) {
+      if (dto.idempotencyKey === undefined || !isUniqueViolation(error, IDEMPOTENCY_CONSTRAINT)) {
+        throw error;
+      }
+      // The racing winner has committed: a fresh transaction sees its row.
+      const raced = await this.database.withTenant((tx) => replayOf(tx, dto));
+      if (raced === undefined) {
+        throw idempotencyKeyReused();
+      }
+      return raced;
+    }
+  }
+
+  private async submitOnce(
+    dto: SubmitRemittanceDto,
+    ctx: RemittanceContext,
+  ): Promise<{ remittance: CodRemittance; replayed: boolean }> {
     return this.database.withTenant(async (tx) => {
       const tenantId = TenantContext.requireTenantId();
       await assertRemitsOwnCash(tx, ctx, dto.driverId);
+
+      const early = await replayOf(tx, dto);
+      if (early !== undefined) {
+        return early;
+      }
+
       const expected = await this.ledger.balanceOf(tx, tenantId, dto.currency, {
         ownerType: "DRIVER",
         ownerId: dto.driverId,
@@ -86,6 +129,7 @@ export class RemittanceService {
           submittedAt: now,
           ...(dto.shipmentIds === undefined ? {} : { shipmentIds: dto.shipmentIds }),
           ...(dto.notes === undefined ? {} : { notes: dto.notes }),
+          ...(dto.idempotencyKey === undefined ? {} : { idempotencyKey: dto.idempotencyKey }),
         })
         .returning();
       const remittance = inserted[0];
@@ -112,7 +156,7 @@ export class RemittanceService {
           occurredAt: now.toISOString(),
         },
       });
-      return remittance;
+      return { remittance, replayed: false };
     });
   }
 
@@ -367,6 +411,49 @@ async function assertRemitsOwnCash(
     // Says nothing about the other driver: not whether they exist, nor their cash.
     throw new ForbiddenError("A driver may only remit their own cash.");
   }
+}
+
+const IDEMPOTENCY_CONSTRAINT = "cod_remittances_idempotency_uq";
+
+/**
+ * The remittance this key already recorded, when the request is the same one;
+ * `undefined` when the key is new (or absent). The same key on a different
+ * request — another driver, hub, amount, currency, parcel set or note — is
+ * IDEMPOTENCY_KEY_REUSED, never a silent replay of someone else's handover.
+ */
+async function replayOf(
+  tx: TenantTransaction,
+  dto: SubmitRemittanceDto,
+): Promise<{ remittance: CodRemittance; replayed: true } | undefined> {
+  if (dto.idempotencyKey === undefined) {
+    return undefined;
+  }
+  const rows = await tx
+    .select()
+    .from(codRemittances)
+    .where(eq(codRemittances.idempotencyKey, dto.idempotencyKey))
+    .limit(1);
+  const existing = rows[0];
+  if (existing === undefined) {
+    return undefined;
+  }
+  if (!sameRequest(existing, dto)) {
+    throw idempotencyKeyReused();
+  }
+  return { remittance: existing, replayed: true };
+}
+
+function sameRequest(existing: CodRemittance, dto: SubmitRemittanceDto): boolean {
+  const requested = dto.shipmentIds ?? [];
+  return (
+    existing.driverId === dto.driverId &&
+    existing.hubId === dto.hubId &&
+    existing.declaredAmountMinor === dto.declaredAmountMinor &&
+    existing.currency === dto.currency &&
+    (existing.notes ?? undefined) === dto.notes &&
+    existing.shipmentIds.length === requested.length &&
+    existing.shipmentIds.every((id, index) => id === requested[index])
+  );
 }
 
 /** A unique-per-tenant receipt code. Random suffix; the unique index is the guard. */

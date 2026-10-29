@@ -245,6 +245,19 @@ export class DriverService {
     return this.setStatus(id, "INACTIVE");
   }
 
+  async registerDeviceToken(userId: string, token: string | null): Promise<void> {
+    await this.database.withTenant(async (tx) => {
+      const updated = await tx
+        .update(drivers)
+        .set({ deviceToken: token, updatedAt: sql`now()` })
+        .where(eq(drivers.userId, userId))
+        .returning({ id: drivers.id });
+      if (updated[0] === undefined) {
+        throw new NotFoundError("Driver");
+      }
+    });
+  }
+
   async hasOpenShift(driverId: string): Promise<boolean> {
     return this.database.withTenant(async (tx) => {
       const rows = await tx

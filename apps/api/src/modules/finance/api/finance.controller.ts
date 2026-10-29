@@ -8,7 +8,9 @@ import {
   Param,
   Post,
   Query,
+  Res,
 } from "@nestjs/common";
+import type { FastifyReply } from "fastify";
 import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
@@ -138,8 +140,12 @@ export class FinanceController {
   async submitRemittance(
     @Body(zodBody(submitRemittanceSchema)) body: z.infer<typeof submitRemittanceSchema>,
     @CurrentPrincipal() principal: Principal,
+    @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<RemittanceResponse> {
-    const remittance = await this.remittances.submit(body, remittanceCtx(principal));
+    const { remittance, replayed } = await this.remittances.submit(body, remittanceCtx(principal));
+    if (replayed) {
+      void reply.header("Idempotency-Replayed", "true");
+    }
     return toRemittanceResponse(remittance);
   }
 

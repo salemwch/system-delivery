@@ -17,6 +17,8 @@ import { RecipientService } from "../src/modules/directory/application/recipient
 import { RecipientController } from "../src/modules/directory/api/recipient.controller.js";
 import { ManualGeocodingProvider } from "../src/modules/directory/infrastructure/manual-geocoding.provider.js";
 import { FinanceController } from "../src/modules/finance/api/finance.controller.js";
+import { DriverController } from "../src/modules/fleet/api/driver.controller.js";
+import { DriverService } from "../src/modules/fleet/application/driver.service.js";
 import { ShiftController } from "../src/modules/fleet/api/shift.controller.js";
 import { ShiftService } from "../src/modules/fleet/application/shift.service.js";
 import type { ShiftContext } from "../src/modules/fleet/application/shift.service.js";
@@ -41,6 +43,7 @@ import { AuditService } from "../src/modules/platform/application/audit.service.
 import { FeatureService } from "../src/modules/platform/application/feature.service.js";
 import { OperatingConfigService } from "../src/modules/platform/application/operating-config.service.js";
 import { OutboxService } from "../src/modules/platform/application/outbox.service.js";
+import { HubService } from "../src/modules/network/application/hub.service.js";
 import { WorkloadService } from "../src/modules/platform/application/workload.service.js";
 import { NOTIFICATION_PROVIDER } from "../src/modules/platform/domain/notification-provider.js";
 import { commandContextOf } from "../src/modules/shipment/api/command-context.js";
@@ -76,7 +79,12 @@ import { CurrencyService } from "../src/shared/money/index.js";
 import { PassThroughMalwareScanner, S3ObjectStorage } from "../src/shared/storage/index.js";
 import { CapturingNotificationProvider } from "./auth.factory.js";
 import { stubConfig } from "./config.stub.js";
-import { createTenant, createTestDatabase, deleteTenants } from "./database.harness.js";
+import {
+  createTenant,
+  createTestDatabase,
+  deleteTenants,
+  withTenantContext,
+} from "./database.harness.js";
 import { jpegFixture } from "./media.fixtures.js";
 import { createTestStorage } from "./storage.harness.js";
 import type { TestStorage } from "./storage.harness.js";
@@ -269,7 +277,7 @@ describe("driver authorization over HTTP", () => {
       new PassThroughMalwareScanner(),
     );
 
-    // Routes under test use only ShipmentService, ShipmentStatsService,
+    // Routes under test use only ShipmentService, ShipmentStatsService, DriverService,
     // AddressBookService, RecipientService, RemittanceService, ShiftService and
     // CurrencyService. The controllers' other
     // collaborators back routes this spec never calls, so they are inert
@@ -282,6 +290,7 @@ describe("driver authorization over HTTP", () => {
         ShipmentController,
         RecipientController,
         FinanceController,
+        DriverController,
         ShiftController,
         AddressBookController,
         AddressCorrectionController,
@@ -312,6 +321,8 @@ describe("driver authorization over HTTP", () => {
         WorkloadService,
         LedgerService,
         RemittanceService,
+        DriverService,
+        unused(HubService),
         unused(SettlementService),
         unused(ReconciliationService),
         unused(PaymentNoteService),
@@ -505,6 +516,85 @@ describe("driver authorization over HTTP", () => {
       const { id } = JSON.parse(own.body) as { id: string };
       // Reading, confirming or disputing a remittance is staff work.
       expect((await call("GET", `/v1/finance/remittances/${id}`, token)).statusCode).toBe(403);
+    });
+
+    it("retries a lost handover safely: same key replays, a reused key is a 422", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const token = await login(a);
+      const request = { ...remittance(a.driverId ?? ""), idempotencyKey: randomUUID() };
+
+      const first = await call("POST", "/v1/finance/remittances", token, request);
+      const retry = await call("POST", "/v1/finance/remittances", token, request);
+      expect(first.statusCode, first.body).toBe(201);
+      expect(retry.statusCode, retry.body).toBe(201);
+      expect(first.headers["idempotency-replayed"]).toBeUndefined();
+      expect(retry.headers["idempotency-replayed"]).toBe("true");
+      expect((JSON.parse(retry.body) as { id: string }).id).toBe(
+        (JSON.parse(first.body) as { id: string }).id,
+      );
+
+      const reused = await call("POST", "/v1/finance/remittances", token, {
+        ...request,
+        declaredAmountMinor: "999",
+      });
+      expect(reused.statusCode).toBe(422);
+      expect(JSON.parse(reused.body)).toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED" });
+    });
+  });
+
+  describe("a DRIVER registering a push device token (FCM, migration 0053)", () => {
+    async function storedToken(driverId: string): Promise<string | null | undefined> {
+      const rows = await withTenantContext(
+        database.migrator,
+        tenant,
+        (tx) =>
+          tx<{ device_token: string | null }[]>`
+            select device_token from drivers where id = ${driverId}`,
+      );
+      return rows[0]?.device_token;
+    }
+
+    it("stores their own token, clears it with null, and never touches a colleague's", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const b = await seedAccount(["DRIVER"], true);
+      const token = await login(a);
+      const aDriverId = a.driverId ?? "";
+      const bDriverId = b.driverId ?? "";
+
+      const set = await call("POST", "/v1/drivers/me/device-token", token, { token: "fcm-a" });
+      expect(set.statusCode, set.body).toBe(200);
+      expect(await storedToken(aDriverId)).toBe("fcm-a");
+      expect(await storedToken(bDriverId)).toBeNull();
+
+      const cleared = await call("POST", "/v1/drivers/me/device-token", token, { token: null });
+      expect(cleared.statusCode, cleared.body).toBe(200);
+      expect(await storedToken(aDriverId)).toBeNull();
+    });
+
+    it("answers a DRIVER login with no driver record with 404", async () => {
+      const orphan = await seedAccount(["DRIVER"], false);
+      const token = await login(orphan);
+
+      const response = await call("POST", "/v1/drivers/me/device-token", token, { token: "x" });
+      expect(response.statusCode).toBe(404);
+    });
+
+    it("refuses a role that reports no position (a DISPATCHER) with 403", async () => {
+      const dispatcher = await seedAccount(["DISPATCHER"], false);
+      const token = await login(dispatcher);
+
+      const response = await call("POST", "/v1/drivers/me/device-token", token, { token: "x" });
+      expect(response.statusCode).toBe(403);
+    });
+
+    it("refuses an empty or unknown body at the boundary", async () => {
+      const a = await seedAccount(["DRIVER"], true);
+      const token = await login(a);
+
+      for (const body of [{ token: "" }, { token: "x", driverId: randomUUID() }, {}]) {
+        const response = await call("POST", "/v1/drivers/me/device-token", token, body);
+        expect(response.statusCode, JSON.stringify(body)).toBe(400);
+      }
     });
   });
 

@@ -444,7 +444,7 @@ describe("finance", () => {
       const driverId = randomUUID();
       await collect(tenantId, driverId, 30000n);
 
-      const remittance = await asTenant(tenantId, () =>
+      const { remittance } = await asTenant(tenantId, () =>
         service().submit(
           { driverId, hubId: randomUUID(), declaredAmountMinor: "30000", currency: "TND" },
           ctx,
@@ -457,6 +457,89 @@ describe("finance", () => {
       expect(remittance.code).toMatch(/^RM-\d{8}-[0-9A-F]{6}$/);
     });
 
+    describe("idempotency key", () => {
+      async function submittedRows(
+        tenantId: string,
+      ): Promise<{ remittances: number; events: number }> {
+        const rows = await withTenantContext(
+          database.migrator,
+          tenantId,
+          (tx) => tx<{ remittances: number; events: number }[]>`
+            select (select count(*)::int from cod_remittances) as remittances,
+                   (select count(*)::int from outbox
+                     where event_type = 'cod.remittance_submitted') as events`,
+        );
+        return rows[0] ?? { remittances: -1, events: -1 };
+      }
+
+      it("replays the same request: one remittance, one event, marked replayed", async () => {
+        const tenantId = await seedTenant("rem-idem-replay");
+        const driverId = randomUUID();
+        await collect(tenantId, driverId, 12000n);
+        const request = {
+          driverId,
+          hubId: randomUUID(),
+          declaredAmountMinor: "12000",
+          currency: "TND",
+          idempotencyKey: randomUUID(),
+        };
+
+        const first = await asTenant(tenantId, () => service().submit(request, ctx));
+        const second = await asTenant(tenantId, () => service().submit(request, ctx));
+
+        expect(first.replayed).toBe(false);
+        expect(second.replayed).toBe(true);
+        expect(second.remittance.id).toBe(first.remittance.id);
+        expect(await submittedRows(tenantId)).toEqual({ remittances: 1, events: 1 });
+      });
+
+      it("refuses the key on a different request rather than replaying it", async () => {
+        const tenantId = await seedTenant("rem-idem-reuse");
+        const driverId = randomUUID();
+        await collect(tenantId, driverId, 12000n);
+        const request = {
+          driverId,
+          hubId: randomUUID(),
+          declaredAmountMinor: "12000",
+          currency: "TND",
+          idempotencyKey: randomUUID(),
+        };
+        await asTenant(tenantId, () => service().submit(request, ctx));
+
+        const reused = { code: "IDEMPOTENCY_KEY_REUSED" };
+        await expect(
+          asTenant(tenantId, () =>
+            service().submit({ ...request, declaredAmountMinor: "11000" }, ctx),
+          ),
+        ).rejects.toMatchObject(reused);
+        await expect(
+          asTenant(tenantId, () => service().submit({ ...request, hubId: randomUUID() }, ctx)),
+        ).rejects.toMatchObject(reused);
+        expect(await submittedRows(tenantId)).toEqual({ remittances: 1, events: 1 });
+      });
+
+      it("answers two identical requests racing each other with one remittance", async () => {
+        const tenantId = await seedTenant("rem-idem-race");
+        const driverId = randomUUID();
+        await collect(tenantId, driverId, 12000n);
+        const request = {
+          driverId,
+          hubId: randomUUID(),
+          declaredAmountMinor: "12000",
+          currency: "TND",
+          idempotencyKey: randomUUID(),
+        };
+
+        const results = await Promise.all(
+          [0, 1, 2].map(() => asTenant(tenantId, () => service().submit(request, ctx))),
+        );
+
+        expect(new Set(results.map((r) => r.remittance.id)).size).toBe(1);
+        expect(results.filter((r) => !r.replayed)).toHaveLength(1);
+        expect(await submittedRows(tenantId)).toEqual({ remittances: 1, events: 1 });
+      });
+    });
+
     it("confirms an exact remittance: DEBIT hub_cash / CREDIT driver_cash, zero variance", async () => {
       const tenantId = await seedTenant("rem-exact");
       const driverId = randomUUID();
@@ -464,7 +547,7 @@ describe("finance", () => {
       await collect(tenantId, driverId, 30000n);
       const svc = service();
 
-      const submitted = await asTenant(tenantId, () =>
+      const { remittance: submitted } = await asTenant(tenantId, () =>
         svc.submit({ driverId, hubId, declaredAmountMinor: "30000", currency: "TND" }, ctx),
       );
       const confirmed = await asTenant(tenantId, () =>
@@ -495,7 +578,7 @@ describe("finance", () => {
       await collect(tenantId, driverId, 30000n);
       const svc = service();
 
-      const submitted = await asTenant(tenantId, () =>
+      const { remittance: submitted } = await asTenant(tenantId, () =>
         svc.submit({ driverId, hubId, declaredAmountMinor: "30000", currency: "TND" }, ctx),
       );
 
@@ -533,7 +616,7 @@ describe("finance", () => {
       const driverId = randomUUID();
       await collect(tenantId, driverId, 10000n);
       const svc = service();
-      const submitted = await asTenant(tenantId, () =>
+      const { remittance: submitted } = await asTenant(tenantId, () =>
         svc.submit(
           { driverId, hubId: randomUUID(), declaredAmountMinor: "10000", currency: "TND" },
           ctx,
@@ -553,7 +636,7 @@ describe("finance", () => {
       const driverId = randomUUID();
       await collect(tenantId, driverId, 8000n);
       const svc = service();
-      const submitted = await asTenant(tenantId, () =>
+      const { remittance: submitted } = await asTenant(tenantId, () =>
         svc.submit(
           { driverId, hubId: randomUUID(), declaredAmountMinor: "8000", currency: "TND" },
           ctx,
@@ -590,7 +673,7 @@ describe("finance", () => {
         const a = await seedDriverLogin(database.migrator, tenantId);
         await collect(tenantId, a.driverId, 5000n);
 
-        const filed = await asTenant(tenantId, () =>
+        const { remittance: filed } = await asTenant(tenantId, () =>
           service().submit(
             {
               driverId: a.driverId,
@@ -857,7 +940,7 @@ describe("finance", () => {
       );
 
       const remit = new RemittanceService(db, ledger, currency, new OutboxService());
-      const submitted = await asTenant(tenantId, () =>
+      const { remittance: submitted } = await asTenant(tenantId, () =>
         remit.submit(
           { driverId, hubId: randomUUID(), declaredAmountMinor: "20000", currency: "TND" },
           { actorUserId: randomUUID(), actorIsDriver: false },

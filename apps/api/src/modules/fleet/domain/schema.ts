@@ -83,6 +83,7 @@ export const drivers = pgTable(
     locale: text("locale").notNull().default("fr"),
     deviceId: text("device_id"),
     appVersion: text("app_version"),
+    deviceToken: text("device_token"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

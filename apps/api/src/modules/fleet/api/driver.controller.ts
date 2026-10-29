@@ -12,7 +12,8 @@ import {
 import { z } from "zod";
 
 import { zodBody } from "../../../shared/http/index.js";
-import { RequirePermissions } from "../../identity/index.js";
+import { CurrentPrincipal, RequirePermissions } from "../../identity/index.js";
+import type { Principal } from "../../identity/index.js";
 import { DriverService } from "../application/driver.service.js";
 import type { DriverView } from "../application/driver.service.js";
 import { createDriverSchema, updateDriverSchema } from "../domain/dtos.js";
@@ -58,9 +59,24 @@ interface PageResponse<T> {
   readonly page: { readonly nextCursor: string | null; readonly hasMore: boolean };
 }
 
+const deviceTokenSchema = z.strictObject({
+  token: z.string().trim().min(1).max(4096).nullable(),
+});
+
 @Controller("v1/drivers")
 export class DriverController {
   constructor(private readonly drivers: DriverService) {}
+
+  @Post("me/device-token")
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions("telemetry:write")
+  async registerDeviceToken(
+    @Body(zodBody(deviceTokenSchema)) body: z.infer<typeof deviceTokenSchema>,
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<{ readonly registered: boolean }> {
+    await this.drivers.registerDeviceToken(principal.userId, body.token);
+    return { registered: true };
+  }
 
   @Post()
   @RequirePermissions("driver:create")

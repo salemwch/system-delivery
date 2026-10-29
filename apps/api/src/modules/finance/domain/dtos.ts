@@ -34,6 +34,7 @@ export const submitRemittanceSchema = z.strictObject({
   /** The collections this remittance covers — informational; expected is ledger-derived. */
   shipmentIds: z.array(z.uuid()).max(1000).optional(),
   notes: z.string().trim().min(1).max(2000).optional(),
+  idempotencyKey: z.uuid().optional(),
 });
 export type SubmitRemittanceDto = z.infer<typeof submitRemittanceSchema>;
 

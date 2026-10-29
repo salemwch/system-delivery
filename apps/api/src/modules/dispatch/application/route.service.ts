@@ -486,6 +486,8 @@ export class RouteService {
       }
     }
 
+    const push = await this.database.withTenant((tx) => driverPushTarget(tx, driverId));
+
     // Record shipment.assigned FIRST (each its own idempotent transaction), so a
     // partial failure leaves the route DRAFT and the whole publish is retryable —
     // already-assigned legs replay as clean no-ops. Only legs whose shipment the
@@ -512,6 +514,8 @@ export class RouteService {
             vehicleId,
             assignmentMode: "MANUAL",
             assignedByUserId: ctx.actor.actorId ?? null,
+            trackingNumber: leg.trackingNumber ?? null,
+            ...push,
           },
         },
         { actor: ctx.actor },
@@ -550,6 +554,7 @@ export class RouteService {
           currency: cod.currency,
           plannedStartAt: updated.plannedStartAt?.toISOString() ?? null,
           publishedByUserId: ctx.actor.actorId ?? null,
+          ...push,
         },
       });
 
@@ -1198,6 +1203,29 @@ export class RouteService {
 }
 
 // ── Pure helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Where the driver's phone receives push, carried in the event payload so the
+ * notification module needs no domain lookup (self-contained payload, §2.2).
+ * A driver whose app never registered has a null token: a clean no-op there.
+ */
+interface DriverPushTarget {
+  readonly driverDeviceToken: string | null;
+  readonly recipientLocale: string;
+}
+
+async function driverPushTarget(
+  tx: TenantTransaction,
+  driverId: string,
+): Promise<DriverPushTarget> {
+  const rows = await tx.execute<{ device_token: string | null; locale: string }>(
+    sql`SELECT device_token, locale FROM drivers WHERE id = ${driverId} LIMIT 1`,
+  );
+  return {
+    driverDeviceToken: rows[0]?.device_token ?? null,
+    recipientLocale: rows[0]?.locale ?? "fr",
+  };
+}
 
 function requireRow(rows: Route[], label: string): Route {
   const row = rows[0];
