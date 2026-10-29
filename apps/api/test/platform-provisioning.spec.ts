@@ -117,7 +117,7 @@ describe("platform provisioning", () => {
 
       expect(tenant[0]?.status).toBe("ACTIVE");
       expect(userRows.map((r) => r.role)).toEqual(["OWNER"]);
-      expect(Number(featureRows[0]?.count)).toBe(14);
+      expect(Number(featureRows[0]?.count)).toBe(23);
       expect(outboxRows.map((r) => r.event_type)).toEqual(["tenant.provisioned"]);
     });
 
@@ -257,7 +257,7 @@ describe("platform provisioning", () => {
       const keys = await features.enabledKeys(tenantId);
       expect(keys).toContain("COD_ENABLED");
       expect(keys).not.toContain("POD_PHOTO_REQUIRED");
-      expect(keys.length).toBe(11);
+      expect(keys.length).toBe(18);
     });
   });
 

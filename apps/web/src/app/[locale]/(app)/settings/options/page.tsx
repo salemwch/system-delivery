@@ -96,6 +96,51 @@ function featureLabel(key: string, locale: "ar" | "fr" | "en"): string {
       en: "Signature required",
     },
     POD_OTP_REQUIRED: { ar: "رمز إجباري", fr: "Code obligatoire", en: "OTP required" },
+    DRIVER_SCREENSHOT_PREVENTION_ENABLED: {
+      ar: "منع التقاط الشاشة",
+      fr: "Blocage capture d'écran",
+      en: "Screenshot prevention",
+    },
+    DRIVER_ETA_ENABLED: {
+      ar: "وقت الوصول المقدر",
+      fr: "Temps estimé d'arrivée",
+      en: "ETA on stop cards",
+    },
+    DRIVER_AUTO_CALL_ENABLED: {
+      ar: "اتصال تلقائي قبل الوصول",
+      fr: "Appel auto avant arrivée",
+      en: "Auto-call before arrival",
+    },
+    DRIVER_EARNINGS_SUMMARY_ENABLED: {
+      ar: "ملخص الأرباح اليومية",
+      fr: "Résumé des gains du jour",
+      en: "Daily earnings summary",
+    },
+    DRIVER_SHARE_ETA_ENABLED: {
+      ar: "مشاركة وقت الوصول",
+      fr: "Partager l'heure d'arrivée",
+      en: "Share ETA with recipient",
+    },
+    DRIVER_SMART_REORDER_ENABLED: {
+      ar: "إعادة ترتيب المحطات",
+      fr: "Réordonnancement intelligent",
+      en: "Smart stop reorder",
+    },
+    DRIVER_VOICE_NOTES_ENABLED: {
+      ar: "ملاحظات صوتية",
+      fr: "Notes vocales",
+      en: "Voice notes on failure",
+    },
+    DRIVER_NIGHT_MODE_ENABLED: {
+      ar: "الوضع الليلي التلقائي",
+      fr: "Mode nuit automatique",
+      en: "Auto night mode",
+    },
+    DRIVER_LOW_BATTERY_WARN_ENABLED: {
+      ar: "تنبيه انخفاض البطارية",
+      fr: "Alerte batterie faible",
+      en: "Low battery warning",
+    },
   };
   return labels[key]?.[locale] ?? key;
 }
