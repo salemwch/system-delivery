@@ -1,7 +1,15 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
+import type { KeyObject } from "node:crypto";
 
 import { Injectable } from "@nestjs/common";
-import { SignJWT, jwtVerify } from "jose";
+import { SignJWT, createLocalJWKSet, jwtVerify } from "jose";
+import type { JWK, JWTPayload } from "jose";
 
 import { AppConfigService } from "../../../shared/config/index.js";
 import { ROLES, permissionsForRoles } from "../domain/permissions.js";
@@ -46,7 +54,25 @@ interface AccessTokenClaims {
   readonly sid: string;
 }
 
-const ALGORITHM = "HS256";
+/**
+ * Ed25519 — the fully-specified JWS algorithm (RFC 9864), not the polymorphic
+ * "EdDSA" it deprecates. Asymmetric, so a verifier holds only the public key
+ * and cannot mint a token; deterministic signatures, so there is no
+ * per-signature nonce to get wrong (the classic ECDSA failure).
+ */
+const ALGORITHM = "Ed25519";
+
+/** Who mints these tokens and who accepts them (RFC 8725 §3.8–3.9). */
+const ISSUER = "urn:delivery-platform:api";
+const AUDIENCE = "urn:delivery-platform:api";
+
+/**
+ * Explicit typing (RFC 8725 §3.11) in the PROTECTED header: an MFA challenge
+ * can never verify as an access token, nor the reverse, whatever its claims
+ * say. `at+jwt` is the registered access-token type (RFC 9068).
+ */
+const ACCESS_TOKEN_TYPE = "at+jwt";
+const MFA_CHALLENGE_TOKEN_TYPE = "mfa-challenge+jwt";
 
 /**
  * Roles a token may name. Derived from ROLES rather than restated, so adding a
@@ -74,10 +100,19 @@ export interface RefreshTokenPair {
 
 @Injectable()
 export class TokenService {
-  private readonly accessSecret: Uint8Array;
+  private readonly signingKey: KeyObject;
+  private readonly keyId: string;
+  /** Current key, plus the previous one during a rotation — selected by `kid`. */
+  private readonly verificationKeys: ReturnType<typeof createLocalJWKSet>;
 
   constructor(private readonly config: AppConfigService) {
-    this.accessSecret = new TextEncoder().encode(config.get("JWT_ACCESS_SECRET"));
+    this.signingKey = createPrivateKey(config.get("JWT_SIGNING_KEY"));
+    const current = verificationJwk(createPublicKey(this.signingKey));
+    this.keyId = current.kid;
+    const previous = config.get("JWT_PREVIOUS_VERIFY_KEY");
+    this.verificationKeys = createLocalJWKSet({
+      keys: previous === "" ? [current] : [current, verificationJwk(createPublicKey(previous))],
+    });
   }
 
   /** Signs a short-lived access token. */
@@ -87,21 +122,19 @@ export class TokenService {
         ? this.config.get("DRIVER_ACCESS_TTL_SECONDS")
         : this.config.get("JWT_ACCESS_TTL_SECONDS");
 
-    const token = await new SignJWT({
-      tid: principal.tenantId,
-      typ: principal.actorType,
-      rol: [...principal.roles],
-      hub: [...principal.hubScope],
-      // Carried in the token so every request is scoped without a lookup. The
-      // token is signed, so a merchant cannot widen their own scope by editing it.
-      ...(principal.merchantId === null ? {} : { mid: principal.merchantId }),
-      sid: principal.sessionId,
-    })
-      .setProtectedHeader({ alg: ALGORITHM })
-      .setSubject(principal.userId)
-      .setIssuedAt()
-      .setExpirationTime(`${String(expiresIn)}s`)
-      .sign(this.accessSecret);
+    const token = await this.sign(
+      {
+        tid: principal.tenantId,
+        typ: principal.actorType,
+        rol: [...principal.roles],
+        hub: [...principal.hubScope],
+        // Carried in the token so every request is scoped without a lookup. The
+        // token is signed, so a merchant cannot widen their own scope by editing it.
+        ...(principal.merchantId === null ? {} : { mid: principal.merchantId }),
+        sid: principal.sessionId,
+      },
+      { subject: principal.userId, ttlSeconds: expiresIn, type: ACCESS_TOKEN_TYPE },
+    );
 
     return { token, expiresIn };
   }
@@ -118,12 +151,10 @@ export class TokenService {
    * token captured in transit is worthless by the time it is replayed.
    */
   async issueMfaChallenge(userId: string, tenantId: string): Promise<string> {
-    return new SignJWT({ tid: tenantId, typ: MFA_CHALLENGE_TYPE })
-      .setProtectedHeader({ alg: ALGORITHM })
-      .setSubject(userId)
-      .setIssuedAt()
-      .setExpirationTime(`${String(MFA_CHALLENGE_TTL_SECONDS)}s`)
-      .sign(this.accessSecret);
+    return this.sign(
+      { tid: tenantId, typ: MFA_CHALLENGE_TYPE },
+      { subject: userId, ttlSeconds: MFA_CHALLENGE_TTL_SECONDS, type: MFA_CHALLENGE_TOKEN_TYPE },
+    );
   }
 
   /**
@@ -135,7 +166,7 @@ export class TokenService {
    */
   async verifyMfaChallenge(token: string): Promise<{ userId: string; tenantId: string } | null> {
     try {
-      const { payload } = await jwtVerify(token, this.accessSecret, { algorithms: [ALGORITHM] });
+      const payload = await this.verify(token, MFA_CHALLENGE_TOKEN_TYPE);
       if (payload["typ"] !== MFA_CHALLENGE_TYPE) {
         return null;
       }
@@ -160,10 +191,7 @@ export class TokenService {
    */
   async verifyAccessToken(token: string): Promise<AccessTokenClaims | null> {
     try {
-      const { payload } = await jwtVerify(token, this.accessSecret, {
-        // Pinning the algorithm prevents `alg: none` and HS/RS confusion attacks.
-        algorithms: [ALGORITHM],
-      });
+      const payload = await this.verify(token, ACCESS_TOKEN_TYPE);
 
       const { sub, tid, typ, rol, hub, mid, sid } = payload as Record<string, unknown>;
 
@@ -232,6 +260,36 @@ export class TokenService {
     };
   }
 
+  /** The one place a token is signed: algorithm, key id, type, issuer and audience. */
+  private async sign(
+    claims: Record<string, unknown>,
+    options: { readonly subject: string; readonly ttlSeconds: number; readonly type: string },
+  ): Promise<string> {
+    return new SignJWT(claims)
+      .setProtectedHeader({ alg: ALGORITHM, kid: this.keyId, typ: options.type })
+      .setIssuer(ISSUER)
+      .setAudience(AUDIENCE)
+      .setSubject(options.subject)
+      .setIssuedAt()
+      .setExpirationTime(`${String(options.ttlSeconds)}s`)
+      .sign(this.signingKey);
+  }
+
+  /**
+   * The one place a token is verified. Throws on any failure; callers map that
+   * to null. Pinning the algorithm list prevents `alg: none` and key-confusion
+   * attacks; `typ` keeps each token type to its own purpose.
+   */
+  private async verify(token: string, type: string): Promise<JWTPayload> {
+    const { payload } = await jwtVerify(token, this.verificationKeys, {
+      algorithms: [ALGORITHM],
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      typ: type,
+    });
+    return payload;
+  }
+
   /**
    * Generates a refresh token.
    *
@@ -271,4 +329,20 @@ export class TokenService {
         : this.config.get("JWT_REFRESH_TTL_DAYS");
     return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   }
+}
+
+/**
+ * The public JWK a verifier selects by `kid`. The kid is the RFC 7638
+ * thumbprint, derived from the key itself: no setting to keep in step with
+ * the key, and two different keys can never share one.
+ */
+function verificationJwk(publicKey: KeyObject): JWK & { readonly kid: string } {
+  const { kty, crv, x } = publicKey.export({ format: "jwk" });
+  if (kty !== "OKP" || crv !== "Ed25519" || typeof x !== "string") {
+    // The config schema already refuses any other key; this is the type guard.
+    throw new Error("JWT keys must be Ed25519");
+  }
+  // RFC 7638 §3.2: the required members, lexicographic order, no whitespace.
+  const kid = createHash("sha256").update(JSON.stringify({ crv, kty, x })).digest("base64url");
+  return { kty, crv, x, kid, alg: ALGORITHM, use: "sig" };
 }

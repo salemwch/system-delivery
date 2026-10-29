@@ -21,7 +21,7 @@ import {
 } from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
 import { buildAuthStack } from "./auth.factory.js";
-import { stubConfig } from "./config.stub.js";
+import { stubConfig, testSigningKey } from "./config.stub.js";
 
 /**
  * Identity: authentication, lockout, refresh rotation, and authorization.
@@ -347,7 +347,7 @@ describe("identity", () => {
     });
 
     it("rejects a token signed with a different secret", async () => {
-      const other = new TokenService(stubConfig({ JWT_ACCESS_SECRET: "b".repeat(48) }));
+      const other = new TokenService(stubConfig({ JWT_SIGNING_KEY: testSigningKey() }));
       const foreign = await other.issueAccessToken({
         userId: "018f0000-0000-7000-8000-000000000001",
         tenantId: tenantA,

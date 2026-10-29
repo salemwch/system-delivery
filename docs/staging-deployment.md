@@ -64,7 +64,7 @@
 1. Create the certificate: DigitalOcean → Networking → Certificates → Let's Encrypt for `api.staging.<domain>` (and `app.staging.<domain>`). Its name goes into `certificate_name`.
 2. `terraform plan -out=tfplan` (full) → review → `terraform apply tfplan`. Note the `load_balancer_ip` output.
 3. DNS: an A record `api.staging.<domain>` → the load balancer IP (and the same for `app.staging`).
-4. Generate the application secrets once (JWT signing keys, `FIELD_ENCRYPTION_KEY`, and others the config schema requires) and store them in the GitHub `staging` environment. Never in the repository, never in an image.
+4. Generate the application secrets once (`JWT_SIGNING_KEY` via `pnpm --filter @delivery/api jwt:keygen`, `FIELD_ENCRYPTION_KEY`, and others the config schema requires) and store them in the GitHub `staging` environment. Never in the repository, never in an image.
 5. Run `deploy-staging`. Expect `https://api.staging.<domain>/ready` → 200.
 6. Provision the staging tenant(s) and the test drivers, vehicles and routes (docs/09 §5: always at least two tenants with colliding references).
 

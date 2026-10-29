@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import jsQR from "jsqr";
 import { PNG } from "pngjs";
@@ -28,15 +28,7 @@ import {
   withTenantContext,
 } from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
-
-function tokenConfig() {
-  const values: Record<string, unknown> = {
-    JWT_ACCESS_SECRET: randomBytes(32).toString("hex"),
-    JWT_ACCESS_TTL_SECONDS: 900,
-    DRIVER_ACCESS_TTL_SECONDS: 3_600,
-  };
-  return { get: (key: string) => values[key] } as never;
-}
+import { stubConfig } from "./config.stub.js";
 
 describe("merchant portal", () => {
   let database: TestDatabase;
@@ -148,7 +140,7 @@ describe("merchant portal", () => {
     );
     labels = new LabelService(shipments);
     addressBook = new AddressBookService(db);
-    tokens = new TokenService(tokenConfig());
+    tokens = new TokenService(stubConfig());
   }, 240_000);
 
   afterEach(async () => {

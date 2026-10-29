@@ -1,3 +1,5 @@
+import { createPrivateKey, createPublicKey } from "node:crypto";
+
 import { z } from "zod";
 
 /**
@@ -42,6 +44,24 @@ const secretSchema = z
   .refine((value) => !value.startsWith("dev_only_change_me"), {
     message: "must not use the placeholder value from .env.example",
   });
+
+/**
+ * A PEM key carried on one env line with `\n` escaped — how .env files and CI
+ * secret stores hold multi-line values. Un-escaped HERE, once, so no consumer
+ * repeats the replace or forgets it.
+ */
+const pemSchema = z.string().transform((value) => value.replace(/\\n/gu, "\n"));
+
+/** Whether `pem` parses as an Ed25519 key of the given kind. */
+function isEd25519(pem: string, kind: "private" | "public"): boolean {
+  try {
+    const key = kind === "private" ? createPrivateKey(pem) : createPublicKey(pem);
+    return key.asymmetricKeyType === "ed25519";
+  } catch {
+    // Not PEM, wrong encoding, or a key type node cannot read: all "no".
+    return false;
+  }
+}
 
 /** Postgres connection string, required to name a database. */
 const postgresUrlSchema = z.string().refine(
@@ -205,8 +225,25 @@ export const configSchema = z
     ROUTING_OPTIMIZER: z.enum(["haversine", "osrm"]).default("haversine"),
 
     // ── Auth ─────────────────────────────────────────────────────────────────
-    JWT_ACCESS_SECRET: secretSchema,
-    JWT_REFRESH_SECRET: secretSchema,
+    /**
+     * Ed25519 private key (PKCS#8 PEM, `\n` escaped on one line) that signs
+     * access and MFA-challenge tokens. Asymmetric on purpose: anything that
+     * only VERIFIES a token gets the public half and can never mint one.
+     * Generate with `pnpm --filter @delivery/api jwt:keygen`. Refresh tokens
+     * are opaque random values and use no key at all.
+     */
+    JWT_SIGNING_KEY: pemSchema.refine((pem) => isEd25519(pem, "private"), {
+      message: "must be an Ed25519 private key in PKCS#8 PEM",
+    }),
+    /**
+     * During a rotation, the PREVIOUS key's public half (SPKI PEM), so tokens
+     * it signed stay valid until they expire. Empty outside a rotation.
+     */
+    JWT_PREVIOUS_VERIFY_KEY: pemSchema
+      .refine((pem) => pem === "" || isEd25519(pem, "public"), {
+        message: "must be empty or an Ed25519 public key in SPKI PEM",
+      })
+      .default(""),
     JWT_ACCESS_TTL_SECONDS: durationSeconds(600),
     JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(30),
     DRIVER_ACCESS_TTL_SECONDS: durationSeconds(3600),
@@ -256,8 +293,8 @@ export const configSchema = z
     NOTIFICATION_PUSH_PROVIDER: z.enum(["console", "fcm"]).default("console"),
     FCM_PROJECT_ID: z.string().default(""),
     FCM_CLIENT_EMAIL: z.string().default(""),
-    /** Service-account private key (PEM). Literal `\n` is un-escaped at read. */
-    FCM_PRIVATE_KEY: z.string().default(""),
+    /** Service-account private key (PEM, `\n` escaped on one line). */
+    FCM_PRIVATE_KEY: pemSchema.default(""),
     SMS_SENDER_ID: z.string().default(""),
     SMS_API_KEY: z.string().default(""),
     SMS_API_SECRET: z.string().default(""),

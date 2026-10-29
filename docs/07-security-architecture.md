@@ -96,6 +96,10 @@ flowchart TB
 
 ### 3.1 Rules
 
+- **Access and MFA-challenge tokens are signed with Ed25519** (JWS `alg: "Ed25519"`, RFC 9864), decided 2026-10-29, replacing HS256. Asymmetric: only the API holds `JWT_SIGNING_KEY`. Anything that only verifies (the worker, a realtime or Go gateway later) gets the public half and cannot mint a token. Deterministic signatures, so there is no ECDSA nonce to get wrong. The verifier pins the algorithm and requires `iss`, `aud`, and a per-purpose `typ` header (`at+jwt` per RFC 9068, `mfa-challenge+jwt`), so `alg: none`, key confusion and token-type swaps are all refused (RFC 8725). `kid` is the key's RFC 7638 thumbprint.
+- **Key rotation (90 days, §6.3):** deploy the new key as `JWT_SIGNING_KEY` with the old key's public half as `JWT_PREVIOUS_VERIFY_KEY`; clear it once the longest access TTL (60 min, drivers) has passed. Refresh tokens are opaque random values (SHA-256 digest stored), so a rotation never logs anyone out.
+- **HMAC stays where issuer = verifier.** The tracking-link token (`TRACKING_TOKEN_SECRET`) is minted and checked by the API alone, so a symmetric key is the right tool there.
+
 - **Refresh-token rotation with reuse detection.** A refresh token is single-use; presenting a used token invalidates the entire family and forces re-authentication. This is what turns a stolen token into a detected incident rather than persistent access.
 - **Refresh tokens live in `HttpOnly; Secure; SameSite=Strict` cookies** for web. Never in `localStorage` — that is XSS-readable.
 - **Uniform failure response and timing** for "unknown email" vs "wrong password" vs "disabled account". Anything else is an enumeration oracle.

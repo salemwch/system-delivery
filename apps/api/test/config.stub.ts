@@ -1,5 +1,23 @@
+import { createPublicKey, generateKeyPairSync } from "node:crypto";
+
 import type { AppConfigService } from "../src/shared/config/index.js";
 import type { AppConfig } from "../src/shared/config/index.js";
+
+/**
+ * A fresh Ed25519 signing key (PKCS#8 PEM), as the config schema yields it.
+ * Generated, never a literal: a fixed private key in a test file is exactly
+ * what a secret scanner is right to flag.
+ */
+export function testSigningKey(): string {
+  return generateKeyPairSync("ed25519")
+    .privateKey.export({ format: "pem", type: "pkcs8" })
+    .toString();
+}
+
+/** The public half (SPKI PEM) of a signing key — a rotation's previous key. */
+export function verifyKeyOf(signingKey: string): string {
+  return createPublicKey(signingKey).export({ format: "pem", type: "spki" }).toString();
+}
 
 /**
  * Minimal AppConfigService stub for unit-style tests.
@@ -9,8 +27,8 @@ import type { AppConfig } from "../src/shared/config/index.js";
  * runtime. Only the keys services actually read are provided.
  */
 type StubbedKeys =
-  | "JWT_ACCESS_SECRET"
-  | "JWT_REFRESH_SECRET"
+  | "JWT_SIGNING_KEY"
+  | "JWT_PREVIOUS_VERIFY_KEY"
   | "JWT_ACCESS_TTL_SECONDS"
   | "JWT_REFRESH_TTL_DAYS"
   | "DRIVER_ACCESS_TTL_SECONDS"
@@ -19,8 +37,9 @@ type StubbedKeys =
   | "TRACKING_TOKEN_TTL_DAYS";
 
 const DEFAULTS: Pick<AppConfig, StubbedKeys> = {
-  JWT_ACCESS_SECRET: "a".repeat(48),
-  JWT_REFRESH_SECRET: "r".repeat(48),
+  // One key per test process, so every stubbed service verifies the others'.
+  JWT_SIGNING_KEY: testSigningKey(),
+  JWT_PREVIOUS_VERIFY_KEY: "",
   JWT_ACCESS_TTL_SECONDS: 600,
   JWT_REFRESH_TTL_DAYS: 30,
   DRIVER_ACCESS_TTL_SECONDS: 3600,

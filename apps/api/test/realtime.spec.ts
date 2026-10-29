@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { Redis } from "ioredis";
 import type { PinoLogger } from "nestjs-pino";
@@ -17,20 +17,7 @@ import type { ServerMessage } from "../src/modules/tracking/realtime/protocol.js
 import { DatabaseService } from "../src/shared/database/database.service.js";
 import { createTenant, createTestDatabase, deleteTenants } from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
-
-const JWT_SECRET = randomBytes(32).toString("hex");
-
-/** A config stub — the real service demands a fully valid environment. */
-function tokenConfig() {
-  const values: Record<string, unknown> = {
-    JWT_ACCESS_SECRET: JWT_SECRET,
-    JWT_ACCESS_TTL_SECONDS: 900,
-    DRIVER_ACCESS_TTL_SECONDS: 3_600,
-    JWT_ISSUER: "delivery-platform",
-    JWT_AUDIENCE: "delivery-platform",
-  };
-  return { get: (key: string) => values[key] } as never;
-}
+import { stubConfig, testSigningKey } from "./config.stub.js";
 
 function testLogger(): PinoLogger {
   return { warn: () => undefined, error: () => undefined, info: () => undefined } as never;
@@ -108,7 +95,7 @@ describe("realtime", () => {
     const url = process.env["VALKEY_URL"] ?? "redis://localhost:6379";
     valkey = new Redis(url);
     subscriber = new Redis(url, { maxRetriesPerRequest: null });
-    tokens = new TokenService(tokenConfig());
+    tokens = new TokenService(stubConfig());
     gateway = new RealtimeGateway(tokens, db, valkey, subscriber, testLogger());
   }, 240_000);
 
@@ -439,16 +426,7 @@ describe("realtime", () => {
 
     it("rejects a missing, malformed, or foreign-signed token", async () => {
       const tenantId = await seedTenant("rt-reject");
-      const otherIssuer = new TokenService({
-        get: (key: string) =>
-          key === "JWT_ACCESS_SECRET"
-            ? "a-completely-different-secret-at-least-32-chars"
-            : key === "JWT_ACCESS_TTL_SECONDS"
-              ? 900
-              : key === "DRIVER_ACCESS_TTL_SECONDS"
-                ? 3_600
-                : "delivery-platform",
-      } as never);
+      const otherIssuer = new TokenService(stubConfig({ JWT_SIGNING_KEY: testSigningKey() }));
       const foreign = await otherIssuer.issueAccessToken(principalFor(tenantId));
 
       expect(await gateway.accept(new FakeSocket(), null)).toBeNull();

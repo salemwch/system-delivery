@@ -61,9 +61,8 @@ export class FcmPushProvider implements NotificationProvider {
   ) {
     this.projectId = config.get("FCM_PROJECT_ID");
     this.clientEmail = config.get("FCM_CLIENT_EMAIL");
-    // Service-account keys carry literal "\n" when passed through an env var;
-    // PEM parsing needs real newlines.
-    this.privateKey = config.get("FCM_PRIVATE_KEY").replace(/\\n/gu, "\n");
+    // Already a real multi-line PEM: the config schema un-escapes `\n` once.
+    this.privateKey = config.get("FCM_PRIVATE_KEY");
   }
 
   async send(message: OutboundMessage): Promise<DeliveryReceipt> {

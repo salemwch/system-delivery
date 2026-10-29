@@ -32,6 +32,7 @@ import {
   withTenantContext,
 } from "./database.harness.js";
 import type { TestDatabase } from "./database.harness.js";
+import { stubConfig } from "./config.stub.js";
 
 /** A config stub — the real AppConfigService demands a fully valid environment. */
 function testConfig(overrides: Record<string, unknown> = {}) {
@@ -42,18 +43,6 @@ function testConfig(overrides: Record<string, unknown> = {}) {
     TELEMETRY_MAX_ACCURACY_M: 200,
     TELEMETRY_PRESENCE_TTL_S: 90,
     ...overrides,
-  };
-  return { get: (key: string) => values[key] } as never;
-}
-
-/** Token config for the realtime gateway telemetry publishes through. */
-function tokenConfig() {
-  const values: Record<string, unknown> = {
-    JWT_ACCESS_SECRET: randomBytes(32).toString("hex"),
-    JWT_ACCESS_TTL_SECONDS: 900,
-    DRIVER_ACCESS_TTL_SECONDS: 3_600,
-    JWT_ISSUER: "delivery-platform",
-    JWT_AUDIENCE: "delivery-platform",
   };
   return { get: (key: string) => values[key] } as never;
 }
@@ -260,7 +249,7 @@ describe("tracking", () => {
       maxRetriesPerRequest: null,
     });
     const realtime = new RealtimeGateway(
-      new TokenService(tokenConfig()),
+      new TokenService(stubConfig()),
       db,
       valkey,
       realtimeSubscriber,

@@ -6,6 +6,7 @@ import type { TestingModule } from "@nestjs/testing";
 
 import { AppModule } from "../src/app.module.js";
 import { WorkerModule } from "../src/worker.module.js";
+import { testSigningKey } from "./config.stub.js";
 import { createTestDatabase, type TestDatabase } from "./database.harness.js";
 import { createTestStorage, type TestStorage } from "./storage.harness.js";
 import { createTestValkey, type TestValkey } from "./valkey.harness.js";
@@ -64,8 +65,7 @@ describe("composition roots", () => {
     ensureEnv("NODE_ENV", "test");
     ensureEnv("API_BASE_URL", "http://localhost:3000");
     ensureEnv("OSRM_URL", "http://localhost:5000");
-    ensureEnv("JWT_ACCESS_SECRET", TEST_SECRET);
-    ensureEnv("JWT_REFRESH_SECRET", `${TEST_SECRET}_refresh`);
+    ensureEnv("JWT_SIGNING_KEY", testSigningKey());
     ensureEnv("TRACKING_TOKEN_SECRET", `${TEST_SECRET}_tracking`);
     ensureEnv("FIELD_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
   });
