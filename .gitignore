@@ -51,3 +51,8 @@ pnpm-debug.log*
 # Load-test fixture — holds live bearer tokens for seeded drivers. Never commit.
 load/fixture.json
 load/*.summary.json
+
+# Google / Firebase service-account keys — server credentials, never in the
+# repo or an APK. The API reads FCM_* from .env / the deployment secret store.
+*firebase-adminsdk*.json
+*service-account*.json
