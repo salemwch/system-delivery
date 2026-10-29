@@ -41,15 +41,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // REQUEST_IGNORE_BATTERY_OPTIMIZATIONS is deliberately NOT requested: Play
     // restricts it. The app opens the battery-optimisation settings list
     // instead (no permission needed) and the driver exempts it there.
-    permissions: [],
+    permissions: ["android.permission.RECEIVE_BOOT_COMPLETED"],
     // Defaults from Expo's template the app never needs. Every permission is a
     // question in Play review and a reason for a driver to distrust the app.
     blockedPermissions: [
-      "android.permission.RECORD_AUDIO",
       "android.permission.SYSTEM_ALERT_WINDOW",
       "android.permission.READ_EXTERNAL_STORAGE",
       "android.permission.WRITE_EXTERNAL_STORAGE",
     ],
+    googleServicesFile: "./google-services.json",
   },
   plugins: [
     "expo-router",
@@ -77,6 +77,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         locationAlwaysAndWhenInUsePermission:
           "Your location is shared with dispatch only while your shift is open, so your route and arrivals can be tracked.",
       },
+    ],
+    [
+      "expo-notifications",
+      {
+        color: "#1a73e8",
+        defaultChannel: "delivery",
+      },
+    ],
+    [
+      "react-native-maps",
+      { googleMapsApiKey: process.env["EXPO_PUBLIC_GOOGLE_MAPS_API_KEY"] ?? "" },
     ],
   ],
   // Over-the-air updates are OFF until EAS Update and its signing are set up:

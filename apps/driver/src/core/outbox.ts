@@ -48,7 +48,7 @@ export interface OutboxAction {
   readonly createdAt: number;
 }
 
-export type MediaPurpose = "POD_PHOTO" | "POD_SIGNATURE";
+export type MediaPurpose = "POD_PHOTO" | "POD_SIGNATURE" | "VOICE_NOTE";
 export type MediaState = "CAPTURED" | "SLOTTED" | "UPLOADED" | "FAILED";
 
 export interface MediaItem {
@@ -57,7 +57,7 @@ export interface MediaItem {
   readonly shipmentId: string;
   readonly purpose: MediaPurpose;
   readonly uri: string;
-  readonly contentType: "image/jpeg" | "image/png";
+  readonly contentType: "image/jpeg" | "image/png" | "audio/mp4";
   readonly sizeBytes: number;
   readonly artifactId: string | null;
   readonly objectKey: string | null;

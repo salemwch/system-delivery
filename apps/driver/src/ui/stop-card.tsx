@@ -1,9 +1,11 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { etaMinutes, formatDistance, haversineMetres } from "../core/geo";
 import { fill } from "../core/i18n";
 import type { MessageKey } from "../core/i18n";
 import type { StopView } from "../core/manifest";
 import { formatMoney } from "../core/money";
+import { useField } from "../services/field";
 import { useI18n } from "./i18n-context";
 import { Chip, Icon } from "./kit";
 import { colors, elevation, radius, space, type } from "./theme";
@@ -34,17 +36,34 @@ export function StopCard({
   view,
   onPress,
   highlight = false,
+  driverPosition,
 }: {
   readonly view: StopView;
   readonly onPress: () => void;
   readonly highlight?: boolean;
+  readonly driverPosition?: { latitude: number; longitude: number } | null;
 }) {
   const { t, locale } = useI18n();
+  const field = useField();
   const parcels = view.parcels.reduce((n, p) => n + p.shipment.parcelCount, 0);
   const delivered = view.parcels.filter((p) => p.state === "DELIVERED").length;
   const failed = view.parcels.filter((p) => p.state === "FAILED").length;
   const unsent = view.parcels.some((p) => p.unsent);
   const recipients = [...new Set(view.parcels.map((p) => p.shipment.recipientName))].join(", ");
+  const etaEnabled = field.features["DRIVER_ETA_ENABLED"] === true;
+  const eta =
+    etaEnabled &&
+    driverPosition !== undefined &&
+    driverPosition !== null &&
+    view.stop.latitude !== null &&
+    view.stop.longitude !== null
+      ? haversineMetres(
+          driverPosition.latitude,
+          driverPosition.longitude,
+          view.stop.latitude,
+          view.stop.longitude,
+        )
+      : null;
 
   return (
     <Pressable
@@ -99,6 +118,15 @@ export function StopCard({
             />
           ) : null}
           {unsent ? <Chip tone="warning" icon="cloud-upload-outline" label={t.unsent} /> : null}
+          {eta !== null && view.open ? (
+            <Chip
+              icon="map-marker-distance"
+              label={fill(t.etaAway, {
+                distance: formatDistance(eta),
+                minutes: etaMinutes(eta),
+              })}
+            />
+          ) : null}
         </View>
       </View>
       <Icon name="chevron-right" color={colors.muted} />

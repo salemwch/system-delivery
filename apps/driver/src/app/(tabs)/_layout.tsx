@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
-import { useEffect } from "react";
-import { AppState } from "react-native";
+import { useEffect, useState } from "react";
+import { Appearance, AppState } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { reload, syncNow, useField } from "../../services/field";
@@ -25,6 +25,18 @@ export default function TabsLayout() {
   const attention = field.actions.filter(
     (a) => a.state === "ESCALATED" || a.state === "REFUSED",
   ).length;
+  const codEnabled = field.features["COD_ENABLED"] !== false;
+  const nightModeEnabled = field.features["DRIVER_NIGHT_MODE_ENABLED"] === true;
+  const [dark, setDark] = useState(Appearance.getColorScheme() === "dark");
+
+  useEffect(() => {
+    const sub = Appearance.addChangeListener(({ colorScheme }) => {
+      setDark(colorScheme === "dark");
+    });
+    return () => sub.remove();
+  }, []);
+
+  const nightActive = nightModeEnabled && dark;
 
   useEffect(() => {
     const tick = () => void syncNow().catch(() => undefined);
@@ -54,16 +66,16 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.brand,
-        tabBarInactiveTintColor: colors.muted,
+        tabBarInactiveTintColor: nightActive ? "#94A3B8" : colors.muted,
         tabBarLabelStyle: { fontSize: 12, fontWeight: "600" },
         tabBarStyle: {
           height: 62 + insets.bottom,
           paddingTop: 6,
           paddingBottom: Math.max(insets.bottom, 8),
-          borderTopColor: colors.line,
-          backgroundColor: colors.surface,
+          borderTopColor: nightActive ? "#1E293B" : colors.line,
+          backgroundColor: nightActive ? "#0F172A" : colors.surface,
         },
-        sceneStyle: { backgroundColor: colors.canvas },
+        sceneStyle: { backgroundColor: nightActive ? "#020617" : colors.canvas },
       }}
     >
       <Tabs.Screen
@@ -83,7 +95,11 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="wallet"
-        options={{ title: t.tabWallet, tabBarIcon: icon("wallet-outline", "wallet") }}
+        options={{
+          title: t.tabWallet,
+          tabBarIcon: icon("wallet-outline", "wallet"),
+          href: codEnabled ? "/(tabs)/wallet" : null,
+        }}
       />
       <Tabs.Screen
         name="profile"

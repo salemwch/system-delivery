@@ -1,4 +1,5 @@
 import * as Haptics from "expo-haptics";
+import * as ScreenCapture from "expo-screen-capture";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -12,7 +13,7 @@ import { GROUP_SEPARATOR, formatAmount, formatMoney, parseAmount, remaining } fr
 import type { Money } from "../core/money";
 import { handoversToday, recordHandover } from "../services/cash";
 import { useField } from "../services/field";
-import { api } from "../services/runtime";
+import { api, newId } from "../services/runtime";
 import { BackHeader } from "../ui/back-header";
 import { useI18n } from "../ui/i18n-context";
 import { Banner, Button, Card, Field, Icon, Screen } from "../ui/kit";
@@ -23,9 +24,9 @@ import { colors, space, type } from "../ui/theme";
  * counted in front of the hub agent; the hub confirms or disputes it on their
  * side, against the ledger.
  *
- * ⚠️ ONE ATTEMPT, NEVER RETRIED. The remittance endpoint takes no idempotency
- * key, so a retry after a lost answer would be a second remittance. When the
- * answer is lost, the screen says so and stops; the driver checks with the hub.
+ * An idempotency key is minted when the screen opens and sent with every
+ * attempt. The backend returns the same remittance on replay, so a retry
+ * after a lost answer is safe — it never creates a second remittance.
  */
 export default function Handover() {
   const { t, locale } = useI18n();
@@ -34,9 +35,18 @@ export default function Handover() {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uncertain, setUncertain] = useState(false);
   const [done, setDone] = useState<{ remittance: Remittance; exponent: number } | null>(null);
   const prefilled = useRef(false);
+  const idempotencyKey = useRef(newId());
+
+  const screenshotPrevention = field.features["DRIVER_SCREENSHOT_PREVENTION_ENABLED"] === true;
+  useEffect(() => {
+    if (!screenshotPrevention) return;
+    void ScreenCapture.preventScreenCaptureAsync("handover");
+    return () => {
+      void ScreenCapture.allowScreenCaptureAsync("handover");
+    };
+  }, [screenshotPrevention]);
 
   useEffect(() => {
     void handoversToday().then((list) =>
@@ -80,6 +90,7 @@ export default function Handover() {
         shipmentIds: collectedParcels(field.todayManifests, field.pending).map(
           (p) => p.shipment.shipmentId,
         ),
+        idempotencyKey: idempotencyKey.current,
       });
       await recordHandover(remittance.code, {
         amountMinor: minor,
@@ -89,13 +100,10 @@ export default function Handover() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setDone({ remittance, exponent: due.currencyExponent });
     } catch (failure) {
-      if (failure instanceof ApiError && (failure.status === 0 || failure.status >= 500)) {
-        // The request may have landed: do not offer a retry that could double it.
-        setUncertain(true);
+      if (failure instanceof ApiError && failure.status === 429) {
+        setError(t.needsNetwork);
       } else {
-        setError(
-          failure instanceof ApiError && failure.status === 429 ? t.needsNetwork : t.tryAgain,
-        );
+        setError(t.tryAgain);
       }
     } finally {
       setBusy(false);
@@ -144,7 +152,7 @@ export default function Handover() {
           icon="bank-transfer-in"
           variant="cash"
           busy={busy}
-          disabled={due === null || blocked !== null || uncertain}
+          disabled={due === null || blocked !== null}
           onPress={() => void declare()}
         />
       }
@@ -165,9 +173,6 @@ export default function Handover() {
         style={ho.input}
       />
       {blocked === null ? null : <Banner tone="warning" icon="alert-outline" text={blocked} />}
-      {uncertain ? (
-        <Banner tone="danger" icon="help-circle-outline" text={t.handoverUncertain} />
-      ) : null}
       {error === null ? null : <Banner tone="danger" icon="alert-circle-outline" text={error} />}
     </Screen>
   );

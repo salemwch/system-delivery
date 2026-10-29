@@ -15,5 +15,5 @@
     "noEmit": true
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
-  "exclude": ["node_modules", "android", ".expo/web"]
+  "exclude": ["node_modules", "android", ".expo/web", "e2e"]
 }

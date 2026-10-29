@@ -117,3 +117,19 @@ export async function writeMeta(key: string, value: string): Promise<void> {
     [key, value],
   );
 }
+
+/**
+ * Records the latest failure of a background subsystem (`tracking`, `push`)
+ * under `<scope>.lastError`, for the diagnostics screen. Never throws: it runs
+ * inside catch blocks and headless tasks, where a second failure has nowhere
+ * to go — when the database itself is unavailable, nothing durable can be
+ * written.
+ */
+export async function recordLastError(scope: string, error: unknown): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    await writeMeta(`${scope}.lastError`, `${new Date().toISOString()} ${message.slice(0, 300)}`);
+  } catch {
+    // See above: the store that would hold the error is the thing that failed.
+  }
+}

@@ -4,12 +4,15 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { findShipment } from "../../core/manifest";
+import { storeVoice } from "../../platform/media";
+import type { NewMedia } from "../../platform/outbox-store";
 import { record, useField } from "../../services/field";
 import { newId } from "../../services/runtime";
 import { BackHeader } from "../../ui/back-header";
 import { useI18n } from "../../ui/i18n-context";
 import { Banner, Button, Chip, EmptyState, Field, Icon, Screen } from "../../ui/kit";
 import { Success } from "../../ui/success";
+import { VoiceRecorder } from "../../ui/voice-recorder";
 import { locationFields, useFixAtTap } from "../../ui/use-fix";
 import { colors, radius, space, type } from "../../ui/theme";
 
@@ -27,10 +30,12 @@ export default function Fail() {
   const reasons = field.config?.failureReasons ?? [];
   const [reason, setReason] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
+  const [voiceUri, setVoiceUri] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const positionNow = useFixAtTap();
+  const voiceEnabled = field.features["DRIVER_VOICE_NOTES_ENABLED"] === true;
 
   if (parcel === null) {
     return (
@@ -48,17 +53,31 @@ export default function Fail() {
     setError(null);
     try {
       const position = await positionNow();
-      await record({
-        id: newId(),
-        kind: "FAILED",
-        subjectId: parcel.shipmentId,
-        payload: {
-          reasonCode: reason,
-          ...(notes.trim() === "" ? {} : { reasonNotes: notes.trim() }),
-          occurredAt,
-          ...locationFields(position),
+      const media: NewMedia[] = [];
+      if (voiceUri !== null) {
+        const id = newId();
+        media.push({
+          id,
+          shipmentId: parcel.shipmentId,
+          purpose: "VOICE_NOTE" as const,
+          ...storeVoice(voiceUri, id),
+        });
+      }
+      await record(
+        {
+          id: newId(),
+          kind: "FAILED",
+          subjectId: parcel.shipmentId,
+          payload: {
+            reasonCode: reason,
+            ...(notes.trim() === "" ? {} : { reasonNotes: notes.trim() }),
+            ...(voiceUri !== null ? { hasVoiceNote: true } : {}),
+            occurredAt,
+            ...locationFields(position),
+          },
         },
-      });
+        media.length > 0 ? media : undefined,
+      );
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       setDone(true);
       setTimeout(() => router.back(), 900);
@@ -131,6 +150,13 @@ export default function Fail() {
         multiline
         maxLength={500}
       />
+      {voiceEnabled ? (
+        voiceUri !== null ? (
+          <Banner tone="success" icon="microphone-outline" text={t.voiceNoteSaved} />
+        ) : (
+          <VoiceRecorder onRecorded={setVoiceUri} />
+        )
+      ) : null}
       {error === null ? null : <Banner tone="danger" icon="alert-circle-outline" text={error} />}
     </Screen>
   );

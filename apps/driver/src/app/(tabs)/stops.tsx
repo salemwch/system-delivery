@@ -1,5 +1,6 @@
+import * as Location from "expo-location";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -7,7 +8,7 @@ import { dayStops, nextStop } from "../../core/manifest";
 import type { StopView } from "../../core/manifest";
 import { syncNow, useField } from "../../services/field";
 import { useI18n } from "../../ui/i18n-context";
-import { EmptyState, Icon } from "../../ui/kit";
+import { Banner, Button, EmptyState, Icon } from "../../ui/kit";
 import { StopCard } from "../../ui/stop-card";
 import { colors, radius, space, type } from "../../ui/theme";
 
@@ -21,14 +22,37 @@ export default function Stops() {
   const { t } = useI18n();
   const field = useField();
   const [filter, setFilter] = useState<Filter>("todo");
+  const [reordered, setReordered] = useState(false);
+  const [driverPos, setDriverPos] = useState<{ latitude: number; longitude: number } | null>(null);
   const all = dayStops(field.manifests, field.pending);
   const next = nextStop(field.manifests, field.pending);
-  const shown = all.filter((s) => (filter === "all" ? true : filter === "todo" ? s.open : !s.open));
+  const smartReorder = field.features["DRIVER_SMART_REORDER_ENABLED"] === true;
+
+  useEffect(() => {
+    void Location.getLastKnownPositionAsync().then((loc) => {
+      if (loc !== null)
+        setDriverPos({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+    });
+  }, []);
+
+  const sorted = (() => {
+    if (!reordered || !smartReorder) return all;
+    const open = all.filter((s) => s.open);
+    const failed = all.filter((s) => s.open && s.parcels.every((p) => p.state === "FAILED"));
+    const nonFailed = open.filter((s) => !s.parcels.every((p) => p.state === "FAILED"));
+    const closed = all.filter((s) => !s.open);
+    return [...nonFailed, ...failed, ...closed];
+  })();
+
+  const shown = sorted.filter((s) =>
+    filter === "all" ? true : filter === "todo" ? s.open : !s.open,
+  );
   const counts: Record<Filter, number> = {
     todo: all.filter((s) => s.open).length,
     done: all.filter((s) => !s.open).length,
     all: all.length,
   };
+  const hasFailed = all.some((s) => s.open && s.parcels.every((p) => p.state === "FAILED"));
 
   return (
     <SafeAreaView style={st.root} edges={["top"]}>
@@ -59,6 +83,22 @@ export default function Stops() {
           </Pressable>
         ))}
       </View>
+      {smartReorder && hasFailed && !reordered ? (
+        <View style={{ paddingHorizontal: space.xl }}>
+          <Button
+            label={t.reorderStops}
+            icon="sort-variant"
+            variant="secondary"
+            compact
+            onPress={() => setReordered(true)}
+          />
+        </View>
+      ) : null}
+      {reordered ? (
+        <View style={{ paddingHorizontal: space.xl }}>
+          <Banner tone="info" icon="check-circle-outline" text={t.reorderDone} />
+        </View>
+      ) : null}
       <FlatList<StopView>
         data={shown}
         keyExtractor={(s) => s.stop.id}
@@ -74,6 +114,7 @@ export default function Stops() {
           <StopCard
             view={item}
             highlight={item.stop.id === next?.stop.id}
+            driverPosition={driverPos}
             onPress={() => router.push({ pathname: "/stop/[id]", params: { id: item.stop.id } })}
           />
         )}

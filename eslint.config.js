@@ -73,6 +73,9 @@ export default tseslint.config(
       "**/.next/**",
       "**/*.config.js",
       "infra/**",
+      // Detox E2E: Jest runtime, separate tsconfig, run outside the app.
+      "apps/driver/e2e/**",
+      "apps/driver/.detoxrc.js",
     ],
   },
 

@@ -19,6 +19,7 @@ import type { Permissions } from "../../platform/device";
 import { dismiss, unsafeToForget, wipeFieldData } from "../../platform/outbox-store";
 import { secureSessions } from "../../platform/secure";
 import { reload, resetField, syncNow, useField } from "../../services/field";
+import { unregisterPush } from "../../services/push";
 import { api } from "../../services/runtime";
 import { diagnostics, stopTracking, uploadIfDue } from "../../services/tracker";
 import type { Diagnostics } from "../../services/tracker";
@@ -95,6 +96,7 @@ export default function Profile() {
     }
     await uploadIfDue(true);
     await stopTracking();
+    await unregisterPush();
     await wipeFieldData();
     await secureSessions.clear();
     resetField();

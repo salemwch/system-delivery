@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
+import * as ScreenCapture from "expo-screen-capture";
 import { router, useLocalSearchParams } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { fill } from "../../core/i18n";
@@ -47,6 +48,16 @@ export default function Deliver() {
   const [signing, setSigning] = useState(false);
   const signature = useRef<SignatureHandle>(null);
   const positionNow = useFixAtTap();
+
+  const screenshotPrevention =
+    field.features["DRIVER_SCREENSHOT_PREVENTION_ENABLED"] === true && cod;
+  useEffect(() => {
+    if (!screenshotPrevention) return;
+    void ScreenCapture.preventScreenCaptureAsync("deliver");
+    return () => {
+      void ScreenCapture.allowScreenCaptureAsync("deliver");
+    };
+  }, [screenshotPrevention]);
 
   if (parcel === null) {
     return (

@@ -72,6 +72,16 @@ export function endShift(api: ApiClient, shiftId: string): Promise<ShiftView> {
   return api.request("POST", `/v1/shifts/${encodeURIComponent(shiftId)}/end`, shiftSchema, {});
 }
 
+/** Registers (or clears) the device's push token so the backend can send FCM messages. */
+export function registerDeviceToken(
+  api: ApiClient,
+  token: string | null,
+): Promise<{ registered: boolean }> {
+  return api.request("POST", "/v1/drivers/me/device-token", z.object({ registered: z.boolean() }), {
+    token,
+  });
+}
+
 /** Uploads one telemetry batch and classifies the answer (telemetry.ts). */
 export function telemetryUploader(api: ApiClient): Uploader {
   return async (batch: QueuedBatch): Promise<UploadOutcome> => {

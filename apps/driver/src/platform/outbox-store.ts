@@ -236,7 +236,7 @@ export interface NewMedia {
   readonly shipmentId: string;
   readonly purpose: MediaPurpose;
   readonly uri: string;
-  readonly contentType: "image/jpeg" | "image/png";
+  readonly contentType: "image/jpeg" | "image/png" | "audio/mp4";
   readonly sizeBytes: number;
 }
 

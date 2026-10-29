@@ -2,6 +2,7 @@ import { endShift, startShift } from "../core/endpoints";
 import type { CurrentShift } from "../core/endpoints";
 import { permissions } from "../platform/device";
 import { refreshShift } from "./field";
+import { ensurePushRegistered } from "./push";
 import { api } from "./runtime";
 import { startTracking, stopTracking, trackingShift, uploadIfDue } from "./tracker";
 import type { Notification } from "./tracker";
@@ -41,6 +42,7 @@ export async function openShift(
   if ((await permissions()).background) {
     await startTracking(shift.id, notification);
   }
+  void ensurePushRegistered();
   await refreshShift();
 }
 

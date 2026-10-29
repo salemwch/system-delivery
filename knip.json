@@ -15,6 +15,9 @@
         "drizzle-kit",
         "@types/ws"
       ]
+    },
+    "apps/driver": {
+      "entry": ["e2e/**/*.test.ts", ".detoxrc.js", "e2e/jest.config.js"]
     }
   },
   "ignoreBinaries": ["k6"],

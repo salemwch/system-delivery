@@ -1,3 +1,4 @@
+import * as Battery from "expo-battery";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,6 +18,7 @@ import {
 import { formatMoney, remaining } from "../../core/money";
 import type { Money } from "../../core/money";
 import { mapsUrl } from "../../core/links";
+import { telUrl } from "../../core/links";
 import { permissions } from "../../platform/device";
 import { handoversToday } from "../../services/cash";
 import { syncNow, useField } from "../../services/field";
@@ -28,6 +30,8 @@ import { Banner, Button, Card, Chip, Icon, ProgressRing, Screen } from "../../ui
 import type { IconName } from "../../ui/kit";
 import { stopTitle } from "../../ui/stop-card";
 import { colors, radius, space, type } from "../../ui/theme";
+
+const PERCENT_SCALE = 100;
 
 /**
  * The driver's day on one screen, built around ONE next action: start the
@@ -41,6 +45,8 @@ export default function Today() {
   const [notice, setNotice] = useState<string | null>(null);
   const [background, setBackground] = useState(true);
   const [handed, setHanded] = useState<Money[]>([]);
+  const [batteryPercent, setBatteryPercent] = useState<number | null>(null);
+  const [callDismissed, setCallDismissed] = useState(false);
 
   const notification = useMemo(() => ({ title: t.tracking, body: t.shiftOpen }), [t]);
 
@@ -48,6 +54,9 @@ export default function Today() {
     useCallback(() => {
       void permissions().then((p) => setBackground(p.background));
       void handoversToday().then(setHanded);
+      void Battery.getBatteryLevelAsync().then((level) =>
+        setBatteryPercent(level >= 0 ? Math.round(level * PERCENT_SCALE) : null),
+      );
     }, []),
   );
 
@@ -254,6 +263,15 @@ export default function Today() {
           <Banner tone="info" icon="map-marker-off-outline" text={t.permissionDenied} />
         </Pressable>
       ) : null}
+      {field.features["DRIVER_LOW_BATTERY_WARN_ENABLED"] === true &&
+      batteryPercent !== null &&
+      batteryPercent <= 20 ? (
+        <Banner
+          tone="danger"
+          icon="battery-alert-variant-outline"
+          text={`${fill(t.lowBatteryBody, { percent: batteryPercent })} · ${fill(t.parcelsRemaining, { n: progress.total - progress.done })}`}
+        />
+      ) : null}
       {notice === null ? null : <Banner tone="warning" icon="information-outline" text={notice} />}
 
       <LinearGradient
@@ -285,6 +303,75 @@ export default function Today() {
       </LinearGradient>
 
       {primary}
+
+      {field.features["DRIVER_AUTO_CALL_ENABLED"] === true && next !== null && !callDismissed ? (
+        <Card>
+          <View style={td.row}>
+            <Icon name="phone-ring-outline" color={colors.brand} size={22} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={type.heading}>
+                {fill(t.autoCallPrompt, {
+                  name: next.parcels[0]?.shipment.recipientName ?? "",
+                })}
+              </Text>
+            </View>
+          </View>
+          <View style={td.actions}>
+            <View style={{ flex: 1 }}>
+              <Button
+                label={t.skipCall}
+                variant="ghost"
+                compact
+                onPress={() => setCallDismissed(true)}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Button
+                label={t.callNow}
+                icon="phone"
+                compact
+                onPress={() => {
+                  const phone = next.parcels[0]?.shipment.recipientPhone;
+                  if (phone !== undefined) void Linking.openURL(telUrl(phone));
+                  setCallDismissed(true);
+                }}
+              />
+            </View>
+          </View>
+        </Card>
+      ) : null}
+
+      {field.features["DRIVER_EARNINGS_SUMMARY_ENABLED"] === true &&
+      route === null &&
+      progress.total > 0 &&
+      shift !== null ? (
+        <Card>
+          <View style={td.row}>
+            <Icon name="chart-box-outline" color={colors.success} size={22} />
+            <Text style={type.heading}>{t.earningsTitle}</Text>
+          </View>
+          <View style={td.heroStats}>
+            <Stat value={progress.delivered} label={t.delivered} />
+            <Stat value={progress.failed} label={t.failed} />
+          </View>
+          {toHand.length > 0 ? (
+            <View style={td.row}>
+              <Icon name="cash" color={colors.cash} size={18} />
+              <Text style={[type.body, { color: colors.cash, fontWeight: "700" }]}>
+                {toHand.map((m) => formatMoney(m, locale)).join(" · ")}
+              </Text>
+            </View>
+          ) : null}
+          <Text style={type.caption}>
+            {fill(t.earningsHours, {
+              h: Math.floor((Date.now() - new Date(shift.startedAt).getTime()) / 3_600_000),
+              m: Math.floor(
+                ((Date.now() - new Date(shift.startedAt).getTime()) % 3_600_000) / 60_000,
+              ),
+            })}
+          </Text>
+        </Card>
+      ) : null}
 
       <View style={td.quick}>
         <QuickAction

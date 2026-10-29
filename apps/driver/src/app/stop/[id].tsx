@@ -1,7 +1,9 @@
+import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, Share, StyleSheet, Text, View } from "react-native";
 
+import { etaMinutes, formatDistance, haversineMetres } from "../../core/geo";
 import { shipment as fetchShipment } from "../../core/field-endpoints";
 import type { ShipmentDetail } from "../../core/field-endpoints";
 import { fill } from "../../core/i18n";
@@ -14,6 +16,7 @@ import { useField } from "../../services/field";
 import { api } from "../../services/runtime";
 import { BackHeader } from "../../ui/back-header";
 import { useI18n } from "../../ui/i18n-context";
+import { StopMap } from "../../ui/stop-map";
 import {
   Button,
   Card,
@@ -43,6 +46,14 @@ export default function StopScreen() {
     (m) => m.routeId === found?.routeId && m.status === "IN_PROGRESS",
   );
   const details = useDetails(found?.parcels.map((p) => p.shipment.shipmentId) ?? []);
+  const [driverPos, setDriverPos] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  useEffect(() => {
+    void Location.getLastKnownPositionAsync().then((loc) => {
+      if (loc !== null)
+        setDriverPos({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+    });
+  }, []);
 
   if (found === null) {
     return (
@@ -103,6 +114,48 @@ export default function StopScreen() {
           )}
         </View>
       </Card>
+
+      {stop.latitude !== null && stop.longitude !== null ? (
+        <StopMap latitude={stop.latitude} longitude={stop.longitude} />
+      ) : null}
+
+      {field.features["DRIVER_ETA_ENABLED"] === true &&
+      driverPos !== null &&
+      stop.latitude !== null &&
+      stop.longitude !== null
+        ? (() => {
+            const dist = haversineMetres(
+              driverPos.latitude,
+              driverPos.longitude,
+              stop.latitude,
+              stop.longitude,
+            );
+            return (
+              <View style={sd.etaRow}>
+                <Chip
+                  icon="map-marker-distance"
+                  label={fill(t.etaAway, {
+                    distance: formatDistance(dist),
+                    minutes: etaMinutes(dist),
+                  })}
+                />
+                {field.features["DRIVER_SHARE_ETA_ENABLED"] === true && found.parcels.length > 0 ? (
+                  <Chip
+                    icon="share-variant-outline"
+                    label={t.shareEta}
+                    onPress={() => {
+                      const tracking = found.parcels[0]?.shipment.trackingNumber ?? "";
+                      const minutes = etaMinutes(dist);
+                      void Share.share({
+                        message: fill(t.shareEtaMessage, { tracking, minutes }),
+                      });
+                    }}
+                  />
+                ) : null}
+              </View>
+            );
+          })()
+        : null}
 
       <SectionTitle>{fill(t.parcelCount, { n: found.parcels.length })}</SectionTitle>
       {found.parcels.map((parcel) => (
@@ -308,6 +361,7 @@ const sd = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.infoSoft,
   },
+  etaRow: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
   actions: { flexDirection: "row", justifyContent: "space-around", marginTop: space.xs },
   parcelHead: { flexDirection: "row", alignItems: "flex-start", gap: space.md },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },

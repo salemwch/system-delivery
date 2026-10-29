@@ -212,18 +212,32 @@ export function Chip({
   label,
   tone = "neutral",
   icon,
+  onPress,
 }: {
   readonly label: string;
   readonly tone?: ChipTone;
   readonly icon?: IconName;
+  readonly onPress?: () => void;
 }) {
   const c = CHIP[tone];
-  return (
-    <View style={[kit.chip, { backgroundColor: c.bg }]}>
+  const content = (
+    <>
       {icon === undefined ? null : <Icon name={icon} size={14} color={c.fg} />}
       <Text style={[kit.chipText, { color: c.fg }]}>{label}</Text>
-    </View>
+    </>
   );
+  if (onPress !== undefined) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        onPress={onPress}
+        style={[kit.chip, { backgroundColor: c.bg }]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+  return <View style={[kit.chip, { backgroundColor: c.bg }]}>{content}</View>;
 }
 
 export function SectionTitle({

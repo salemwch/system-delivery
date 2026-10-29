@@ -32,7 +32,7 @@ function podDirectory(): Directory {
 export interface StoredFile {
   readonly uri: string;
   readonly sizeBytes: number;
-  readonly contentType: "image/jpeg" | "image/png";
+  readonly contentType: "image/jpeg" | "image/png" | "audio/mp4";
 }
 
 /** A camera shot → a metadata-free JPEG in durable storage. */
@@ -47,6 +47,10 @@ export async function storePhoto(sourceUri: string, id: string): Promise<StoredF
 /** A captured signature PNG → durable storage. */
 export function storeSignature(sourceUri: string, id: string): StoredFile {
   return keep(sourceUri, `${id}.png`, "image/png", []);
+}
+
+export function storeVoice(sourceUri: string, id: string): StoredFile {
+  return keep(sourceUri, `${id}.m4a`, "audio/mp4", []);
 }
 
 function keep(

@@ -172,10 +172,9 @@ const remittanceSchema = z
 export type Remittance = z.infer<typeof remittanceSchema>;
 
 /**
- * Declares the cash handed over at the hub. ⚠️ The server takes no
- * idempotency key for this call, so it is NEVER retried automatically: a
- * lost answer is shown as such, and the driver checks with the hub before
- * declaring again (a second call would be a second remittance).
+ * Declares the cash handed over at the hub. When `idempotencyKey` is provided
+ * the call is safe to retry: a replay returns the existing remittance and the
+ * response carries `Idempotency-Replayed: true`.
  */
 export function submitRemittance(
   api: ApiClient,
@@ -186,6 +185,7 @@ export function submitRemittance(
     readonly currency: string;
     readonly shipmentIds: readonly string[];
     readonly notes?: string;
+    readonly idempotencyKey?: string;
   },
 ): Promise<Remittance> {
   return api.request("POST", "/v1/finance/remittances", remittanceSchema, body);

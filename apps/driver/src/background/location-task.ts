@@ -1,7 +1,7 @@
 import type { LocationObject } from "expo-location";
 import * as TaskManager from "expo-task-manager";
 
-import { writeMeta } from "../platform/database";
+import { recordLastError } from "../platform/database";
 import { LOCATION_TASK } from "../platform/device";
 import { onFixes } from "../services/tracker";
 
@@ -17,7 +17,7 @@ import { onFixes } from "../services/tracker";
  */
 TaskManager.defineTask<unknown>(LOCATION_TASK, async ({ data, error }) => {
   if (error !== null) {
-    await record(`task error: ${error.message}`);
+    await recordLastError("tracking", `task error: ${error.message}`);
     return;
   }
   const locations = locationsOf(data);
@@ -27,7 +27,7 @@ TaskManager.defineTask<unknown>(LOCATION_TASK, async ({ data, error }) => {
   try {
     await onFixes(locations);
   } catch (failure) {
-    await record(failure instanceof Error ? failure.message : String(failure));
+    await recordLastError("tracking", failure);
   }
 });
 
@@ -54,13 +54,4 @@ function isLocation(value: unknown): value is LocationObject {
     "longitude" in coords &&
     typeof coords.longitude === "number"
   );
-}
-
-async function record(message: string): Promise<void> {
-  try {
-    await writeMeta("tracking.lastError", `${new Date().toISOString()} ${message.slice(0, 300)}`);
-  } catch {
-    // The database itself is unavailable: nothing durable can be written, and
-    // throwing from a headless task only makes the OS log it and drop it.
-  }
 }
